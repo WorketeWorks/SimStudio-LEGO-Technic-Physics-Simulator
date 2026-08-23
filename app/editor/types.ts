@@ -100,6 +100,7 @@ export type EditorPieceSnapshot = {
 
 export type EditorSnapshot = {
   pieces: EditorPieceSnapshot[];
+  rubberBands?: { band: RubberBand; guides: THREE.Vector3[] }[];
   connections: Connection[];
   connectionModes: AppState["connectionModes"];
   selected?: Piece;

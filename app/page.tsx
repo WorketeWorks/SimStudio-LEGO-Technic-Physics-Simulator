@@ -2857,8 +2857,8 @@ export default function Home() {
         guides,
         radius: 0.075,
         restLength: length,
-        stiffness: 95,
-        damping: 3,
+        stiffness: 4 / length,
+        damping: 0.12,
         color,
         line: makeRubberBandLine(color),
         markers: makeRubberBandMarkers(color),
@@ -4068,10 +4068,11 @@ export default function Home() {
       moveOffset = new THREE.Vector2(),
       movingStartPosition = new THREE.Vector3(),
       movingStartPointer = new THREE.Vector2(),
-      rubberMoveStart: THREE.Vector3[] | undefined,
       movingLinearAxis: THREE.Vector3 | undefined,
       movedAxially = false,
-      rubberGuideDrag: { band: RubberBand; index: number; plane: THREE.Plane } | undefined;
+      rubberGuideDrag:
+        | { band: RubberBand; index?: number; origin: THREE.Vector3; guides?: THREE.Vector3[]; plane: THREE.Plane }
+        | undefined;
     const gearMotorHeldKeys = new Set<string>();
     let pivotRotate:
       | {
@@ -4608,6 +4609,10 @@ export default function Home() {
       connectionModes: new Map(
         [...state.connectionModes].map(([id, mode]) => [id, { ...mode }]),
       ),
+      rubberBands: state.rubberBands.map((band) => ({
+        band,
+        guides: band.guides.map((guide) => guide.clone()),
+      })),
       selected: state.selected,
       selectedPieces: [...state.selectedPieces],
     });
@@ -4658,7 +4663,7 @@ export default function Home() {
           piece.mesh.position.copy(item.position);
           piece.mesh.quaternion.copy(item.rotation);
           piece.mesh.scale.copy(item.scale);
-          piece.mesh.visible = true;
+          piece.mesh.visible = !state.rubberBands.some((band) => band.owner === piece);
           piece.mesh.updateMatrixWorld(true);
           piece.fixed = item.fixed;
           piece.exactCollider = item.exactCollider;
@@ -4680,6 +4685,10 @@ export default function Home() {
         state.connectionModes = new Map(
           [...snapshot.connectionModes].map(([id, mode]) => [id, { ...mode }]),
         );
+        snapshot.rubberBands?.forEach(({ band, guides }) => {
+          band.guides = guides.map((guide) => guide.clone());
+          drawRubberBand(band);
+        });
         state.gearLinks = detectGearLinks(
           state.pieces,
           undefined,
@@ -5421,6 +5430,28 @@ export default function Home() {
       const selectedBand = state.rubberBands.find((band) => band.owner === state.selected);
       if (!state.running && e.button === 0 && selectedBand) {
         const bounds = canvas.getBoundingClientRect();
+        const center = selectedBand.guides.reduce(
+          (sum, guide) => sum.add(guide),
+          new THREE.Vector3(),
+        ).multiplyScalar(1 / selectedBand.guides.length);
+        const centerScreen = center.clone().project(camera);
+        const centerDistance = Math.hypot(
+          bounds.left + ((centerScreen.x + 1) * bounds.width) / 2 - e.clientX,
+          bounds.top + ((1 - centerScreen.y) * bounds.height) / 2 - e.clientY,
+        );
+        if (centerDistance <= 18) {
+          state.recordHistory();
+          rubberGuideDrag = {
+            band: selectedBand,
+            origin: center,
+            guides: selectedBand.guides.map((guide) => guide.clone()),
+            plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
+              camera.getWorldDirection(new THREE.Vector3()),
+              center,
+            ),
+          };
+          return;
+        }
         const closest = selectedBand.guides.reduce<{ index: number; distance: number } | undefined>(
           (best, guide, index) => {
             const point = guide.clone().project(camera);
@@ -5433,9 +5464,11 @@ export default function Home() {
         );
         if (closest && closest.distance <= 15) {
           const guide = selectedBand.guides[closest.index];
+          state.recordHistory();
           rubberGuideDrag = {
             band: selectedBand,
             index: closest.index,
+            origin: guide.clone(),
             plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
               camera.getWorldDirection(new THREE.Vector3()),
               guide,
@@ -5635,6 +5668,13 @@ export default function Home() {
         return;
       }
       if (hit && hitPiece) {
+        if (state.rubberBands.some((band) => band.owner === hitPiece)) {
+          state.selected = hitPiece;
+          state.selectedPieces = new Set([hitPiece]);
+          setSelectedId(hitPiece.id);
+          refreshSelectionOutlines();
+          return;
+        }
         // Shift-click toggles membership in the editor's multi-selection.
         // Ctrl/Cmd remains reserved for the existing manual-connect gesture.
         if (e.shiftKey) {
@@ -5665,9 +5705,6 @@ export default function Home() {
         state.selected = moving;
         setSelectedId(moving.id);
         movingStartPosition.copy(moving.mesh.position);
-        rubberMoveStart = state.rubberBands
-          .find((band) => band.owner === moving)
-          ?.guides.map((guide) => guide.clone());
         movingStartPointer.set(e.clientX, e.clientY);
         const linearGuide = state.connections.find(
           (connection) =>
@@ -5709,7 +5746,14 @@ export default function Home() {
         cast(e);
         const point = ray.ray.intersectPlane(rubberGuideDrag.plane, new THREE.Vector3());
         if (point) {
-          rubberGuideDrag.band.guides[rubberGuideDrag.index].copy(point);
+          if (rubberGuideDrag.index === undefined && rubberGuideDrag.guides) {
+            const delta = point.sub(rubberGuideDrag.origin);
+            rubberGuideDrag.band.guides.forEach((guide, index) =>
+              guide.copy(rubberGuideDrag.guides![index]).add(delta),
+            );
+          } else if (rubberGuideDrag.index !== undefined) {
+            rubberGuideDrag.band.guides[rubberGuideDrag.index].copy(point);
+          }
           drawRubberBand(rubberGuideDrag.band);
           moved = true;
         }
@@ -5957,13 +6001,6 @@ export default function Home() {
           const start = movingStartPositions.get(piece);
           if (start) piece.mesh.position.copy(start).add(groupDelta);
         }
-        const movingBand = state.rubberBands.find((band) => band.owner === moving);
-        if (movingBand && rubberMoveStart) {
-          movingBand.guides.forEach((guide, index) =>
-            guide.copy(rubberMoveStart![index]).add(groupDelta),
-          );
-          drawRubberBand(movingBand);
-        }
         previous = { x: e.clientX, y: e.clientY };
         state.renderBatchesDirty = true;
       }
@@ -6168,7 +6205,6 @@ export default function Home() {
       moving = undefined;
       movingGroup = [];
       movingStartPositions.clear();
-      rubberMoveStart = undefined;
       movingPrepared = false;
       movingLinearAxis = undefined;
       movedAxially = false;
@@ -6578,12 +6614,12 @@ export default function Home() {
                 body: spring.bodyId,
                 worldPoint: anchor,
                 target: spring.target,
-                stiffness: spring.rubberNodeId === undefined ? 72 : 120,
-                damping: spring.rubberNodeId === undefined ? 9 : 18,
+                stiffness: spring.rubberNodeId === undefined ? 72 : 2_400,
+                damping: spring.rubberNodeId === undefined ? 9 : 90,
                 maxForce:
                   spring.rubberNodeId === undefined
                     ? 180 * Math.max(0.25, spring.piece?.body?.mass() ?? 0.25)
-                    : 12,
+                    : 240,
               });
             }
           }
@@ -6890,7 +6926,8 @@ export default function Home() {
         if (band.visual.userData.handlesVisible === showHandles) return;
         band.visual.userData.handlesVisible = showHandles;
         band.visual.children.forEach((child) => {
-          if (child.userData.rubberNode) child.visible = showHandles;
+          if (child.userData.rubberNode || child.userData.rubberMoveHandle)
+            child.visible = showHandles;
         });
         gpuSceneRenderer?.invalidate();
       });
@@ -7761,7 +7798,7 @@ export default function Home() {
     // and are finalized immediately instead of following the pointer.
     s.pendingPlacement = undefined;
     pieces.forEach((piece) => {
-      piece.mesh.visible = true;
+      piece.mesh.visible = !s.rubberBands.some((band) => band.owner === piece);
       piece.mesh.updateMatrixWorld(true);
     });
     const modelBounds = new THREE.Box3();
@@ -9990,8 +10027,8 @@ export default function Home() {
               <div className="map-editor rubber-map-editor">
                 <p>
                   {language === "es"
-                    ? "Arrastra los nodos azules en el visor o abre uno para editar sus coordenadas. La longitud nominal pertenece a la referencia LEGO."
-                    : "Drag the blue nodes in the viewport or open one to edit its coordinates. Nominal length belongs to the LEGO reference."}
+                    ? "Arrastra el nodo naranja central para mover toda la goma. Los nodos azules editan el recorrido."
+                    : "Drag the central orange node to move the whole band. Blue nodes edit the route."}
                 </p>
                 <div className="data-row">
                   <span>{language === "es" ? "Longitud nominal" : "Nominal length"}</span>
@@ -10003,7 +10040,7 @@ export default function Home() {
                 </div>
                 <div className="data-row">
                   <span>{language === "es" ? "Tensión estimada" : "Estimated tension"}</span>
-                  <b>{Math.max(0, (selectedRubberRouteLength - selectedRubberBand.restLength) * selectedRubberBand.stiffness).toFixed(1)} N</b>
+                  <b>{Math.max(0, 4 * (selectedRubberRouteLength / selectedRubberBand.restLength - 1)).toFixed(1)} N</b>
                 </div>
                 <div className="map-actions rubber-map-actions">
                   <button

@@ -601,7 +601,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   let nextRubberBodyId = bodies.length + 1;
   let nextRubberOwnerId = 1_000_000;
   for (const band of rubberBands) {
-    const nodes = sampleRubberBand(band.guides, band.restLength).slice(0, 192);
+    const nodes = sampleRubberBand(band.guides, band.restLength, 384);
     if (nodes.length < 3) continue;
     const nodeIds = nodes.map(() => nextRubberBodyId++);
     const ownerIds = nodes.map(() => nextRubberOwnerId++);
@@ -617,7 +617,10 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
           friction: physicsSettings.rubberFriction, density: 0,
           collisionGroup: COLLISION_GROUP_NON_GEAR,
           collisionMask: COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_GEAR_NORMAL | COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
-          shape: { kind: "ball", radius: band.radius } }],
+          // The visible 1.6 mm band is thinner than Rapier's contact margin at
+          // LEGO scale. A small physical skin keeps near-tangent wraps in
+          // contact so elastic tension is transferred to the surrounded part.
+          shape: { kind: "ball", radius: band.radius * 1.4 } }],
       });
     });
     // Consecutive rope particles are held by the elastic solver. Letting
@@ -636,8 +639,12 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       // Rust distributes the loop's nominal length between its nodes. Passing
       // a per-segment value here divided it twice and made the band explode.
       restLength: band.restLength,
-      stiffness: band.stiffness,
-      damping: band.damping,
+      // Same 1.6 mm cross-section for 85543/85545/85546: axial rigidity is
+      // constant, so whole-loop stiffness is inversely proportional to length.
+      stiffness: 4 / band.restLength,
+      // Ratio of critical damping, resolved from each node pair's real mass
+      // inside Rust. This avoids sampling-dependent oscillation.
+      damping: 1,
     });
   }
 

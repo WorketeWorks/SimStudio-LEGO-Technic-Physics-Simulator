@@ -208,6 +208,111 @@ test("rubber loops pull through elastic contacts without rigid joints", () => {
   engine.free();
 });
 
+test("rubber tension transfers motion through a collider contact", () => {
+  const body = (id, position, mass, radius) => ({
+    id, fixed: false, position, rotation: [0, 0, 0, 1], mass,
+    linearDamping: 0.2, angularDamping: 0, additionalSolverIterations: 4, ccd: true,
+    colliders: [{ ownerId: 9500 + id, center: [0, 0, 0], rotation: [0, 0, 0, 1],
+      friction: 1.35, density: 0, collisionGroup: 1, collisionMask: 1,
+      shape: { kind: "ball", radius } }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings,
+    bodies: [
+      body(1, [0, 0, 0], 0.001, 0.08),
+      body(2, [2, 0, 0], 0.001, 0.08),
+      body(3, [1, 2, 0], 0.001, 0.08),
+      body(4, [0.14, 0, 0], 0.65, 0.1),
+    ],
+    joints: [], gears: [], differentials: [], axialStops: [], excludedColliderPairs: [],
+    rubberBands: [{ nodeIds: [1, 2, 3], restLength: 1, stiffness: 240, damping: 1 }],
+  });
+  let transforms;
+  for (let frame = 0; frame < 30; frame++) transforms = engine.step(1 / 60, []);
+  const obstacleX = transforms[engine.transform_stride() * 3 + 1];
+  assert.ok(obstacleX > 0.145, `rubber contact should push the obstacle: ${obstacleX}`);
+  engine.free();
+});
+
+test("a densely sampled rubber loop settles after a strong point drag", () => {
+  const count = 93;
+  const radius = 7.1 / (2 * Math.PI);
+  const bodies = Array.from({ length: count }, (_, index) => {
+    const angle = index / count * 2 * Math.PI;
+    return {
+      id: index + 1,
+      fixed: false,
+      position: [Math.cos(angle) * radius, Math.sin(angle) * radius + 3, 0],
+      rotation: [0, 0, 0, 1],
+      mass: 0.04 / count,
+      linearDamping: 4.5,
+      angularDamping: 1,
+      additionalSolverIterations: 4,
+      ccd: true,
+      colliders: [{
+        ownerId: 20_000 + index,
+        center: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        friction: 1.35,
+        density: 0,
+        collisionGroup: 1,
+        collisionMask: 1,
+        shape: { kind: "ball", radius: 0.105 },
+      }],
+    };
+  });
+  const excludedColliderPairs = [];
+  for (let index = 0; index < count; index++) {
+    for (const offset of [1, 2]) {
+      excludedColliderPairs.push([
+        20_000 + index,
+        20_000 + (index + offset) % count,
+      ]);
+    }
+  }
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings, bodies,
+    joints: [], gears: [], differentials: [], axialStops: [], excludedColliderPairs,
+    rubberBands: [{
+      nodeIds: bodies.map(({ id }) => id),
+      restLength: 10.2,
+      stiffness: 4 / 10.2,
+      damping: 1,
+    }],
+  });
+
+  let transforms;
+  for (let frame = 0; frame < 55; frame++) {
+    const x = transforms?.[1] ?? radius;
+    const y = transforms?.[2] ?? 3;
+    transforms = engine.step(1 / 60, [{
+      kind: "spring",
+      body: 1,
+      worldPoint: [x, y, 0],
+      target: [radius + 4, 3, 0],
+      stiffness: 2400,
+      damping: 90,
+      maxForce: 240,
+    }]);
+  }
+  for (let frame = 0; frame < 180; frame++) transforms = engine.step(1 / 60, []);
+
+  const stride = engine.transform_stride();
+  const points = Array.from({ length: count }, (_, index) =>
+    Array.from(transforms.slice(index * stride + 1, index * stride + 4)),
+  );
+  const speeds = Array.from({ length: count }, (_, index) =>
+    Math.hypot(...transforms.slice(index * stride + 8, index * stride + 11)),
+  );
+  const gaps = points.map((point, index) => {
+    const next = points[(index + 1) % count];
+    return Math.hypot(point[0] - next[0], point[1] - next[1], point[2] - next[2]);
+  });
+  assert.ok(Math.max(...speeds) < 0.5, `released loop must settle: ${Math.max(...speeds)}`);
+  assert.ok(Math.max(...gaps) < 0.2, `released loop must close collision gaps: ${Math.max(...gaps)}`);
+  engine.free();
+});
+
 test("a seven-gear train remains bounded and transmits through the whole chain", () => {
   const gearBody = (id) => ({
     id,

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use rapier3d::prelude::*;
 
-use crate::math::clamp_length;
 use crate::model::RubberBandConfig;
 
 /// Elastic links pull but never push. Nodes remain independent colliders.
@@ -11,7 +10,7 @@ pub struct RubberBand {
     segment_rest_length: f32,
     max_segment_length: f32,
     segment_stiffness: f32,
-    segment_damping: f32,
+    damping_ratio: f32,
 }
 
 pub fn build(configs: &[RubberBandConfig], ids: &HashMap<u32, RigidBodyHandle>) -> Vec<RubberBand> {
@@ -25,58 +24,30 @@ pub fn build(configs: &[RubberBandConfig], ids: &HashMap<u32, RigidBodyHandle>) 
                 // This is a one-way safety limit, not a rigid connection:
                 // links can still compress and the spring remains elastic.
                 // It prevents a stretched link becoming a hole in the collider chain.
-                max_segment_length: config.rest_length.max(0.01) * 1.1 / count,
+                // All supported belts use the same 1.6 mm section. Keep the
+                // particle colliders overlapping without imposing an extra
+                // global length constraint on an already stretched route.
+                max_segment_length: 0.18,
                 // Springs in series divide their effective stiffness. Scale each
                 // link so the configured value describes the complete loop.
                 segment_stiffness: config.stiffness.max(0.0) * count,
-                segment_damping: config.damping.max(0.0) * count,
+                // Treat damping as a ratio of critical damping. A fixed
+                // N*s/m value is not stable here because every belt node is
+                // deliberately very light and the number of nodes varies.
+                damping_ratio: config.damping.clamp(0.0, 2.0),
             }
         })
     }).collect()
 }
 
-/// Keep adjacent collision nodes close enough that the band cannot open a gap
-/// and tunnel through another part while it is under tension.
-pub fn limit_stretch(bands: &[RubberBand], world: &mut PhysicsWorld, dt: f32) {
+/// LEGO rubber is much lighter than the rigid parts it wraps around. At the
+/// editor's scale full gravity drops a newly placed loop to the floor before
+/// its tension can reach those parts.
+pub fn configure_bodies(bands: &[RubberBand], world: &mut PhysicsWorld) {
     for band in bands {
-        for index in 0..band.nodes.len() {
-            let a = band.nodes[index];
-            let b = band.nodes[(index + 1) % band.nodes.len()];
-            let (delta, relative_velocity, left_fixed, right_fixed, left_mass, right_mass) = {
-                let (Some(left), Some(right)) = (world.bodies.get(a), world.bodies.get(b)) else {
-                    continue;
-                };
-                (
-                    right.translation() - left.translation(),
-                    right.linvel() - left.linvel(),
-                    left.is_fixed(),
-                    right.is_fixed(),
-                    left.mass(),
-                    right.mass(),
-                )
-            };
-            let length = delta.length();
-            if length < 1.0e-5 { continue; }
-            let direction = delta / length;
-            let separation_speed = relative_velocity.dot(direction);
-            let correction_speed =
-                ((length - band.max_segment_length).max(0.0) / dt.max(1.0e-5)) * 0.35;
-            let speed_to_remove = (separation_speed + correction_speed).max(0.0);
-            if speed_to_remove <= 0.0 { continue; }
-            let left_inverse_mass = if left_fixed { 0.0 } else { 1.0 / left_mass.max(1.0e-6) };
-            let right_inverse_mass = if right_fixed { 0.0 } else { 1.0 / right_mass.max(1.0e-6) };
-            let inverse_mass = left_inverse_mass + right_inverse_mass;
-            if inverse_mass <= 0.0 { continue; }
-            let impulse = direction * (speed_to_remove / inverse_mass);
-            if !left_fixed {
-                if let Some(left) = world.bodies.get_mut(a) {
-                    left.apply_impulse(impulse, true);
-                }
-            }
-            if !right_fixed {
-                if let Some(right) = world.bodies.get_mut(b) {
-                    right.apply_impulse(-impulse, true);
-                }
+        for handle in &band.nodes {
+            if let Some(body) = world.bodies.get_mut(*handle) {
+                body.set_gravity_scale(0.12, true);
             }
         }
     }
@@ -87,28 +58,52 @@ pub fn apply(bands: &[RubberBand], world: &mut PhysicsWorld, dt: f32) {
         for index in 0..band.nodes.len() {
             let a = band.nodes[index];
             let b = band.nodes[(index + 1) % band.nodes.len()];
-            let (delta, relative_speed, node_mass) = match (world.bodies.get(a), world.bodies.get(b)) {
+            let (delta, relative_speed, left_fixed, right_fixed, left_mass, right_mass) =
+                match (world.bodies.get(a), world.bodies.get(b)) {
                 (Some(left), Some(right)) => {
                     let delta = right.translation() - left.translation();
                     (
                         delta,
                         (right.linvel() - left.linvel()).dot(delta.normalize_or_zero()),
-                        left.mass().min(right.mass()).max(1.0e-6),
+                        left.is_fixed(),
+                        right.is_fixed(),
+                        left.mass(),
+                        right.mass(),
                     )
                 }
                 _ => continue,
             };
             let length = delta.length();
             if length <= band.segment_rest_length || length < 1.0e-5 { continue; }
-            let tension = ((length - band.segment_rest_length) * band.segment_stiffness
-                + relative_speed * band.segment_damping)
-                .max(0.0);
-            // A rubber node is deliberately light. The old 2.0 impulse cap
-            // could add 166 m/s in one substep, so a single contact with a
-            // LEGO part injected enough energy to tear the loop apart.
-            let impulse = clamp_length(delta / length * tension * dt, node_mass * 0.18);
-            if let Some(left) = world.bodies.get_mut(a) { left.apply_impulse(impulse, true); }
-            if let Some(right) = world.bodies.get_mut(b) { right.apply_impulse(-impulse, true); }
+            let left_inverse_mass = if left_fixed { 0.0 } else { 1.0 / left_mass.max(1.0e-6) };
+            let right_inverse_mass = if right_fixed { 0.0 } else { 1.0 / right_mass.max(1.0e-6) };
+            let inverse_mass = left_inverse_mass + right_inverse_mass;
+            if inverse_mass <= 0.0 { continue; }
+
+            // Backward-Euler spring impulse. The previous explicit force used
+            // F*dt directly on sub-gram particles; one step could add over
+            // 70 u/s and the global 12 u/s clamp then created the permanent
+            // oscillation seen in logs 60/61. This solves the future velocity
+            // analytically, so stiffness remains forceful without adding
+            // numerical energy. Critical damping is derived from the actual
+            // pair mass and therefore works with any sampling density.
+            let stiffness_scale = if length > band.max_segment_length { 8.0 } else { 1.0 };
+            let stiffness = band.segment_stiffness * stiffness_scale;
+            let effective_mass = 1.0 / inverse_mass;
+            let damping = 2.0 * band.damping_ratio * (stiffness * effective_mass).sqrt();
+            let extension = length - band.segment_rest_length;
+            let numerator = dt
+                * (stiffness * extension + (damping + stiffness * dt) * relative_speed);
+            let denominator = 1.0 + inverse_mass * dt * (damping + stiffness * dt);
+            let impulse_magnitude = (numerator / denominator).max(0.0);
+            if impulse_magnitude <= 0.0 { continue; }
+            let impulse = delta / length * impulse_magnitude;
+            if !left_fixed {
+                if let Some(left) = world.bodies.get_mut(a) { left.apply_impulse(impulse, true); }
+            }
+            if !right_fixed {
+                if let Some(right) = world.bodies.get_mut(b) { right.apply_impulse(-impulse, true); }
+            }
         }
     }
 }

@@ -6,16 +6,39 @@ import type { RubberBand } from "../editor/types";
 // thin LEGO liftarm can pass through the gaps between rope particles.
 const nodeSpacing = 0.11;
 
-export const sampleRubberBand = (guides: THREE.Vector3[], minimumLength = 0) => {
-  const nodes: THREE.Vector3[] = [];
+export const sampleRubberBand = (
+  guides: THREE.Vector3[],
+  minimumLength = 0,
+  maximumNodes = Number.POSITIVE_INFINITY,
+) => {
+  if (guides.length < 2) return guides.map((guide) => guide.clone());
   const routeLength = rubberBandLength(guides);
-  const density = Math.max(1, minimumLength / Math.max(routeLength, 1.0e-5));
-  for (let index = 0; index < guides.length; index++) {
-    const start = guides[index];
-    const end = guides[(index + 1) % guides.length];
-    const count = Math.max(1, Math.ceil((start.distanceTo(end) * density) / nodeSpacing));
-    for (let step = 0; step < count; step++)
-      nodes.push(start.clone().lerp(end, step / count));
+  if (routeLength < 1.0e-5) return [guides[0].clone()];
+  const count = Math.min(
+    maximumNodes,
+    Math.max(guides.length, Math.ceil(Math.max(routeLength, minimumLength) / nodeSpacing)),
+  );
+  const segmentLengths = guides.map((guide, index) =>
+    guide.distanceTo(guides[(index + 1) % guides.length]),
+  );
+  const nodes: THREE.Vector3[] = [];
+  let segment = 0;
+  let segmentStartDistance = 0;
+  for (let index = 0; index < count; index++) {
+    const distance = (index / count) * routeLength;
+    while (
+      segment < segmentLengths.length - 1 &&
+      distance > segmentStartDistance + segmentLengths[segment]
+    ) {
+      segmentStartDistance += segmentLengths[segment++];
+    }
+    const length = segmentLengths[segment];
+    nodes.push(
+      guides[segment].clone().lerp(
+        guides[(segment + 1) % guides.length],
+        length > 1.0e-5 ? (distance - segmentStartDistance) / length : 0,
+      ),
+    );
   }
   return nodes;
 };
@@ -52,6 +75,11 @@ export const makeRubberBandVisual = (color: number) => {
     roughness: 0.55,
     emissive: 0x061d38,
   });
+  visual.userData.moveMaterial = new THREE.MeshStandardMaterial({
+    color: 0xff9d18,
+    roughness: 0.45,
+    emissive: 0x5c2200,
+  });
   return visual;
 };
 
@@ -72,7 +100,8 @@ export const drawRubberBand = (band: RubberBand, points = band.guides) => {
       nodeGeometry = visual.userData.nodeGeometry as THREE.BufferGeometry,
       bandMaterial = visual.userData.bandMaterial as THREE.Material,
       nodeMaterial = visual.userData.nodeMaterial as THREE.Material,
-      required = points.length * 2;
+      moveMaterial = visual.userData.moveMaterial as THREE.Material,
+      required = points.length * 2 + 1;
     if (visual.userData.pointCount !== points.length) {
       visual.clear();
       visual.userData.pointCount = points.length;
@@ -81,12 +110,13 @@ export const drawRubberBand = (band: RubberBand, points = band.guides) => {
       const index = visual.children.length;
       const mesh = new THREE.Mesh(
         index < points.length ? segmentGeometry : nodeGeometry,
-        index < points.length ? bandMaterial : nodeMaterial,
+        index < points.length ? bandMaterial : index < points.length * 2 ? nodeMaterial : moveMaterial,
       );
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      mesh.userData.rubberNode = index >= points.length;
-      if (mesh.userData.rubberNode)
+      mesh.userData.rubberNode = index >= points.length && index < points.length * 2;
+      mesh.userData.rubberMoveHandle = index === points.length * 2;
+      if (mesh.userData.rubberNode || mesh.userData.rubberMoveHandle)
         mesh.visible = visual.userData.handlesVisible === true;
       visual.add(mesh);
     }
@@ -107,6 +137,12 @@ export const drawRubberBand = (band: RubberBand, points = band.guides) => {
       node.position.copy(start);
       node.scale.setScalar(band.radius * 1.8);
     }
+    const moveHandle = visual.children[points.length * 2] as THREE.Mesh;
+    moveHandle.position.set(0, 0, 0);
+    points.forEach((point) => moveHandle.position.add(point));
+    moveHandle.position.multiplyScalar(1 / points.length);
+    moveHandle.scale.setScalar(band.radius * 3.1);
+    moveHandle.visible = visual.userData.handlesVisible === true;
     visual.updateMatrixWorld(true);
   }
 };
@@ -121,5 +157,6 @@ export const disposeRubberBand = (band: RubberBand) => {
     (band.visual.userData.nodeGeometry as THREE.BufferGeometry).dispose();
     (band.visual.userData.bandMaterial as THREE.Material).dispose();
     (band.visual.userData.nodeMaterial as THREE.Material).dispose();
+    (band.visual.userData.moveMaterial as THREE.Material).dispose();
   }
 };

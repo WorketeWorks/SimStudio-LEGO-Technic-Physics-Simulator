@@ -190,6 +190,7 @@ impl PhysicsEngine {
             differentials::build(&config.differentials, &body_ids, &world);
         let axial_stops = stops::build(&config.axial_stops, &body_ids, &world);
         let rubber_bands = rubber::build(&config.rubber_bands, &body_ids);
+        rubber::configure_bodies(&rubber_bands, &mut world);
         let previous_gear_rotations = ordered_bodies
             .iter()
             .map(|(_, handle)| (*handle, *world.bodies[*handle].rotation()))
@@ -277,10 +278,6 @@ impl PhysicsEngine {
         self.world.integration_parameters.warmstart_coefficient = if startup { 0.0 } else { 0.65 };
         for _ in 0..substeps {
             rubber::apply(&self.rubber_bands, &mut self.world, substep_dt);
-            // Project the loop before Rapier solves contacts. Projecting it
-            // afterwards could place a node inside a LEGO collider with no
-            // contact solve left to push it back out.
-            rubber::limit_stretch(&self.rubber_bands, &mut self.world, substep_dt);
             differentials::project_velocities(
                 &self.differentials,
                 &driven_bodies,
