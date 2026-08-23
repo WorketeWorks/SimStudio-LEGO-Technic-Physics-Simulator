@@ -2,14 +2,18 @@ import * as THREE from "three";
 
 import type { RubberBand } from "../editor/types";
 
-const nodeSpacing = 0.22;
+// Keep neighbouring collision balls overlapping slightly. At larger spacing a
+// thin LEGO liftarm can pass through the gaps between rope particles.
+const nodeSpacing = 0.11;
 
-export const sampleRubberBand = (guides: THREE.Vector3[]) => {
+export const sampleRubberBand = (guides: THREE.Vector3[], minimumLength = 0) => {
   const nodes: THREE.Vector3[] = [];
+  const routeLength = rubberBandLength(guides);
+  const density = Math.max(1, minimumLength / Math.max(routeLength, 1.0e-5));
   for (let index = 0; index < guides.length; index++) {
     const start = guides[index];
     const end = guides[(index + 1) % guides.length];
-    const count = Math.max(1, Math.ceil(start.distanceTo(end) / nodeSpacing));
+    const count = Math.max(1, Math.ceil((start.distanceTo(end) * density) / nodeSpacing));
     for (let step = 0; step < count; step++)
       nodes.push(start.clone().lerp(end, step / count));
   }

@@ -2454,15 +2454,17 @@ export default function Home() {
         return result;
       };
       const groups = new Map<string, Piece[]>();
-      batchPieces.forEach((piece) => {
+      batchPieces
+        .filter((piece) => !state.rubberBands.some((band) => band.owner === piece))
+        .forEach((piece) => {
         piece.mesh.traverse((child) => {
           if (child instanceof THREE.Mesh) child.castShadow = false;
         });
         const key = modelRenderKey(piece),
           group = groups.get(key) ?? [];
         group.push(piece);
-        groups.set(key, group);
-      });
+          groups.set(key, group);
+        });
       groups.forEach((pieces) => {
         // También procesamos piezas que aparecen una sola vez.
         //
@@ -2915,11 +2917,11 @@ export default function Home() {
         wrapper.visible = !state.bulkLoading;
         state.pieces.push(piece);
         scene.add(wrapper);
-        makeRubberBelt(piece);
         if (!rotation) {
           const box = new THREE.Box3().setFromObject(wrapper);
           wrapper.position.y -= box.min.y;
         }
+        makeRubberBelt(piece);
         if (!state.bulkLoading) {
           setCount(state.pieces.length);
           setMessage(
@@ -4066,6 +4068,7 @@ export default function Home() {
       moveOffset = new THREE.Vector2(),
       movingStartPosition = new THREE.Vector3(),
       movingStartPointer = new THREE.Vector2(),
+      rubberMoveStart: THREE.Vector3[] | undefined,
       movingLinearAxis: THREE.Vector3 | undefined,
       movedAxially = false,
       rubberGuideDrag: { band: RubberBand; index: number; plane: THREE.Plane } | undefined;
@@ -4088,7 +4091,9 @@ export default function Home() {
     let lastMiddleDown = { time: 0, x: 0, y: 0 };
     let spring:
       | {
-          piece: Piece;
+          piece?: Piece;
+          rubberNodeId?: number;
+          bodyId: number;
           component: Piece[];
           anchor: THREE.Vector3;
           target: THREE.Vector3;
@@ -4109,6 +4114,14 @@ export default function Home() {
         -((e.clientY - r.top) / r.height) * 2 + 1,
       );
       ray.setFromCamera(pointer, camera);
+    };
+    const springAnchor = (active = spring) => {
+      if (!active) return undefined;
+      if (active.rubberNodeId !== undefined) {
+        const position = state.world?.bodies.get(active.rubberNodeId)?.translation();
+        return position ? new THREE.Vector3(position.x, position.y, position.z) : undefined;
+      }
+      return active.piece?.mesh.localToWorld(active.anchor.clone());
     };
 
     const nearestScreenConnector = (
@@ -4350,7 +4363,11 @@ export default function Home() {
       const visualHits = ray.intersectObjects(
         [
           ...state.pieces
-            .filter((piece) => !piece.renderBatched)
+            .filter(
+              (piece) =>
+                !piece.renderBatched &&
+                !state.rubberBands.some((band) => band.owner === piece),
+            )
             .map((piece) => piece.mesh),
           ...state.rubberBands.flatMap((band) => band.visual ? [band.visual] : []),
           ...(state.renderBatchRoot ? [state.renderBatchRoot] : []),
@@ -4367,6 +4384,7 @@ export default function Home() {
       }
       const unitScale = new THREE.Vector3(1, 1, 1);
       for (const piece of state.pieces) {
+        if (state.rubberBands.some((band) => band.owner === piece)) continue;
         piece.mesh.updateMatrixWorld(true);
         for (const primitive of piece.colliders) {
           const primitiveMatrix = piece.mesh.matrixWorld
@@ -4411,9 +4429,9 @@ export default function Home() {
 
     const updateSpring = () => {
       if (!spring) return;
-      const projected = spring.piece.mesh
-          .localToWorld(spring.anchor.clone())
-          .project(camera),
+      const anchorWorld = springAnchor();
+      if (!anchorWorld) return;
+      const projected = anchorWorld.project(camera),
         anchor = {
           x: ((projected.x + 1) * canvas.clientWidth) / 2,
           y: ((1 - projected.y) * canvas.clientHeight) / 2,
@@ -5532,7 +5550,28 @@ export default function Home() {
           refreshSelectionOutlines();
           return;
         }
-        if (hit && hitPiece && !hitPiece.physicsIslandFixed && hitPiece.body) {
+        const rubberBand = hitPiece
+          ? state.rubberBands.find((band) => band.owner === hitPiece)
+          : undefined;
+        const rubberNodeId = rubberBand?.nodeBodyIds?.reduce<number | undefined>(
+          (closest, id) => {
+            const point = state.world?.bodies.get(id)?.translation();
+            if (!point) return closest;
+            if (closest === undefined) return id;
+            const current = state.world?.bodies.get(closest)?.translation();
+            return !current ||
+              new THREE.Vector3(point.x, point.y, point.z).distanceToSquared(hit!.point) <
+                new THREE.Vector3(current.x, current.y, current.z).distanceToSquared(hit!.point)
+              ? id
+              : closest;
+          },
+          undefined,
+        );
+        if (
+          hit &&
+          hitPiece &&
+          (rubberNodeId !== undefined || (!hitPiece.physicsIslandFixed && hitPiece.body))
+        ) {
           state.selected = hitPiece;
           state.selectedPieces = new Set([hitPiece]);
           setSelectedId(hitPiece.id);
@@ -5565,9 +5604,14 @@ export default function Home() {
           host.appendChild(overlay);
           host.appendChild(label);
           spring = {
-            piece: hitPiece,
-            component: [hitPiece],
-            anchor: hitPiece.mesh.worldToLocal(hit.point.clone()),
+            piece: rubberNodeId === undefined ? hitPiece : undefined,
+            rubberNodeId,
+            bodyId: rubberNodeId ?? hitPiece.body!.handle,
+            component: rubberNodeId === undefined ? [hitPiece] : [],
+            anchor:
+              rubberNodeId === undefined
+                ? hitPiece.mesh.worldToLocal(hit.point.clone())
+                : hit.point.clone(),
             target: hit.point.clone(),
             plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
               camera.getWorldDirection(new THREE.Vector3()),
@@ -5621,6 +5665,9 @@ export default function Home() {
         state.selected = moving;
         setSelectedId(moving.id);
         movingStartPosition.copy(moving.mesh.position);
+        rubberMoveStart = state.rubberBands
+          .find((band) => band.owner === moving)
+          ?.guides.map((guide) => guide.clone());
         movingStartPointer.set(e.clientX, e.clientY);
         const linearGuide = state.connections.find(
           (connection) =>
@@ -5760,17 +5807,18 @@ export default function Home() {
           return;
         if (!spring.dragged) {
           spring.dragged = true;
-          spring.component = connectedPieces(spring.piece);
+          spring.component = spring.piece ? connectedPieces(spring.piece) : [];
           spring.overlay.style.display = "";
           spring.label.style.display = "";
           if (state.simLog)
             state.simLog.events.push(
-              `[${((Date.now() - Date.parse(state.simLog.startedAt)) / 1000).toFixed(3)}s] drag-start ${spring.piece.part}; componente ${spring.component.map((piece) => piece.part).join(",")}`,
+              `[${((Date.now() - Date.parse(state.simLog.startedAt)) / 1000).toFixed(3)}s] drag-start ${spring.piece?.part ?? "rubber node"}; componente ${spring.component.map((piece) => piece.part).join(",")}`,
             );
         }
         moved = true;
         cast(e);
-        const anchor = spring.piece.mesh.localToWorld(spring.anchor.clone());
+        const anchor = springAnchor();
+        if (!anchor) return;
         spring.cursorScreen = cursorScreen;
         spring.target.copy(
           ray.ray.at(camera.position.distanceTo(anchor), new THREE.Vector3()),
@@ -5908,6 +5956,13 @@ export default function Home() {
           if (piece === moving) continue;
           const start = movingStartPositions.get(piece);
           if (start) piece.mesh.position.copy(start).add(groupDelta);
+        }
+        const movingBand = state.rubberBands.find((band) => band.owner === moving);
+        if (movingBand && rubberMoveStart) {
+          movingBand.guides.forEach((guide, index) =>
+            guide.copy(rubberMoveStart![index]).add(groupDelta),
+          );
+          drawRubberBand(movingBand);
         }
         previous = { x: e.clientX, y: e.clientY };
         state.renderBatchesDirty = true;
@@ -6083,7 +6138,7 @@ export default function Home() {
           });
           if (state.simLog)
             state.simLog.events.push(
-              `[${((Date.now() - Date.parse(state.simLog.startedAt)) / 1000).toFixed(3)}s] drag-end ${released.piece.part}; fuerza y par eliminados, velocidades limitadas`,
+              `[${((Date.now() - Date.parse(state.simLog.startedAt)) / 1000).toFixed(3)}s] drag-end ${released.piece?.part ?? "rubber node"}; fuerza y par eliminados, velocidades limitadas`,
             );
         }
         released.overlay.remove();
@@ -6113,6 +6168,7 @@ export default function Home() {
       moving = undefined;
       movingGroup = [];
       movingStartPositions.clear();
+      rubberMoveStart = undefined;
       movingPrepared = false;
       movingLinearAxis = undefined;
       movedAxially = false;
@@ -6513,18 +6569,23 @@ export default function Home() {
           });
           forceResetMs = performance.now() - phaseStarted;
           phaseStarted = performance.now();
-          if (spring?.dragged && spring.piece.body && !spring.piece.physicsIslandFixed) {
-            const anchor = spring.piece.mesh.localToWorld(spring.anchor.clone()),
-              delta = spring.target.clone().sub(anchor);
-            if (delta.length() > 3.5) delta.setLength(3.5);
-            state.world.applySpring({
-              body: spring.piece.body.handle,
-              worldPoint: anchor,
-              target: spring.target,
-              stiffness: 72,
-              damping: 9,
-              maxForce: 180 * Math.max(0.25, spring.piece.body.mass()),
-            });
+          if (spring?.dragged && (!spring.piece || !spring.piece.physicsIslandFixed)) {
+            const anchor = springAnchor();
+            if (anchor) {
+              const delta = spring.target.clone().sub(anchor);
+              if (delta.length() > 3.5) delta.setLength(3.5);
+              state.world.applySpring({
+                body: spring.bodyId,
+                worldPoint: anchor,
+                target: spring.target,
+                stiffness: spring.rubberNodeId === undefined ? 72 : 120,
+                damping: spring.rubberNodeId === undefined ? 9 : 18,
+                maxForce:
+                  spring.rubberNodeId === undefined
+                    ? 180 * Math.max(0.25, spring.piece?.body?.mass() ?? 0.25)
+                    : 12,
+              });
+            }
           }
           springMs = performance.now() - phaseStarted;
           phaseStarted = performance.now();
@@ -6708,7 +6769,36 @@ export default function Home() {
                   },
                 ];
               });
-              state.simLog.samples.push({ time, bodies });
+              const rubberBands = state.rubberBands.map((band) => {
+                const nodes = (band.nodeBodyIds ?? []).flatMap((id) => {
+                  const body = state.world?.bodies.get(id);
+                  if (!body) return [];
+                  const position = body.translation(),
+                    velocity = body.linvel();
+                  return [{
+                    id,
+                    position: [position.x, position.y, position.z],
+                    linearVelocity: [velocity.x, velocity.y, velocity.z],
+                  }];
+                });
+                const routeLength = rubberBandLength(
+                  nodes.map((node) => new THREE.Vector3().fromArray(node.position)),
+                );
+                const maxNodeSpeed = Math.max(
+                  0,
+                  ...nodes.map((node) => Math.hypot(...node.linearVelocity)),
+                );
+                return {
+                  id: band.id,
+                  part: band.owner?.part ?? "Rubber band",
+                  restLength: band.restLength,
+                  routeLength,
+                  stretch: routeLength - band.restLength,
+                  maxNodeSpeed,
+                  nodes,
+                };
+              });
+              state.simLog.samples.push({ time, bodies, rubberBands });
               state.nextLogSample = time + (state.largeSimulation ? 0.75 : 0.2);
             }
           }

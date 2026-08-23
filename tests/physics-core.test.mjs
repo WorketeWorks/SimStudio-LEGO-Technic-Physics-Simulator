@@ -184,7 +184,26 @@ test("rubber loops pull through elastic contacts without rigid joints", () => {
   const first = engine.step(1 / 60, []);
   for (let frame = 0; frame < 20; frame++) engine.step(1 / 60, []);
   const after = engine.step(1 / 60, []);
-  assert.ok(after[1] > first[1], "tension should pull the first node inward");
+  const stride = engine.transform_stride();
+  const loopLength = (transforms) => {
+    const positions = Array.from({ length: 3 }, (_, index) =>
+      Array.from(transforms.slice(index * stride + 1, index * stride + 4)),
+    );
+    return positions.reduce((total, point, index) => {
+      const next = positions[(index + 1) % positions.length];
+      return total + Math.hypot(point[0] - next[0], point[1] - next[1], point[2] - next[2]);
+    }, 0);
+  };
+  assert.ok(loopLength(after) < loopLength(first), "elastic tension should shorten the loop");
+  let disturbed = after;
+  for (let frame = 0; frame < 90; frame++)
+    disturbed = engine.step(1 / 60, frame === 0
+      ? [{ kind: "impulse", body: 1, impulse: [0.08, 0, 0] }]
+      : []);
+  assert.ok(
+    Math.max(...Array.from(disturbed).filter(Number.isFinite).map(Math.abs)) < 8,
+    "a small perturbation must not launch rubber nodes out of the scene",
+  );
   assert.equal(engine.stats().joints, 0, "rubber links are not rigid joints");
   engine.free();
 });

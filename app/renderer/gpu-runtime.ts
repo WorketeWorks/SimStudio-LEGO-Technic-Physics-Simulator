@@ -242,6 +242,7 @@ export class GpuSceneRenderer {
       root: THREE.Object3D,
       ignoreVisibility: boolean,
       sourcesForMaterial: (material: THREE.Material) => GpuInstanceSourceInput[],
+      overlayRoot = !!root.userData.gpuOverlay,
     ) => {
       root.updateMatrixWorld(true);
       inverseRoot.copy(root.matrixWorld).invert();
@@ -265,7 +266,7 @@ export class GpuSceneRenderer {
               material = materials[range.materialIndex ?? 0] ?? materials[0];
             if (!material || count < 3) continue;
             materialColor(material, this.color);
-            const overlay = !material.depthTest || !!root.userData.gpuOverlay;
+            const overlay = !material.depthTest || overlayRoot;
             if (
               (material as THREE.Material & { wireframe?: boolean }).wireframe
             ) {
@@ -354,7 +355,7 @@ export class GpuSceneRenderer {
               material = materials[range.materialIndex ?? 0] ?? materials[0];
             if (!material || count < 2) continue;
             materialColor(material, this.color);
-            const overlay = !material.depthTest || !!root.userData.gpuOverlay,
+            const overlay = !material.depthTest || overlayRoot,
               key = `${keyPrefix}:line:${this.color.getHexString()}:${overlay}`,
               group = lines.get(key) ?? {
                 positions: [],
@@ -399,11 +400,24 @@ export class GpuSceneRenderer {
         groupedPieces.map((piece) => ({ object: piece.mesh, material, piece })),
       );
     }
-    extras.forEach((object) =>
-      collectTemplate(`extra:${object.id}`, object, false, (material) => [
-        { object, material },
-      ]),
-    );
+    // Extras such as rubber bands animate their child meshes independently.
+    // Upload each leaf with its own world matrix instead of baking its initial
+    // transform into one static root template.
+    extras.forEach((root) => {
+      const overlayRoot = !!root.userData.gpuOverlay;
+      root.updateMatrixWorld(true);
+      root.traverse((object) => {
+        if (!object.visible || !(object instanceof THREE.Mesh || object instanceof THREE.Line))
+          return;
+        collectTemplate(
+          `extra:${root.id}:${object.id}`,
+          object,
+          false,
+          (material) => [{ object, material }],
+          overlayRoot,
+        );
+      });
+    });
     this.core.clearGeometry();
     this.instanceSources = [];
     for (const group of meshes.values()) {

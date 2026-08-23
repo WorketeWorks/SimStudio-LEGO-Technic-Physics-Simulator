@@ -350,8 +350,18 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     excludedPairs,
     rubberBands = [],
   } = options;
+  // A rubber's catalog Piece is editor metadata only. Its simulation is made
+  // from the loop nodes below, so it must never create a second invisible body.
+  const rubberOwners = new Set(
+    rubberBands.flatMap((band) => (band.owner ? [band.owner] : [])),
+  );
+  const physicalPieces = pieces.filter((piece) => !rubberOwners.has(piece));
+  const physicalConnections = connections.filter(
+    (connection) =>
+      !rubberOwners.has(connection.a) && !rubberOwners.has(connection.b),
+  );
 
-  const parent = new Map(pieces.map((piece) => [piece, piece]));
+  const parent = new Map(physicalPieces.map((piece) => [piece, piece]));
   const findRoot = (piece: Piece) => {
     let root = piece;
     while (parent.get(root) !== root) root = parent.get(root)!;
@@ -370,12 +380,12 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   };
 
   if (structuralMode === "rigid")
-    connections.forEach((connection) => {
+    physicalConnections.forEach((connection) => {
       if (connection.mode === "fixed") merge(connection.a, connection.b);
     });
 
   const islandMap = new Map<Piece, Piece[]>();
-  pieces.forEach((piece) => {
+  physicalPieces.forEach((piece) => {
     const root = findRoot(piece);
     const island = islandMap.get(root) ?? [];
     island.push(piece);
@@ -397,7 +407,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   // lets adjacent liftarms rotate past one another without making the whole
   // pair non-colliding (remote parts of both groups can still make contact).
   const articulatedBodyIds = new Set<number>();
-  connections.forEach((connection) => {
+  physicalConnections.forEach((connection) => {
     const bodyA = bodyIdByPiece.get(connection.a);
     const bodyB = bodyIdByPiece.get(connection.b);
     if (!bodyA || !bodyB || bodyA === bodyB) return;
@@ -410,7 +420,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   // though the frame profile already shows 40+ ms world steps. Use the tuned
   // large-scene budget before that cliff; it lowers solver iterations and
   // enables the sleeping/batching shortcuts without changing small scenes.
-  const largeSimulation = rigidIslands.length > 250 || pieces.length > 600;
+  const largeSimulation = rigidIslands.length > 250 || physicalPieces.length > 600;
   const solverIterations = largeSimulation
     ? 5 + Math.round(stiffnessRatio * 5)
     : 4 + Math.round(stiffnessRatio * 12);
@@ -587,19 +597,22 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   // Each loop becomes small colliding bodies, linked by one-way tension in
   // Rust. The LEGO assembly remains in the normal collision layer.
   const rubberConfigs: RustRubberBandConfig[] = [];
+  const rubberExcludedColliderPairs = new Set<string>();
   let nextRubberBodyId = bodies.length + 1;
   let nextRubberOwnerId = 1_000_000;
   for (const band of rubberBands) {
-    const nodes = sampleRubberBand(band.guides).slice(0, 96);
+    const nodes = sampleRubberBand(band.guides, band.restLength).slice(0, 192);
     if (nodes.length < 3) continue;
     const nodeIds = nodes.map(() => nextRubberBodyId++);
+    const ownerIds = nodes.map(() => nextRubberOwnerId++);
+    const nodeMass = 0.04 / nodes.length;
     band.nodeBodyIds = nodeIds;
     nodes.forEach((position, index) => {
-      const ownerId = nextRubberOwnerId++;
+      const ownerId = ownerIds[index];
       bodies.push({
         id: nodeIds[index], fixed: false, position: vec3(position), rotation: [0, 0, 0, 1],
-        mass: 0.012, linearDamping: 0.18, angularDamping: 1,
-        additionalSolverIterations: 2, ccd: true,
+        mass: nodeMass, linearDamping: 4.5, angularDamping: 1,
+        additionalSolverIterations: 4, ccd: true,
         colliders: [{ ownerId, center: [0, 0, 0], rotation: [0, 0, 0, 1],
           friction: physicsSettings.rubberFriction, density: 0,
           collisionGroup: COLLISION_GROUP_NON_GEAR,
@@ -607,9 +620,22 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
           shape: { kind: "ball", radius: band.radius } }],
       });
     });
+    // Consecutive rope particles are held by the elastic solver. Letting
+    // their touching spheres collide as well injects energy and explodes the
+    // loop; retain collisions for non-local sections of the same band.
+    ownerIds.forEach((ownerId, index) => {
+      for (const offset of [1, 2]) {
+        const otherId = ownerIds[(index + offset) % ownerIds.length];
+        rubberExcludedColliderPairs.add(
+          `${Math.min(ownerId, otherId)}:${Math.max(ownerId, otherId)}`,
+        );
+      }
+    });
     rubberConfigs.push({
       nodeIds,
-      restLength: band.restLength / nodes.length,
+      // Rust distributes the loop's nominal length between its nodes. Passing
+      // a per-segment value here divided it twice and made the band explode.
+      restLength: band.restLength,
       stiffness: band.stiffness,
       damping: band.damping,
     });
@@ -617,7 +643,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
 
   let redundantMovingJoints = 0;
   const guideKeys = new Set<string>();
-  const joints = connections.flatMap((connection): RustJointConfig[] => {
+  const joints = physicalConnections.flatMap((connection): RustJointConfig[] => {
     const bodyA = bodyIdByPiece.get(connection.a)!;
     const bodyB = bodyIdByPiece.get(connection.b)!;
     if (bodyA === bodyB) {
@@ -655,19 +681,19 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   });
 
   const differentials = buildRustDifferentialConfigs(
-    pieces,
-    connections,
+    physicalPieces,
+    physicalConnections,
     bodyIdByPiece,
   );
   // The explicit three-body constraint replaces the internal bevel contact;
   // buildRustGearConfigs applies the same exclusion during dynamic rescans.
-  const gears = buildRustGearConfigs(gearLinks, bodyIdByPiece, connections);
+  const gears = buildRustGearConfigs(gearLinks, bodyIdByPiece, physicalConnections);
 
   // Bushes/nuts touching a socket act as axial hard stops. Their correction
   // is encoded once here and enforced every frame by Rust, avoiding a second
   // TypeScript pose solver after Rapier.
   const axialStops: RustAxialStopConfig[] = [];
-  for (const connection of connections) {
+  for (const connection of physicalConnections) {
     if (connection.mode !== "rotation-linear") continue;
     const bodyA = bodyIdByPiece.get(connection.a);
     const bodyB = bodyIdByPiece.get(connection.b);
@@ -726,7 +752,10 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     }
   }
 
-  const excludedColliderPairs = [...excludedPairs].flatMap((key) => {
+  const excludedColliderPairs = [
+    ...excludedPairs,
+    ...rubberExcludedColliderPairs,
+  ].flatMap((key) => {
     const [left, right] = key.split(":").map(Number);
     return Number.isFinite(left) && Number.isFinite(right)
       ? ([[left, right]] as [number, number][])

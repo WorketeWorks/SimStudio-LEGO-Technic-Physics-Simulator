@@ -233,6 +233,19 @@ export type SimulationLog = {
       linearVelocity: number[];
       angularVelocity: number[];
     }[];
+    rubberBands: {
+      id: string;
+      part: string;
+      restLength: number;
+      routeLength: number;
+      stretch: number;
+      maxNodeSpeed: number;
+      nodes: {
+        id: number;
+        position: number[];
+        linearVelocity: number[];
+      }[];
+    }[];
   }[];
   maxLinearSpeed: number;
   maxAngularSpeed: number;

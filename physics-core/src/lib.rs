@@ -151,7 +151,7 @@ impl PhysicsEngine {
                         0.01
                     })
                     .additional_solver_iterations(body.additional_solver_iterations)
-                    .additional_mass(body.mass.max(0.01))
+                    .additional_mass(body.mass.max(0.0001))
             }
             .pose(pose(body.position, body.rotation))
             .user_data(body.id as u128);
@@ -255,7 +255,10 @@ impl PhysicsEngine {
             })
             .collect();
         let timestep = delta_seconds.clamp(1.0 / 240.0, 1.0 / 60.0);
-        let substeps = if self.gears.is_empty() && self.differentials.is_empty() {
+        let substeps = if self.gears.is_empty()
+            && self.differentials.is_empty()
+            && self.rubber_bands.is_empty()
+        {
             1
         } else if self.settings.large_simulation {
             2
@@ -274,6 +277,10 @@ impl PhysicsEngine {
         self.world.integration_parameters.warmstart_coefficient = if startup { 0.0 } else { 0.65 };
         for _ in 0..substeps {
             rubber::apply(&self.rubber_bands, &mut self.world, substep_dt);
+            // Project the loop before Rapier solves contacts. Projecting it
+            // afterwards could place a node inside a LEGO collider with no
+            // contact solve left to push it back out.
+            rubber::limit_stretch(&self.rubber_bands, &mut self.world, substep_dt);
             differentials::project_velocities(
                 &self.differentials,
                 &driven_bodies,
