@@ -96,6 +96,17 @@ export type SavedGearLink = {
   ratioOverride?: number;
 };
 
+export type SavedRubberBand = {
+  id: string;
+  pieceId?: string;
+  guides: [number, number, number][];
+  radius: number;
+  restLength: number;
+  stiffness: number;
+  damping: number;
+  color: number;
+};
+
 export type SimStudioProjectDocument = {
   format: typeof PROJECT_FORMAT;
   version: typeof PROJECT_VERSION;
@@ -110,6 +121,7 @@ export type SimStudioProjectDocument = {
   pieces: SavedPiece[];
   connections: SavedConnection[];
   gearLinks: SavedGearLink[];
+  rubberBands?: SavedRubberBand[];
   importedCatalog: JsonObject[];
   camera: {
     position: [number, number, number];
@@ -415,6 +427,23 @@ const sanitizeProjectDocument = (
         } satisfies SavedGearLink,
       ];
     }),
+    rubberBands = (Array.isArray(document.rubberBands) ? document.rubberBands : []).flatMap(
+      (raw, index) => {
+        const band = raw as Partial<SavedRubberBand>;
+        const guides = Array.isArray(band.guides) ? band.guides.map((guide) => finiteTuple3(guide)) : [];
+        if (guides.length < 3) return [];
+        return [{
+          id: typeof band.id === "string" && band.id ? band.id : `rubber-${index + 1}`,
+          pieceId: typeof band.pieceId === "string" ? band.pieceId : undefined,
+          guides,
+          radius: positiveNumber(band.radius, 0.075, 0.02),
+          restLength: positiveNumber(band.restLength, 1, 0.01),
+          stiffness: Math.max(0, finiteNumber(band.stiffness, 95)),
+          damping: Math.max(0, finiteNumber(band.damping, 3)),
+          color: Math.max(0, Math.trunc(finiteNumber(band.color, 0x202020))),
+        } satisfies SavedRubberBand];
+      },
+    ),
     physics = Object.fromEntries(
       Object.entries(
         document.settings?.physics && typeof document.settings.physics === "object"
@@ -458,6 +487,7 @@ const sanitizeProjectDocument = (
     pieces,
     connections,
     gearLinks,
+    rubberBands,
     importedCatalog: Array.isArray(document.importedCatalog)
       ? document.importedCatalog.filter(
           (catalog): catalog is JsonObject =>

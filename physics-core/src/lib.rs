@@ -13,7 +13,7 @@ use math::{clamp_length, pose, rotation_to_array, vector};
 use model::{
     ColliderConfig, ColliderShape, GearConfig, JointConfig, PhysicsCommand, SceneConfig, StepStats,
 };
-use systems::{differentials, forces, gears, joints, stops};
+use systems::{differentials, forces, gears, joints, rubber, stops};
 
 const TRANSFORM_STRIDE: usize = 15;
 
@@ -82,6 +82,7 @@ pub struct PhysicsEngine {
     gears: Vec<gears::GearRuntime>,
     differentials: Vec<differentials::DifferentialRuntime>,
     axial_stops: Vec<stops::AxialStopRuntime>,
+    rubber_bands: Vec<rubber::RubberBand>,
     previous_gear_rotations: HashMap<RigidBodyHandle, Rotation>,
     contact_filter: ContactFilter,
     settings: model::PhysicsSettings,
@@ -188,6 +189,7 @@ impl PhysicsEngine {
         let runtime_differentials =
             differentials::build(&config.differentials, &body_ids, &world);
         let axial_stops = stops::build(&config.axial_stops, &body_ids, &world);
+        let rubber_bands = rubber::build(&config.rubber_bands, &body_ids);
         let previous_gear_rotations = ordered_bodies
             .iter()
             .map(|(_, handle)| (*handle, *world.bodies[*handle].rotation()))
@@ -220,6 +222,7 @@ impl PhysicsEngine {
             gears: runtime_gears,
             differentials: runtime_differentials,
             axial_stops,
+            rubber_bands,
             previous_gear_rotations,
             contact_filter,
             settings: config.settings,
@@ -270,6 +273,7 @@ impl PhysicsEngine {
         self.world.integration_parameters.dt = substep_dt;
         self.world.integration_parameters.warmstart_coefficient = if startup { 0.0 } else { 0.65 };
         for _ in 0..substeps {
+            rubber::apply(&self.rubber_bands, &mut self.world, substep_dt);
             differentials::project_velocities(
                 &self.differentials,
                 &driven_bodies,
@@ -541,6 +545,7 @@ fn build_collider(config: &ColliderConfig) -> Result<Collider, JsValue> {
             half_height,
             radius,
         } => ColliderBuilder::cylinder((*half_height).max(0.01), (*radius).max(0.01)),
+        ColliderShape::Ball { radius } => ColliderBuilder::ball((*radius).max(0.01)),
         ColliderShape::TriMesh { vertices, indices } => {
             let vertices = vertices
                 .chunks_exact(3)

@@ -11,7 +11,15 @@ export type RustQuat = [number, number, number, number];
 export type RustColliderShape =
   | { kind: "box"; halfExtents: RustVec3 }
   | { kind: "cylinder"; halfHeight: number; radius: number }
+  | { kind: "ball"; radius: number }
   | { kind: "triMesh"; vertices: number[]; indices: number[] };
+
+export type RustRubberBandConfig = {
+  nodeIds: number[];
+  restLength: number;
+  stiffness: number;
+  damping: number;
+};
 
 export type RustColliderConfig = {
   ownerId: number;
@@ -115,6 +123,7 @@ export type RustPhysicsScene = {
   gears: RustGearConfig[];
   differentials: RustDifferentialConfig[];
   axialStops: RustAxialStopConfig[];
+  rubberBands: RustRubberBandConfig[];
   excludedColliderPairs: [number, number][];
 };
 

@@ -19,6 +19,8 @@ pub struct SceneConfig {
     #[serde(default)]
     pub axial_stops: Vec<AxialStopConfig>,
     #[serde(default)]
+    pub rubber_bands: Vec<RubberBandConfig>,
+    #[serde(default)]
     // JavaScript sends editor ids as Number values. Some legacy ids include a
     // fractional random component, so the Rust boundary preserves their exact
     // IEEE-754 representation rather than coercing them to an integer.
@@ -83,6 +85,9 @@ pub enum ColliderShape {
     },
     Cylinder {
         half_height: f32,
+        radius: f32,
+    },
+    Ball {
         radius: f32,
     },
     TriMesh {
@@ -166,6 +171,15 @@ pub struct AxialStopConfig {
     pub world_axis: Vec3,
     pub side: f32,
     pub minimum_distance: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RubberBandConfig {
+    pub node_ids: Vec<u32>,
+    pub rest_length: f32,
+    pub stiffness: f32,
+    pub damping: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

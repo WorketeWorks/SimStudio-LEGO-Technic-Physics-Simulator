@@ -187,6 +187,22 @@ export type RuntimeGearLink = GearPair<Piece> & {
   ratioOverride?: number;
 };
 
+/** Closed elastic loop. Guides are its initial route, never rigid links. */
+export type RubberBand = {
+  id: string;
+  owner?: Piece;
+  guides: THREE.Vector3[];
+  radius: number;
+  restLength: number;
+  stiffness: number;
+  damping: number;
+  color: number;
+  line: THREE.Line;
+  markers?: THREE.Points;
+  visual?: THREE.Group;
+  nodeBodyIds?: number[];
+};
+
 export type ManualConnectDraft = {
   piece: Piece;
   connector: MeshConnector;
@@ -297,6 +313,7 @@ export type AppState = {
   contactFilterStats?: { tested: number; rejected: number };
   connections: Connection[];
   gearLinks: RuntimeGearLink[];
+  rubberBands: RubberBand[];
   gearAngles: Map<string, number>;
   gearBodyRotations: Map<number, THREE.Quaternion>;
   gearPhases: Map<string, number>;

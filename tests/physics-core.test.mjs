@@ -167,6 +167,28 @@ test("gear ratios and motor joints are solved inside Rust", () => {
   engine.free();
 });
 
+test("rubber loops pull through elastic contacts without rigid joints", () => {
+  const node = (id, position) => ({
+    id, fixed: false, position, rotation: [0, 0, 0, 1], mass: 0.012,
+    linearDamping: 0, angularDamping: 0, additionalSolverIterations: 2, ccd: true,
+    colliders: [{ ownerId: 9000 + id, center: [0, 0, 0], rotation: [0, 0, 0, 1],
+      friction: 1.2, density: 0, collisionGroup: 1, collisionMask: 1,
+      shape: { kind: "ball", radius: 0.06 } }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings,
+    bodies: [node(1, [0, 0, 0]), node(2, [2, 0, 0]), node(3, [1, 2, 0])],
+    joints: [], gears: [], differentials: [], axialStops: [], excludedColliderPairs: [],
+    rubberBands: [{ nodeIds: [1, 2, 3], restLength: 1, stiffness: 90, damping: 2 }],
+  });
+  const first = engine.step(1 / 60, []);
+  for (let frame = 0; frame < 20; frame++) engine.step(1 / 60, []);
+  const after = engine.step(1 / 60, []);
+  assert.ok(after[1] > first[1], "tension should pull the first node inward");
+  assert.equal(engine.stats().joints, 0, "rubber links are not rigid joints");
+  engine.free();
+});
+
 test("a seven-gear train remains bounded and transmits through the whole chain", () => {
   const gearBody = (id) => ({
     id,

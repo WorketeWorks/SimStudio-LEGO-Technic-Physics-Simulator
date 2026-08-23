@@ -12,6 +12,7 @@ import type {
   Connection,
   PhysicsSettings,
   Piece,
+  RubberBand,
   RuntimeGearLink,
   StructuralMode,
 } from "../editor/types";
@@ -22,10 +23,12 @@ import type {
   RustDifferentialConfig,
   RustGearConfig,
   RustJointConfig,
+  RustRubberBandConfig,
   RustPhysicsScene,
   RustQuat,
   RustVec3,
 } from "./rust-protocol";
+import { sampleRubberBand } from "./rubber-band";
 
 const frictionlessPinRefs = new Set(["3749", "3673", "32556"]);
 
@@ -89,6 +92,7 @@ type RustSceneBuildOptions = {
   structuralStiffness: number;
   physicsSettings: PhysicsSettings;
   excludedPairs: Set<string>;
+  rubberBands?: RubberBand[];
 };
 
 /** Builds one runtime joint for a connection created while simulation runs. */
@@ -344,6 +348,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     structuralStiffness,
     physicsSettings,
     excludedPairs,
+    rubberBands = [],
   } = options;
 
   const parent = new Map(pieces.map((piece) => [piece, piece]));
@@ -579,6 +584,37 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     };
   });
 
+  // Each loop becomes small colliding bodies, linked by one-way tension in
+  // Rust. The LEGO assembly remains in the normal collision layer.
+  const rubberConfigs: RustRubberBandConfig[] = [];
+  let nextRubberBodyId = bodies.length + 1;
+  let nextRubberOwnerId = 1_000_000;
+  for (const band of rubberBands) {
+    const nodes = sampleRubberBand(band.guides).slice(0, 96);
+    if (nodes.length < 3) continue;
+    const nodeIds = nodes.map(() => nextRubberBodyId++);
+    band.nodeBodyIds = nodeIds;
+    nodes.forEach((position, index) => {
+      const ownerId = nextRubberOwnerId++;
+      bodies.push({
+        id: nodeIds[index], fixed: false, position: vec3(position), rotation: [0, 0, 0, 1],
+        mass: 0.012, linearDamping: 0.18, angularDamping: 1,
+        additionalSolverIterations: 2, ccd: true,
+        colliders: [{ ownerId, center: [0, 0, 0], rotation: [0, 0, 0, 1],
+          friction: physicsSettings.rubberFriction, density: 0,
+          collisionGroup: COLLISION_GROUP_NON_GEAR,
+          collisionMask: COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_GEAR_NORMAL | COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
+          shape: { kind: "ball", radius: band.radius } }],
+      });
+    });
+    rubberConfigs.push({
+      nodeIds,
+      restLength: band.restLength / nodes.length,
+      stiffness: band.stiffness,
+      damping: band.damping,
+    });
+  }
+
   let redundantMovingJoints = 0;
   const guideKeys = new Set<string>();
   const joints = connections.flatMap((connection): RustJointConfig[] => {
@@ -714,6 +750,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       gears,
       differentials,
       axialStops,
+      rubberBands: rubberConfigs,
       excludedColliderPairs,
     },
     rigidIslands,

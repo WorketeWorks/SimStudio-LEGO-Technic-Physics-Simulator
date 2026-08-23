@@ -55,8 +55,10 @@ import {
   type ProjectSummary,
   type SavedCollisionPrimitive,
   type SavedConnector,
+  type SavedRubberBand,
   type SimStudioProjectDocument,
 } from "./project-format";
+import { disposeRubberBand, drawRubberBand, makeRubberBandLine, makeRubberBandMarkers, makeRubberBandVisual, rubberBandLength } from "./physics/rubber-band";
 import { createStudioGrid, GRID_RECENTER_STEP, GRID_SIZE } from "./renderer/studio-grid";
 import { configureDistanceScaledOutlineMaterial } from "./renderer/outline-material";
 import {
@@ -105,6 +107,7 @@ import type {
   PreparedImportPlacement,
   RotationSnapStep,
   RuntimeGearLink,
+  RubberBand,
   StructuralMode,
   ViewportRendererPreference,
 } from "./editor/types";
@@ -2825,6 +2828,49 @@ export default function Home() {
     };
 
     // --- Scene editing and connections -------------------------------------
+    const rubberBeltLength: Record<string, number> = {
+      "85543": 5.9,
+      "85545": 10.2,
+      "85546": 13.0,
+    };
+    const makeRubberBelt = (piece: Piece) => {
+      const length = rubberBeltLength[piece.part];
+      if (!length) return;
+      const bounds = new THREE.Box3().setFromObject(piece.mesh);
+      const center = bounds.getCenter(new THREE.Vector3());
+      const radiusX = Math.max(0.25, bounds.getSize(new THREE.Vector3()).x / 2);
+      const radiusZ = Math.max(0.25, bounds.getSize(new THREE.Vector3()).z / 2);
+      const guides = Array.from({ length: 16 }, (_, index) => {
+        const angle = (index / 16) * Math.PI * 2;
+        return new THREE.Vector3(
+          center.x + Math.cos(angle) * radiusX,
+          center.y,
+          center.z + Math.sin(angle) * radiusZ,
+        );
+      });
+      const color = new THREE.Color(colorHex[piece.color] ?? 0x202020).getHex();
+      const band: RubberBand = {
+        id: `rubber-${piece.id}`,
+        owner: piece,
+        guides,
+        radius: 0.075,
+        restLength: length,
+        stiffness: 95,
+        damping: 3,
+        color,
+        line: makeRubberBandLine(color),
+        markers: makeRubberBandMarkers(color),
+        visual: makeRubberBandVisual(color),
+      };
+      band.line.userData.piece = piece;
+      band.visual!.userData.piece = piece;
+      drawRubberBand(band);
+      piece.mesh.visible = false;
+      piece.colliders = [];
+      piece.gearColliders = [];
+      state.rubberBands.push(band);
+      scene.add(band.visual);
+    };
     const addPart = async (
       p: CatalogPart,
       position: THREE.Vector3,
@@ -2869,6 +2915,7 @@ export default function Home() {
         wrapper.visible = !state.bulkLoading;
         state.pieces.push(piece);
         scene.add(wrapper);
+        makeRubberBelt(piece);
         if (!rotation) {
           const box = new THREE.Box3().setFromObject(wrapper);
           wrapper.position.y -= box.min.y;
@@ -2901,6 +2948,7 @@ export default function Home() {
       selectedPieces: new Set<Piece>(),
       connections: [],
       gearLinks: [],
+      rubberBands: [],
       gearAngles: new Map(),
       gearBodyRotations: new Map(),
       gearPhases: new Map(),
@@ -4019,7 +4067,8 @@ export default function Home() {
       movingStartPosition = new THREE.Vector3(),
       movingStartPointer = new THREE.Vector2(),
       movingLinearAxis: THREE.Vector3 | undefined,
-      movedAxially = false;
+      movedAxially = false,
+      rubberGuideDrag: { band: RubberBand; index: number; plane: THREE.Plane } | undefined;
     const gearMotorHeldKeys = new Set<string>();
     let pivotRotate:
       | {
@@ -4303,6 +4352,7 @@ export default function Home() {
           ...state.pieces
             .filter((piece) => !piece.renderBatched)
             .map((piece) => piece.mesh),
+          ...state.rubberBands.flatMap((band) => band.visual ? [band.visual] : []),
           ...(state.renderBatchRoot ? [state.renderBatchRoot] : []),
         ],
         true,
@@ -4847,8 +4897,18 @@ export default function Home() {
                   perpendicular: link.perpendicular,
                   ratioOverride: link.ratioOverride,
                 },
-              ];
+          ];
         }),
+        rubberBands = state.rubberBands.map((band) => ({
+          id: band.id,
+          pieceId: band.owner ? pieceIds.get(band.owner) : undefined,
+          guides: band.guides.map(tuple3),
+          radius: band.radius,
+          restLength: band.restLength,
+          stiffness: band.stiffness,
+          damping: band.damping,
+          color: band.color,
+        } satisfies SavedRubberBand)),
         importedCatalog = [
           ...new Map(
             state.pieces
@@ -4876,6 +4936,7 @@ export default function Home() {
         pieces,
         connections,
         gearLinks,
+        rubberBands,
         importedCatalog,
         camera: {
           position: tuple3(camera.position),
@@ -4929,6 +4990,13 @@ export default function Home() {
       state.connections = [];
       state.connectionModes.clear();
       state.gearLinks = [];
+      state.rubberBands.forEach((band) => {
+        scene.remove(band.line);
+        if (band.markers) scene.remove(band.markers);
+        if (band.visual) scene.remove(band.visual);
+        disposeRubberBand(band);
+      });
+      state.rubberBands = [];
       state.selected = undefined;
       state.selectedPieces.clear();
       const piecesById = new Map<string, Piece>();
@@ -5037,7 +5105,32 @@ export default function Home() {
                   perpendicular: saved.perpendicular,
                   ratioOverride: saved.ratioOverride,
                 },
-              ];
+          ];
+        });
+        state.rubberBands = (document.rubberBands ?? []).map((saved) => {
+          const band: RubberBand = {
+            id: saved.id,
+            owner: saved.pieceId ? piecesById.get(saved.pieceId) : undefined,
+            guides: saved.guides.map((guide) => new THREE.Vector3().fromArray(guide)),
+            radius: saved.radius,
+            restLength: saved.restLength,
+            stiffness: saved.stiffness,
+            damping: saved.damping,
+            color: saved.color,
+            line: makeRubberBandLine(saved.color),
+            markers: makeRubberBandMarkers(saved.color),
+            visual: makeRubberBandVisual(saved.color),
+          };
+          band.line.userData.piece = band.owner;
+          band.visual!.userData.piece = band.owner;
+          if (band.owner) {
+            band.owner.mesh.visible = false;
+            band.owner.colliders = [];
+            band.owner.gearColliders = [];
+          }
+          drawRubberBand(band);
+          scene.add(band.visual);
+          return band;
         });
         camera.position.fromArray(document.camera.position);
         camera.quaternion.fromArray(document.camera.quaternion);
@@ -5307,6 +5400,32 @@ export default function Home() {
       orbit = e.button === 2 || e.altKey;
       altCandidate = e.altKey && e.button === 0 ? hitPiece : undefined;
       if (orbit) return;
+      const selectedBand = state.rubberBands.find((band) => band.owner === state.selected);
+      if (!state.running && e.button === 0 && selectedBand) {
+        const bounds = canvas.getBoundingClientRect();
+        const closest = selectedBand.guides.reduce<{ index: number; distance: number } | undefined>(
+          (best, guide, index) => {
+            const point = guide.clone().project(camera);
+            const x = bounds.left + ((point.x + 1) * bounds.width) / 2;
+            const y = bounds.top + ((1 - point.y) * bounds.height) / 2;
+            const distance = Math.hypot(x - e.clientX, y - e.clientY);
+            return !best || distance < best.distance ? { index, distance } : best;
+          },
+          undefined,
+        );
+        if (closest && closest.distance <= 15) {
+          const guide = selectedBand.guides[closest.index];
+          rubberGuideDrag = {
+            band: selectedBand,
+            index: closest.index,
+            plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
+              camera.getWorldDirection(new THREE.Vector3()),
+              guide,
+            ),
+          };
+          return;
+        }
+      }
       if (!state.running && rotationPivotHeld && e.button === 0 && hitPiece) {
         const selectedConnector = nearestConnectedPivot(hitPiece, e);
         if (!selectedConnector) {
@@ -5539,6 +5658,16 @@ export default function Home() {
     };
 
     const move = (e: PointerEvent) => {
+      if (rubberGuideDrag) {
+        cast(e);
+        const point = ray.ray.intersectPlane(rubberGuideDrag.plane, new THREE.Vector3());
+        if (point) {
+          rubberGuideDrag.band.guides[rubberGuideDrag.index].copy(point);
+          drawRubberBand(rubberGuideDrag.band);
+          moved = true;
+        }
+        return;
+      }
       if (pivotRotate) {
         const rawAngle = (e.clientX - pivotRotate.startX) * 0.012,
           angleStep = THREE.MathUtils.degToRad(state.rotationSnapStep),
@@ -5788,6 +5917,11 @@ export default function Home() {
     const up = (e: PointerEvent) => {
       if (canvas.hasPointerCapture(e.pointerId))
         canvas.releasePointerCapture(e.pointerId);
+      if (rubberGuideDrag) {
+        rubberGuideDrag = undefined;
+        if (moved) scheduleRecoverySave();
+        return;
+      }
       if (pivotRotate) {
         const rotated = pivotRotate;
         pivotRotate = undefined;
@@ -6135,6 +6269,14 @@ export default function Home() {
           scene.remove(selected.mesh);
           if (selected.lockSprite) scene.remove(selected.lockSprite);
         }
+        state.rubberBands = state.rubberBands.filter((band) => {
+          if (!selectedSet.has(band.owner!)) return true;
+          scene.remove(band.line);
+          if (band.markers) scene.remove(band.markers);
+          if (band.visual) scene.remove(band.visual);
+          disposeRubberBand(band);
+          return false;
+        });
         state.pieces = state.pieces.filter((item) => !selectedSet.has(item));
         state.rebuildRenderBatches();
         state.connections = state.connections.filter(
@@ -6521,6 +6663,13 @@ export default function Home() {
               );
             }
           });
+          state.rubberBands.forEach((band) => {
+            const nodes = band.nodeBodyIds?.flatMap((id) => {
+              const point = state.world?.bodies.get(id)?.translation();
+              return point ? [new THREE.Vector3(point.x, point.y, point.z)] : [];
+            });
+            if (nodes && nodes.length >= 3) drawRubberBand(band, nodes);
+          });
           state.dynamicConnectionFrame++;
           if (
             pendingGearContactChanges.size > 0 ||
@@ -6645,6 +6794,16 @@ export default function Home() {
         floor.receiveShadow = !viewingFloorFromBelow;
         floorMaterial.needsUpdate = true;
       }
+      state.rubberBands.forEach((band) => {
+        if (!band.visual) return;
+        const showHandles = !state.running && band.owner === state.selected;
+        if (band.visual.userData.handlesVisible === showHandles) return;
+        band.visual.userData.handlesVisible = showHandles;
+        band.visual.children.forEach((child) => {
+          if (child.userData.rubberNode) child.visible = showHandles;
+        });
+        gpuSceneRenderer?.invalidate();
+      });
       const gpuExtras: THREE.Object3D[] = [
         // The WebGPU mesh pipeline currently renders opaque RGB only. When
         // looking from below, uploading the floor would therefore still
@@ -6658,6 +6817,7 @@ export default function Home() {
         ...debugRoot.children.filter(
           (object) => object.userData.debugKind !== "selection-outline",
         ),
+        ...state.rubberBands.flatMap((band) => band.visual ? [band.visual] : []),
       ];
       state.pieces.forEach((piece) => {
         if (piece.lockSprite?.visible) gpuExtras.push(piece.lockSprite);
@@ -6917,6 +7077,14 @@ export default function Home() {
     s.recordHistory();
     s.scene.remove(p.mesh);
     if (p.lockSprite) s.scene.remove(p.lockSprite);
+    s.rubberBands = s.rubberBands.filter((band) => {
+      if (band.owner !== p) return true;
+      s.scene.remove(band.line);
+      if (band.markers) s.scene.remove(band.markers);
+      if (band.visual) s.scene.remove(band.visual);
+      disposeRubberBand(band);
+      return false;
+    });
     s.pieces = s.pieces.filter((x) => x !== p);
     s.rebuildRenderBatches();
     s.connections = s.connections.filter((c) => c.a !== p && c.b !== p);
@@ -6939,6 +7107,13 @@ export default function Home() {
       s.scene.remove(p.mesh);
       if (p.lockSprite) s.scene.remove(p.lockSprite);
     });
+    s.rubberBands.forEach((band) => {
+      s.scene.remove(band.line);
+      if (band.markers) s.scene.remove(band.markers);
+      if (band.visual) s.scene.remove(band.visual);
+      disposeRubberBand(band);
+    });
+    s.rubberBands = [];
     s.pieces = [];
     s.connections = [];
     s.gearLinks = [];
@@ -7079,6 +7254,7 @@ export default function Home() {
           structuralStiffness,
           physicsSettings: s.physicsSettings,
           excludedPairs,
+          rubberBands: s.rubberBands,
         });
         const runtime = await RustPhysicsRuntime.create(built.scene);
         if (appRef.current !== s) {
@@ -7193,6 +7369,10 @@ export default function Home() {
           setConnectionRevision((value) => value + 1);
         }
         s.renderBatchesDirty = true;
+        s.rubberBands.forEach((band) => {
+          band.nodeBodyIds = undefined;
+          drawRubberBand(band);
+        });
         s.snapshot = undefined;
         s.snapshotConnections = undefined;
         s.world?.free();
@@ -7879,6 +8059,12 @@ export default function Home() {
   };
 
   const selected = appRef.current?.selected;
+  const selectedRubberBand = selected
+    ? appRef.current?.rubberBands.find((band) => band.owner === selected)
+    : undefined;
+  const selectedRubberRouteLength = selectedRubberBand
+    ? rubberBandLength(selectedRubberBand.guides)
+    : 0;
   const gearMotors = appRef.current?.pieces.filter((piece) => piece.gearMotor) ?? [];
   const selectedCollisionLayer = selected?.gear ? collisionLayer : "normal",
     selectedCollisionPrimitives = selected
@@ -9710,6 +9896,91 @@ export default function Home() {
                 </div>
               )}
             </div>
+            {selectedRubberBand && (
+              <div className="map-editor rubber-map-editor">
+                <p>
+                  {language === "es"
+                    ? "Arrastra los nodos azules en el visor o abre uno para editar sus coordenadas. La longitud nominal pertenece a la referencia LEGO."
+                    : "Drag the blue nodes in the viewport or open one to edit its coordinates. Nominal length belongs to the LEGO reference."}
+                </p>
+                <div className="data-row">
+                  <span>{language === "es" ? "Longitud nominal" : "Nominal length"}</span>
+                  <b>{selectedRubberBand.restLength.toFixed(2)} u · {selected.part}</b>
+                </div>
+                <div className="data-row">
+                  <span>{language === "es" ? "Recorrido actual" : "Current route"}</span>
+                  <b>{selectedRubberRouteLength.toFixed(2)} u</b>
+                </div>
+                <div className="data-row">
+                  <span>{language === "es" ? "Tensión estimada" : "Estimated tension"}</span>
+                  <b>{Math.max(0, (selectedRubberRouteLength - selectedRubberBand.restLength) * selectedRubberBand.stiffness).toFixed(1)} N</b>
+                </div>
+                <div className="map-actions rubber-map-actions">
+                  <button
+                    disabled={running}
+                    onClick={() => {
+                      const state = appRef.current;
+                      if (!state) return;
+                      state.recordHistory();
+                      const guides = selectedRubberBand.guides;
+                      guides.push(guides.at(-1)!.clone().lerp(guides[0], 0.5));
+                      drawRubberBand(selectedRubberBand);
+                      state.scheduleRecoverySave();
+                      setConnectionRevision((revision) => revision + 1);
+                    }}
+                  >
+                    {language === "es" ? "＋ Añadir nodo" : "+ Add node"}
+                  </button>
+                </div>
+                {selectedRubberBand.guides.map((guide, index) => (
+                  <details className="connector-row rubber-node-row" key={`${selectedRubberBand.id}:${index}`}>
+                    <summary>
+                      <b>#{index + 1}</b> {language === "es" ? "Nodo de recorrido" : "Route node"}
+                      <span className="connector-row-actions">
+                        <button
+                          aria-label={language === "es" ? "Eliminar nodo" : "Delete node"}
+                          title={language === "es" ? "Eliminar nodo" : "Delete node"}
+                          disabled={running || selectedRubberBand.guides.length <= 3}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const state = appRef.current;
+                            if (!state) return;
+                            state.recordHistory();
+                            selectedRubberBand.guides.splice(index, 1);
+                            drawRubberBand(selectedRubberBand);
+                            state.scheduleRecoverySave();
+                            setConnectionRevision((revision) => revision + 1);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </summary>
+                    <label>{t.position}</label>
+                    <div className="vector-fields">
+                      {guide.toArray().map((value, component) => (
+                        <DeferredNumberInput
+                          key={component}
+                          step={0.05}
+                          value={+value.toFixed(4)}
+                          onCommit={(nextValue) => {
+                            const state = appRef.current;
+                            if (!state || running) return;
+                            state.recordHistory();
+                            guide.setComponent(component, nextValue);
+                            drawRubberBand(selectedRubberBand);
+                            state.scheduleRecoverySave();
+                            setConnectionRevision((revision) => revision + 1);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+            {!selectedRubberBand && <>
             <label>{t.color}</label>
             <div className="piece-color-control">
               <i
@@ -9733,7 +10004,8 @@ export default function Home() {
                 ))}
               </select>
             </div>
-            <label className="property-check exact-collider-check">
+            </>}
+            {!selectedRubberBand && <label className="property-check exact-collider-check">
               <input
                 type="checkbox"
                 checked={selected.exactCollider}
@@ -9769,7 +10041,8 @@ export default function Home() {
                     : "More accurate, but more expensive"}
                 </small>
               </span>
-            </label>
+            </label>}
+            {!selectedRubberBand && <>
             <label>{t.move}</label>
             <div className="control-grid">
               <button onClick={() => nudge("x", -(gridStep || 0.25))}>X−</button>
@@ -9829,6 +10102,7 @@ export default function Home() {
               <button onClick={() => rotate("y", -1)}>↺ Y</button>
               <button onClick={() => rotate("z", -1)}>↺ Z</button>
             </div>
+            </>}
             {(isAxlePart(selected) ||
               selected.connectors.some(
                 (connector) => connector.role === "shaft" && connector.kind === "axle",
@@ -10764,7 +11038,6 @@ export default function Home() {
           {(
             [
               ["pieceFriction", t.pieceFriction, 0, 2, 0.01, ""],
-              ["rubberFriction", t.rubberFriction, 0, 3, 0.05, ""],
               ["frictionlessPinRotation", t.frictionlessPinRotation, 0, 5, 0.05, ""],
               ["axleSlidingFriction", t.axleSlidingFriction, 0, 1, 0.01, ""],
               ["axleRotationFriction", t.axleRotationFriction, 0, 1, 0.01, ""],

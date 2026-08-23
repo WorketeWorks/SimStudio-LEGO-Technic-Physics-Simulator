@@ -17,7 +17,7 @@ const groups:Record<PaletteFamily,Entry[]>={
     ["32138","Technic Pin 3L Double with Axlehole",86],["32002","Technic Pin 3/4",86],["2736","Technic Axle Towball",86],["6628","Technic Pin Towball with Friction",86],["41669","Technic Tooth 1 x 3 with Axlehole with Rounded Bottom Cavity",86]
   ],
   wheels:[["4185","Technic Wedge Belt Wheel",86],["42610","Wheel Rim 8 x 11.2 with Centre Groove",86],["56904","Wheel Rim 14 x 30 with 6 Spokes and No Pegholes",86],["50951","Tyre 6/30 x 11",26]],
-  rubber:[["45590","Technic Axle Joiner Double Flexible",11],["85543","Rubber Belt Round 15 / 1.6",15],["85544","Train Wheel Large Traction Band",26],["85545","Rubber Belt Round 26 / 1.6",1],["85546","Rubber Belt Round 33 / 1.6",14]],
+  rubber:[["45590","Technic Axle Joiner Double Flexible",11],["85543","Rubber Belt Round 15 / 1.6",15],["85545","Rubber Belt Round 26 / 1.6",1],["85546","Rubber Belt Round 33 / 1.6",14]],
   pins:[
     ["11214","Technic Axle Pin Long with Friction, 2L Pin",85],["43093","Technic Axle Pin with Friction",7],["3749","Technic Axle Pin",2],["18651","Technic Axle Pin Long with Friction, 2L Axle",11],["4274","Technic Pin 1/2",86],
     ["6558","Technic Pin Long with Friction and Slot",7],["87082","Technic Pin Long with Pin Hole",86],["32054","Technic Pin Long with Stop Bush",86],["32054","Technic Pin Long with Stop Bush",5],["32556","Technic Pin Long without Friction",2],["15100","Technic Pin with Friction and Perpendicular Hole",11],["2780","Technic Pin with Friction and Slots",11],["3673","Technic Pin without Friction",86]
