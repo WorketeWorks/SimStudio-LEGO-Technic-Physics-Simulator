@@ -25,23 +25,8 @@
         {
           "local": [
             0,
-            -5.551115123125783e-17,
-            -0.4
-          ],
-          "axis": [
             0,
-            0,
-            1
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6500089168548584
-        },
-        {
-          "local": [
-            0,
-            0,
-            -0.1
+            0
           ],
           "axis": [
             0,
@@ -51,93 +36,26 @@
           "kind": "axle",
           "role": "socket",
           "diameter": 0.6500000000000001
-        },
-        {
-          "local": [
-            -0.024999999999999994,
-            0,
-            1
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 0.95
         }
       ],
       "colliders": [
         {
           "shape": "box",
           "center": [
-            -0.012499999999999997,
-            -2.7755575615628907e-17,
-            0.3
-          ],
-          "size": [
-            1.4002231964940446,
-            1,
-            0.9
-          ],
-          "rotation": [
-            0.5044438265101682,
-            0.4955163225321435,
-            -0.49551632253214356,
-            0.5044438265101683
-          ]
-        },
-        {
-          "shape": "box",
-          "center": [
             -0.125,
-            2.7755575615628926e-17,
-            0.3000000000000001
+            5.551115123125783e-17,
+            0.5
           ],
           "size": [
-            1.422146265332789,
+            1.0307764064044151,
             1,
             0.9
           ],
           "rotation": [
-            0.5421694012215318,
-            0.4539298848710951,
-            -0.45392988487109504,
-            0.5421694012215319
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            -0.024999999999999994,
-            0,
-            1
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            -0.7071067811865475,
-            0.7071067811865475
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            0,
-            -5.551115123125783e-17,
-            -0.4
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0.7071067811865475,
-            0,
-            0,
-            0.7071067811865475
+            0.5573454101893038,
+            0.4351621464935993,
+            -0.43516214649359936,
+            0.5573454101893037
           ]
         },
         {
@@ -161,7 +79,7 @@
           "center": [
             0,
             0,
-            -0.1
+            0
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
@@ -497,7 +415,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -512,7 +430,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -591,7 +509,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -774,8 +692,8 @@
           ],
           "kind": "round",
           "role": "shaft",
-          "diameter": 0.8000531196594239,
-          "length": 0.94
+          "diameter": 0.45,
+          "length": 1
         },
         {
           "local": [
@@ -790,56 +708,8 @@
           ],
           "kind": "round",
           "role": "shaft",
-          "diameter": 0.8000531196594239,
-          "length": 0.94
-        },
-        {
-          "local": [
-            -1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 0.7801000118255617
-        },
-        {
-          "local": [
-            -1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 0.8000531196594239
-        },
-        {
-          "local": [
-            1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 0.8000531196594239
+          "diameter": 0.45,
+          "length": 1
         }
       ],
       "colliders": [
@@ -1149,7 +1019,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125
         }
@@ -1419,7 +1289,7 @@
             0
           ],
           "radius": 1.3539019744873046,
-          "halfHeight": 0.4389000000000002,
+          "halfHeight": 0.25,
           "rotation": [
             0.7071067811865475,
             0,
@@ -1472,13 +1342,45 @@
             0,
             0
           ],
-          "radius": 2.4866249954700472,
-          "halfHeight": 0.4750000000000003,
+          "radius": 2.6,
+          "halfHeight": 0.25,
           "rotation": [
             0.7071067811865475,
             0,
             0,
-            0.7071067811865475
+            0.7071067811865476
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 2,
+          "halfHeight": 0.4,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.6,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
           ]
         }
       ],
@@ -1488,11 +1390,11 @@
           "shape": "cylinder",
           "center": [
             0,
-            0,
+            -0.1337499976158143,
             0
           ],
-          "radius": 2.1882299960136415,
-          "halfHeight": 0.4560000000000003,
+          "radius": 2.35,
+          "halfHeight": 0.25,
           "rotation": [
             0.7071067811865475,
             0,
@@ -2562,6 +2464,228 @@
         ]
       }
     },
+    "6538": {
+      "name": "Technic Axle Joiner",
+      "family": "connectors",
+      "modelPart": "6538a",
+      "modelFile": "parts/6538a.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "shaft",
+          "diameter": 1.0000000000000002,
+          "length": 1.88
+        },
+        {
+          "local": [
+            0,
+            0,
+            1
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 1.0000000000000002
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.475,
+          "halfHeight": 0.95,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.5000000000000001,
+          -1
+        ],
+        "max": [
+          0.5,
+          0.5000000000000001,
+          1
+        ]
+      }
+    },
+    "6539": {
+      "name": "Technic Transmission Driving Ring",
+      "family": "gears",
+      "modelPart": "6539",
+      "modelFile": "parts/6539.dat",
+      "connectors": [],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            1.76,
+            1.7600000000000005,
+            1.7600000000000005
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            1.6896,
+            1.5488000000000004,
+            1.5488000000000004
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1,
+          -1.0000000000000002,
+          -1.0000000000000002
+        ],
+        "max": [
+          1,
+          1.0000000000000002,
+          1.0000000000000002
+        ]
+      }
+    },
+    "6542": {
+      "name": "Technic Gear 16 Tooth with Clutch (1 stud)",
+      "family": "gears",
+      "modelPart": "6542a",
+      "modelFile": "parts/6542a.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            -2.7755575615628914e-17,
+            -0.2
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.8
+        },
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.8,
+          "length": 1.0000000000000002
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 1.0381600427627564,
+          "halfHeight": 0.4750000000000001,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.9135808376312257,
+          "halfHeight": 0.45600000000000007,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1.0928000450134279,
+          -1.0928000450134279,
+          -0.5000000000000001
+        ],
+        "max": [
+          1.0928000450134279,
+          1.0928000450134279,
+          0.5000000000000001
+        ]
+      }
+    },
     "6553": {
       "name": "Technic Axle Connector 1.5",
       "family": "axles",
@@ -3303,7 +3427,7 @@
             0
           ],
           "kind": "round",
-          "role": "socket",
+          "role": "shaft",
           "diameter": 0.8,
           "length": 1
         }
@@ -3982,6 +4106,96 @@
         ]
       }
     },
+    "6641": {
+      "name": "Technic Transmission Changeover Catch Type 1",
+      "family": "connectors",
+      "modelPart": "6641",
+      "modelFile": "parts/6641.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            2.7755575615628914e-17,
+            0.2598500013351441
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.7098500013351441
+        },
+        {
+          "local": [
+            0,
+            0,
+            1
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 1
+        },
+        {
+          "local": [
+            0,
+            0,
+            2
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 1
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            1.1102230246251565e-16,
+            1
+          ],
+          "size": [
+            0.88,
+            0.7920000000000004,
+            2.2880000000000007
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -0.5,
+          -0.45000000000000007,
+          -0.3000000000000001
+        ],
+        "max": [
+          0.5,
+          0.4500000000000003,
+          2.3000000000000003
+        ]
+      }
+    },
     "10197": {
       "name": "Technic Axle and Pin Connector Hub 90°",
       "family": "connectors",
@@ -4100,8 +4314,8 @@
             0,
             0
           ],
-          "radius": 0.5904250144958497,
-          "halfHeight": 0.4750000000000001,
+          "radius": 0.65,
+          "halfHeight": 0.5,
           "rotation": [
             0.7071067811865475,
             0,
@@ -4119,8 +4333,8 @@
             0,
             0
           ],
-          "radius": 0.5195740127563477,
-          "halfHeight": 0.45600000000000007,
+          "radius": 0.4,
+          "halfHeight": 0.5,
           "rotation": [
             0.7071067811865475,
             0,
@@ -4279,7 +4493,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -5068,7 +5282,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5083,7 +5297,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5098,7 +5312,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5113,7 +5327,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5128,7 +5342,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5143,7 +5357,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5222,22 +5436,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            -3,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5252,22 +5451,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            3,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5282,22 +5466,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            -2,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5312,22 +5481,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            -1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5342,22 +5496,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5372,22 +5511,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5402,22 +5526,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            2,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5432,7 +5541,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5447,7 +5556,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5462,7 +5571,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5477,7 +5586,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5492,7 +5601,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5507,7 +5616,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -5522,7 +5631,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -5569,20 +5678,39 @@
         {
           "shape": "box",
           "center": [
-            0,
-            0,
-            0
+            -1.0099999999999993,
+            6.328271240363393e-17,
+            0.5700000000000001
           ],
           "size": [
-            10,
+            8.061017305526642,
             1,
             0.9
           ],
           "rotation": [
-            0,
-            0,
-            0,
-            0.7071067811865476
+            -0.7053278481779177,
+            -0.050126106817788736,
+            -0.05012610681778849,
+            0.7053278481779176
+          ]
+        },
+        {
+          "shape": "box",
+          "center": [
+            1.0099999999999993,
+            6.328271240363393e-17,
+            0.5700000000000001
+          ],
+          "size": [
+            8.061017305526642,
+            1,
+            0.9
+          ],
+          "rotation": [
+            0.7053278481779177,
+            0.05012610681778873,
+            -0.05012610681778876,
+            0.7053278481779176
           ]
         },
         {
@@ -5668,6 +5796,38 @@
         {
           "shape": "cylinder",
           "center": [
+            3,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -3,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
             5,
             0,
             0
@@ -5678,6 +5838,70 @@
             0,
             0,
             -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -2,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -1,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            2,
+            1.1102230246251565e-16,
+            1
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
             0.7071067811865475
           ]
         }
@@ -6403,6 +6627,68 @@
           6.950000000000001,
           1.4500000000000002,
           0.5
+        ]
+      }
+    },
+    "18947": {
+      "name": "Technic Transmission Driving Ring 3L",
+      "family": "gears",
+      "modelPart": "18947",
+      "modelFile": "parts/18947.dat",
+      "connectors": [],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            1.5840000000000003,
+            1.5840000000000005,
+            2.4640000000000004
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            1.5206400000000002,
+            1.3939200000000005,
+            2.1683200000000005
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -0.9000000000000001,
+          -0.9000000000000002,
+          -1.4000000000000001
+        ],
+        "max": [
+          0.9000000000000001,
+          0.9000000000000002,
+          1.4000000000000001
         ]
       }
     },
@@ -7494,52 +7780,6 @@
         },
         {
           "local": [
-            1.6464450359344482,
-            0.3,
-            0.35355500578880306
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.589533668756485
-        },
-        {
-          "local": [
-            0.3535550057888031,
-            0.3,
-            1.6464450359344482
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.5895336687564852
-        },
-        {
-          "local": [
-            0,
-            4.996003610813204e-16,
-            1
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 1.0000000000000009
-        },
-        {
-          "local": [
             0,
             4.996003610813204e-16,
             8
@@ -7557,54 +7797,6 @@
         {
           "local": [
             1,
-            4.996003610813204e-16,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 1.0000000000000009
-        },
-        {
-          "local": [
-            1,
-            4.996003610813204e-16,
-            1
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 1.0000000000000009
-        },
-        {
-          "local": [
-            1,
-            4.996003610813204e-16,
-            2
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 1.0000000000000009
-        },
-        {
-          "local": [
-            2,
             4.996003610813204e-16,
             1
           ],
@@ -9523,7 +9715,23 @@
         {
           "local": [
             -1,
+            0.5,
+            0
+          ],
+          "axis": [
+            1,
             0,
+            0
+          ],
+          "kind": "round",
+          "role": "shaft",
+          "diameter": 1.9000000000000001,
+          "length": 1.41
+        },
+        {
+          "local": [
+            -1,
+            -0.5,
             0
           ],
           "axis": [
@@ -9539,7 +9747,23 @@
         {
           "local": [
             1,
+            0.5,
+            0
+          ],
+          "axis": [
+            1,
             0,
+            0
+          ],
+          "kind": "round",
+          "role": "shaft",
+          "diameter": 1.9000000000000001,
+          "length": 1.41
+        },
+        {
+          "local": [
+            1,
+            -0.5,
             0
           ],
           "axis": [
@@ -10324,7 +10548,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000003
@@ -10340,7 +10564,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000003
@@ -10669,7 +10893,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10685,7 +10909,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10701,7 +10925,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10717,7 +10941,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10733,7 +10957,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10749,7 +10973,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10765,7 +10989,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10781,7 +11005,7 @@
             1,
             0
           ],
-          "kind": "round",
+          "kind": "half",
           "role": "socket",
           "diameter": 0.8,
           "length": 0.5000000000000009
@@ -10807,54 +11031,6 @@
             0,
             -3.608224830031759e-16,
             0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 0.5000000000000009
-        },
-        {
-          "local": [
-            2,
-            -3.608224830031759e-16,
-            -6
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "round",
-          "role": "socket",
-          "diameter": 0.8,
-          "length": 0.5000000000000009
-        },
-        {
-          "local": [
-            2,
-            -3.608224830031759e-16,
-            -5
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 0.5000000000000009
-        },
-        {
-          "local": [
-            4,
-            -3.608224830031759e-16,
-            -3
           ],
           "axis": [
             0,
@@ -10923,44 +11099,6 @@
           ]
         },
         {
-          "shape": "box",
-          "center": [
-            2,
-            -3.608224830031759e-16,
-            -3
-          ],
-          "size": [
-            6,
-            1,
-            0.9
-          ],
-          "rotation": [
-            0,
-            -0.7071067811865475,
-            0,
-            0.7071067811865476
-          ]
-        },
-        {
-          "shape": "box",
-          "center": [
-            3,
-            -3.608224830031759e-16,
-            -4
-          ],
-          "size": [
-            2.82842712474619,
-            1,
-            0.9
-          ],
-          "rotation": [
-            0,
-            -0.38268343236508984,
-            0,
-            0.9238795325112867
-          ]
-        },
-        {
           "shape": "cylinder",
           "center": [
             0,
@@ -10998,70 +11136,6 @@
             4,
             -3.608224830031759e-16,
             0
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            2,
-            -3.608224830031759e-16,
-            -6
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            2,
-            -3.608224830031759e-16,
-            0
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            2,
-            -3.608224830031759e-16,
-            -5
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            4,
-            -3.608224830031759e-16,
-            -3
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
@@ -12607,8 +12681,8 @@
             0,
             0
           ],
-          "radius": 2.2325,
-          "halfHeight": 0.4750000000000003,
+          "radius": 2.35,
+          "halfHeight": 0.5,
           "rotation": [
             0.7071067811865475,
             0,
@@ -12626,8 +12700,8 @@
             0,
             0
           ],
-          "radius": 1.9646,
-          "halfHeight": 0.4560000000000003,
+          "radius": 2,
+          "halfHeight": 0.5,
           "rotation": [
             0.7071067811865475,
             0,
@@ -13451,8 +13525,8 @@
           ],
           "kind": "round",
           "role": "shaft",
-          "diameter": 0.8000000000000002,
-          "length": 1.41
+          "diameter": 0.8,
+          "length": 1
         },
         {
           "local": [
@@ -13468,11 +13542,11 @@
           "kind": "round",
           "role": "shaft",
           "diameter": 0.8000000000000002,
-          "length": 1.41
+          "length": 1
         },
         {
           "local": [
-            -0.5,
+            0,
             0,
             0
           ],
@@ -13482,8 +13556,9 @@
             0
           ],
           "kind": "round",
-          "role": "socket",
-          "diameter": 0.8
+          "role": "shaft",
+          "diameter": 0.8,
+          "length": 1
         }
       ],
       "colliders": [
@@ -13692,6 +13767,251 @@
           0.6350015,
           0.6350015000000002,
           1.0000000000000002
+        ]
+      }
+    },
+    "35185": {
+      "name": "Technic Gear 20 Tooth Double Bevel with Clutch on Both Sides",
+      "family": "gears",
+      "modelPart": "35185",
+      "modelFile": "parts/35185.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.8,
+          "length": 1.0000000000000002
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 1.2825,
+          "halfHeight": 0.4750000000000001,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 1.1286,
+          "halfHeight": 0.45600000000000007,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1.35,
+          -1.35,
+          -0.5000000000000001
+        ],
+        "max": [
+          1.35,
+          1.35,
+          0.5000000000000001
+        ]
+      }
+    },
+    "35186": {
+      "name": "Technic Transmission Driving Ring Extension",
+      "family": "gears",
+      "modelPart": "35186",
+      "modelFile": "parts/35186.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.8
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0.2
+          ],
+          "size": [
+            1.4079415702819824,
+            1.4079415702819824,
+            1.1480000000000001
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.41759999999999997,
+          "halfHeight": 0.34559999999999996,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0.2
+          ],
+          "size": [
+            1.2389885818481445,
+            1.2389885818481445,
+            1.1020800000000002
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.367488,
+          "halfHeight": 0.33177599999999996,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -0.8585009574890137,
+          -0.8585009574890138,
+          -0.5000000000000001
+        ],
+        "max": [
+          0.8585009574890137,
+          0.8585009574890138,
+          0.9000000000000001
+        ]
+      }
+    },
+    "35188": {
+      "name": "Technic Changeover Rotary Catch",
+      "family": "gears",
+      "modelPart": "35188",
+      "modelFile": "parts/35188.dat",
+      "connectors": [],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            2.428800033569336,
+            2.428800033569336,
+            1.2998303680419927
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            2.1373440295410155,
+            2.1373440295410155,
+            1.247837153320313
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1.3800000190734865,
+          -1.3800000190734865,
+          -0.7385399818420413
+        ],
+        "max": [
+          1.3800000190734865,
+          1.3800000190734865,
+          0.7385399818420413
         ]
       }
     },
@@ -17358,7 +17678,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17373,7 +17693,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17388,7 +17708,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -17403,7 +17723,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17418,7 +17738,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17433,7 +17753,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17448,7 +17768,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17463,7 +17783,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17478,7 +17798,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17493,7 +17813,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -17508,7 +17828,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17523,7 +17843,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17538,7 +17858,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17553,7 +17873,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17952,7 +18272,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -17967,7 +18287,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -17982,7 +18302,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6
         },
@@ -17997,7 +18317,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18012,7 +18332,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6
         },
@@ -18027,7 +18347,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18042,7 +18362,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18057,7 +18377,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18072,7 +18392,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18087,7 +18407,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -18449,7 +18769,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18464,7 +18784,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18479,7 +18799,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18494,7 +18814,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18509,7 +18829,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -18524,7 +18844,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18539,7 +18859,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18554,7 +18874,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18569,7 +18889,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18584,7 +18904,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -18855,7 +19175,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18870,7 +19190,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -18885,7 +19205,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -18900,7 +19220,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6
         },
@@ -18915,7 +19235,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6
         },
@@ -18930,7 +19250,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -20391,22 +20711,6 @@
       "connectors": [
         {
           "local": [
-            0.5,
-            0,
-            0
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "shaft",
-          "diameter": 1,
-          "length": 1.7860216941833496
-        },
-        {
-          "local": [
             0,
             0,
             0
@@ -20596,8 +20900,8 @@
             0,
             0
           ],
-          "radius": 1.5383235221862794,
-          "halfHeight": 0.4560000000000002,
+          "radius": 1.5,
+          "halfHeight": 0.5,
           "rotation": [
             0.7071067811865475,
             0,
@@ -22809,7 +23113,7 @@
             0
           ],
           "kind": "round",
-          "role": "shaft",
+          "role": "socket",
           "diameter": 1.0000000000000002,
           "length": 0.94
         },
@@ -22825,24 +23129,9 @@
             0
           ],
           "kind": "round",
-          "role": "shaft",
+          "role": "socket",
           "diameter": 1.0000000000000002,
           "length": 0.94
-        },
-        {
-          "local": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
         }
       ],
       "colliders": [
@@ -23154,7 +23443,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -23169,7 +23458,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -23184,7 +23473,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23199,7 +23488,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -23214,7 +23503,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -23229,7 +23518,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23244,7 +23533,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23259,7 +23548,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -23274,7 +23563,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -23289,7 +23578,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23304,7 +23593,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -23319,7 +23608,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -23334,7 +23623,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23349,7 +23638,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23492,7 +23781,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -23507,7 +23796,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -23522,7 +23811,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -23537,7 +23826,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -23552,7 +23841,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -23567,7 +23856,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         }
@@ -23810,7 +24099,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23825,7 +24114,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23840,7 +24129,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23855,7 +24144,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23870,7 +24159,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -23885,7 +24174,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24028,7 +24317,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -24043,7 +24332,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -24058,7 +24347,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -24073,7 +24362,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -24088,7 +24377,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         },
@@ -24103,7 +24392,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.8125000000000001
         }
@@ -24403,7 +24692,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24418,7 +24707,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24433,7 +24722,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24448,7 +24737,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24463,7 +24752,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24478,7 +24767,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24493,7 +24782,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24508,7 +24797,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24523,7 +24812,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24538,7 +24827,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24617,7 +24906,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24632,7 +24921,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24647,7 +24936,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24662,7 +24951,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24677,7 +24966,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24692,7 +24981,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24707,7 +24996,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24722,7 +25011,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24737,7 +25026,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24752,7 +25041,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24767,7 +25056,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24782,7 +25071,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24797,7 +25086,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -24812,7 +25101,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -25063,22 +25352,7 @@
             0,
             0
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000003
-        },
-        {
-          "local": [
-            0,
-            -9.992007221626409e-16,
-            -8
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -25093,22 +25367,7 @@
             0,
             0
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.5999999999999999
-        },
-        {
-          "local": [
-            0,
-            -4.996003610813204e-16,
-            -4
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25123,24 +25382,9 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            0,
-            -7.216449660063518e-16,
-            -6
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.5999999999999999
         },
         {
           "local": [
@@ -25153,24 +25397,9 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
-        },
-        {
-          "local": [
-            0,
-            -2.220446049250313e-16,
-            -2
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6
         },
         {
           "local": [
@@ -25183,27 +25412,12 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
         {
           "local": [
-            0,
-            2.220446049250313e-16,
-            2
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6
-        },
-        {
-          "local": [
             1,
             0,
             0
@@ -25213,22 +25427,7 @@
             0,
             0
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -25243,22 +25442,7 @@
             0,
             0
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000003
-        },
-        {
-          "local": [
-            0,
-            9.992007221626409e-16,
-            8
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -25273,22 +25457,7 @@
             0,
             0
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.5999999999999999
-        },
-        {
-          "local": [
-            0,
-            4.996003610813204e-16,
-            4
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25303,24 +25472,9 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            0,
-            7.216449660063518e-16,
-            6
-          ],
-          "axis": [
-            1,
-            0,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.5999999999999999
         },
         {
           "local": [
@@ -25333,7 +25487,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25348,7 +25502,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -25363,7 +25517,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -25378,7 +25532,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25393,7 +25547,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25408,7 +25562,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -25423,7 +25577,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.5999999999999999
         },
@@ -25438,7 +25592,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000003
         },
@@ -25453,7 +25607,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -25820,7 +25974,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -25835,7 +25989,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -25882,84 +26036,205 @@
         {
           "shape": "box",
           "center": [
-            0,
-            0,
-            0
+            0.0751445086705202,
+            -2.6857129237319545e-16,
+            2.0115606936416186
           ],
           "size": [
-            18,
+            14.141318135616523,
             1,
             0.9
           ],
           "rotation": [
+            -1.2366248829967531e-17,
+            0.6511308684688736,
+            -1.4414238935312043e-17,
+            0.7589654749242356
+          ]
+        },
+        {
+          "shape": "box",
+          "center": [
+            0.0751445086705202,
+            2.6857129237319545e-16,
+            -2.0115606936416186
+          ],
+          "size": [
+            14.141318135616523,
+            1,
+            0.9
+          ],
+          "rotation": [
+            -1.2366248829967531e-17,
+            -0.6511308684688736,
+            1.4414238935312043e-17,
+            0.7589654749242356
+          ]
+        },
+        {
+          "shape": "box",
+          "center": [
+            0.5764705882352941,
+            1.9396249312568904e-16,
+            1.5058823529411764
+          ],
+          "size": [
+            15.032513781408461,
+            1,
+            0.9
+          ],
+          "rotation": [
+            0.5188199347762026,
+            0.4804434152726161,
+            -0.4804434152726169,
+            0.5188199347762033
+          ]
+        },
+        {
+          "shape": "box",
+          "center": [
+            0.7294117647058823,
+            -2.2106499637389144e-16,
+            -1.5176470588235293
+          ],
+          "size": [
+            15.032513781408461,
+            1,
+            0.9
+          ],
+          "rotation": [
+            0.5188199347762026,
+            -0.4804434152726161,
+            0.4804434152726169,
+            0.5188199347762033
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            -9
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            9
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -1,
+            0,
+            -9
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -1,
+            0,
+            9
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            -5
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            5
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            1.1379786002407855e-15,
+            9
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
             0.7071067811865475,
             0,
-            0.7071067811865476,
-            4.415885040048117e-17
+            0,
+            0.7071067811865475
           ]
         },
         {
           "shape": "cylinder",
           "center": [
             1,
-            0,
-            -9
+            -7.216449660063518e-16,
+            -6
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
           "rotation": [
             0,
             0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            1,
-            0,
-            9
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            -1,
-            0,
-            -9
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            -1,
-            0,
-            9
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
+            -0.7071067811865475,
+            0.7071067811865475
           ]
         },
         {
@@ -25981,17 +26256,145 @@
         {
           "shape": "cylinder",
           "center": [
-            0,
-            1.1379786002407855e-15,
-            9
+            1,
+            7.216449660063518e-16,
+            6
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
           "rotation": [
-            0.7071067811865475,
             0,
             0,
+            -0.7071067811865475,
             0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            -4.996003610813204e-16,
+            -4
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            -2.220446049250313e-16,
+            -2
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            2.220446049250313e-16,
+            2
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            4.996003610813204e-16,
+            4
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -1,
+            -9.71445146547012e-16,
+            -8
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            -1,
+            9.71445146547012e-16,
+            8
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            -3
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            1,
+            0,
+            3
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.5,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
           ]
         }
       ],
@@ -26201,7 +26604,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26216,7 +26619,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26231,7 +26634,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26246,7 +26649,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26261,7 +26664,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26276,7 +26679,7 @@
             0,
             0
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26355,22 +26758,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            -1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26385,22 +26773,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            1,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26415,22 +26788,7 @@
             0,
             1
           ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6000000000000001
-        },
-        {
-          "local": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26445,7 +26803,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26460,7 +26818,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         },
@@ -26475,7 +26833,7 @@
             0,
             1
           ],
-          "kind": "axle",
+          "kind": "round",
           "role": "socket",
           "diameter": 0.6000000000000001
         }
@@ -26522,20 +26880,39 @@
         {
           "shape": "box",
           "center": [
-            0,
+            -3,
             0,
             0
           ],
           "size": [
-            6,
+            2,
             1,
             0.9
           ],
           "rotation": [
+            0.5,
+            0.5,
+            0.5,
+            -0.5
+          ]
+        },
+        {
+          "shape": "box",
+          "center": [
+            3,
             0,
-            0,
-            0,
-            0.7071067811865476
+            0
+          ],
+          "size": [
+            2,
+            1,
+            0.9
+          ],
+          "rotation": [
+            0.5,
+            0.5,
+            0.5,
+            -0.5
           ]
         },
         {
@@ -26592,38 +26969,6 @@
             3,
             1.1102230246251565e-16,
             1
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            -0.7071067811865475,
-            0.7071067811865475
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            -3,
-            0,
-            0
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            -0.7071067811865475,
-            0.7071067811865475
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            3,
-            0,
-            0
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
@@ -27557,22 +27902,6 @@
           "role": "socket",
           "diameter": 0.8,
           "length": 1.0000000000000004
-        },
-        {
-          "local": [
-            1,
-            -2.7755575615628914e-16,
-            -3
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6,
-          "length": 1.0000000000000004
         }
       ],
       "colliders": [
@@ -27601,25 +27930,6 @@
             0.5,
             -2.7755575615628914e-16,
             0
-          ],
-          "size": [
-            1,
-            1,
-            0.9
-          ],
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "box",
-          "center": [
-            0.5,
-            -2.7755575615628914e-16,
-            -3
           ],
           "size": [
             1,
@@ -27671,38 +27981,6 @@
             1,
             -2.7755575615628914e-16,
             0
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            0,
-            -2.7755575615628914e-16,
-            -3
-          ],
-          "radius": 0.45,
-          "halfHeight": 0.5,
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "shape": "cylinder",
-          "center": [
-            1,
-            -2.7755575615628914e-16,
-            -3
           ],
           "radius": 0.45,
           "halfHeight": 0.5,
@@ -29090,13 +29368,29 @@
             0,
             0
           ],
-          "radius": 1.0278999710083008,
-          "halfHeight": 0.4750000000000001,
+          "radius": 1.08,
+          "halfHeight": 0.25,
           "rotation": [
             0.7071067811865475,
             0,
             0,
             0.7071067811865475
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.6,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
           ]
         }
       ],
@@ -29109,13 +29403,29 @@
             0,
             0
           ],
-          "radius": 0.9045519744873047,
-          "halfHeight": 0.45600000000000007,
+          "radius": 0.85,
+          "halfHeight": 0.25,
           "rotation": [
             0.7071067811865475,
             0,
             0,
-            0.7071067811865475
+            0.7071067811865476
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.5,
+          "halfHeight": 0.5,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
           ]
         }
       ],
@@ -29578,36 +29888,6 @@
           "role": "socket",
           "diameter": 0.6,
           "length": 1
-        },
-        {
-          "local": [
-            0,
-            -5.551115123125783e-17,
-            -0.4
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6500089168548585
-        },
-        {
-          "local": [
-            0,
-            5.551115123125783e-17,
-            0.4
-          ],
-          "axis": [
-            0,
-            0,
-            1
-          ],
-          "kind": "axle",
-          "role": "socket",
-          "diameter": 0.6500089168548585
         }
       ],
       "colliders": [
@@ -30663,6 +30943,11 @@
       "render": "catalog/renders/10197.png",
       "color": 72
     },
+    "6538-71": {
+      "geometry": "catalog/geometry/6538-71.json",
+      "render": "catalog/renders/6538a.png",
+      "color": 71
+    },
     "26287-71": {
       "geometry": "catalog/geometry/26287-71.json",
       "render": "catalog/renders/26287.png",
@@ -30711,6 +30996,11 @@
     "62520c01-71": {
       "geometry": "catalog/geometry/62520c01-71.json",
       "render": "catalog/renders/62520.png",
+      "color": 71
+    },
+    "35188-71": {
+      "geometry": "catalog/geometry/35188-71.json",
+      "render": "catalog/renders/35188.png",
       "color": 71
     },
     "46834-71": {
@@ -30826,6 +31116,26 @@
     "41669-71": {
       "geometry": "catalog/geometry/41669-71.json",
       "render": "catalog/renders/41669.png",
+      "color": 71
+    },
+    "6641-71": {
+      "geometry": "catalog/geometry/6641-71.json",
+      "render": "catalog/renders/6641.png",
+      "color": 71
+    },
+    "6539-71": {
+      "geometry": "catalog/geometry/6539-71.json",
+      "render": "catalog/renders/6539.png",
+      "color": 71
+    },
+    "18947-71": {
+      "geometry": "catalog/geometry/18947-71.json",
+      "render": "catalog/renders/18947.png",
+      "color": 71
+    },
+    "35186-71": {
+      "geometry": "catalog/geometry/35186-71.json",
+      "render": "catalog/renders/35186.png",
       "color": 71
     },
     "4185-71": {
@@ -31168,6 +31478,11 @@
       "render": "catalog/renders/94925.png",
       "color": 71
     },
+    "6542-72": {
+      "geometry": "catalog/geometry/6542-72.json",
+      "render": "catalog/renders/6542a.png",
+      "color": 72
+    },
     "32198-19": {
       "geometry": "catalog/geometry/32198-19.json",
       "render": "catalog/renders/32198.png",
@@ -31182,6 +31497,11 @@
       "geometry": "catalog/geometry/32269-19.json",
       "render": "catalog/renders/32269.png",
       "color": 19
+    },
+    "35185-72": {
+      "geometry": "catalog/geometry/35185-72.json",
+      "render": "catalog/renders/35185.png",
+      "color": 72
     },
     "3648-72": {
       "geometry": "catalog/geometry/3648-72.json",
@@ -31522,6 +31842,26 @@
       "geometry": "catalog/geometry/55615-71.json",
       "render": "catalog/renders/55615.png",
       "color": 71
+    },
+    "35188-25": {
+      "geometry": "catalog/geometry/35188-25.json",
+      "render": "catalog/renders/35188.png",
+      "color": 25
+    },
+    "6539-4": {
+      "geometry": "catalog/geometry/6539-4.json",
+      "render": "catalog/renders/6539.png",
+      "color": 4
+    },
+    "18947-72": {
+      "geometry": "catalog/geometry/18947-72.json",
+      "render": "catalog/renders/18947.png",
+      "color": 72
+    },
+    "35186-14": {
+      "geometry": "catalog/geometry/35186-14.json",
+      "render": "catalog/renders/35186.png",
+      "color": 14
     }
   }
 }
