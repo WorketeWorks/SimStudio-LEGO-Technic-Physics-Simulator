@@ -1,0 +1,11 @@
+0 Technic Axle Hole Two-toothed Sliding Side Edges
+0 Name: axl4hol2.dat
+0 Author: Santeri Piippo [arezey]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+2 24 2 0 -5.602 0 0 -6
+2 24 -2 0 5.602 0 0 6
+2 24 6 0 0 5.602 0 -2
+2 24 -6 0 0 -5.602 0 2
+1 16 0 0 0 6 0 0 0 1 0 0 0 6 1-4edge.dat
+1 16 0 0 0 -6 0 0 0 1 0 0 0 -6 1-4edge.dat

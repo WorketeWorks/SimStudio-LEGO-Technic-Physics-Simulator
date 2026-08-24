@@ -1,0 +1,8 @@
+0 Chord 0.4375
+0 Name: 7-16chrd.dat
+0 Author: Willy Tschager [Holly-Wood]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+4 16 -.7071 0 .7071 -.9239 0 .3827 1 0 0 .9239 0 .3827
+4 16 -.7071 0 .7071 .9239 0 .3827 .7071 0 .7071 -.3827 0 .9239
+4 16 -.3827 0 .9239 .7071 0 .7071 .3827 0 .9239 0 0 1

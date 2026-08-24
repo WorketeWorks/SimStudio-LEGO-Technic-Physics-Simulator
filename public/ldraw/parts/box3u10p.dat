@@ -1,0 +1,10 @@
+0 Box with 3 Faces without 10 Parallel Edges
+0 Name: box3u10p.dat
+0 Author: Owen Burgoyne [C3POwen]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+4 16 1 1 -1 -1 1 -1 -1 1 1 1 1 1
+4 16 -1 1 1 -1 0 1 1 0 1 1 1 1
+4 16 1 1 -1 1 0 -1 -1 0 -1 -1 1 -1
+2 24 1 1 1 -1 1 1
+2 24 -1 1 -1 1 1 -1

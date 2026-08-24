@@ -348,8 +348,12 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     structuralStiffness,
     physicsSettings,
     excludedPairs,
-    rubberBands = [],
+    rubberBands: _rubberBands = [],
   } = options;
+  // Rubber-band simulation is temporarily disabled. Older callers may still
+  // pass saved band data, but it must not remove the normal catalog pieces or
+  // create hidden node bodies.
+  const rubberBands: RubberBand[] = [];
   // A rubber's catalog Piece is editor metadata only. Its simulation is made
   // from the loop nodes below, so it must never create a second invisible body.
   const rubberOwners = new Set(

@@ -189,7 +189,8 @@ const categories = [
   { id: "connectors", icon: "⌘" },
   { id: "gears", icon: "⚙" },
   { id: "wheels", icon: "◉" },
-  { id: "rubber", icon: "◌" },
+  { id: "specials", icon: "✦" },
+  { id: "spike", icon: "⬢" },
   { id: "imported", icon: "↓" },
 ] as const;
 
@@ -198,7 +199,7 @@ const categories = [
 const kindFor = (category: string, name = ""): PieceKind =>
   category === "motors" || /motor/i.test(name)
     ? "motor"
-    : category === "gears" || category === "wheels" || /gear|wheel|tyre|tire/i.test(name)
+    : category === "gears" || category === "wheels" || category === "specials" || /gear|wheel|tyre|tire|rubber/i.test(name)
       ? "wheel"
       : "beam";
 
@@ -2921,7 +2922,6 @@ export default function Home() {
           const box = new THREE.Box3().setFromObject(wrapper);
           wrapper.position.y -= box.min.y;
         }
-        makeRubberBelt(piece);
         if (!state.bulkLoading) {
           setCount(state.pieces.length);
           setMessage(
@@ -5134,31 +5134,10 @@ export default function Home() {
                 },
           ];
         });
-        state.rubberBands = (document.rubberBands ?? []).map((saved) => {
-          const band: RubberBand = {
-            id: saved.id,
-            owner: saved.pieceId ? piecesById.get(saved.pieceId) : undefined,
-            guides: saved.guides.map((guide) => new THREE.Vector3().fromArray(guide)),
-            radius: saved.radius,
-            restLength: saved.restLength,
-            stiffness: saved.stiffness,
-            damping: saved.damping,
-            color: saved.color,
-            line: makeRubberBandLine(saved.color),
-            markers: makeRubberBandMarkers(saved.color),
-            visual: makeRubberBandVisual(saved.color),
-          };
-          band.line.userData.piece = band.owner;
-          band.visual!.userData.piece = band.owner;
-          if (band.owner) {
-            band.owner.mesh.visible = false;
-            band.owner.colliders = [];
-            band.owner.gearColliders = [];
-          }
-          drawRubberBand(band);
-          scene.add(band.visual);
-          return band;
-        });
+        // Rubber-band simulation is temporarily disabled. Keep legacy project
+        // data ignored so the catalog piece remains the single visible and
+        // physical object instead of restoring a hidden duplicate.
+        state.rubberBands = [];
         camera.position.fromArray(document.camera.position);
         camera.quaternion.fromArray(document.camera.quaternion);
         cameraTarget.fromArray(document.camera.target);

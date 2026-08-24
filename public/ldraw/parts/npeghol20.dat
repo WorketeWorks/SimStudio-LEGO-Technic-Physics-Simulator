@@ -1,0 +1,7 @@
+0 Technic Peg Hole Negative for Alternate Beam Type 4 without Extensions
+0 Name: npeghol20.dat
+0 Author: Max Murtazin [SwampKryakwa]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+1 16 0 -10 0 -1 0 0 0 1 0 0 0 1 npeghol8.dat
+1 16 0 10 0 -1 0 0 0 -1 0 0 0 1 npeghol21.dat

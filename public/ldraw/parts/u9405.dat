@@ -1,0 +1,12 @@
+0 ~Electric Powered Up Colour Sensor Lighting Ring
+0 Name: u9405.dat
+0 Author: Philippe Hurbain [Philo]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+0 !KEYWORDS Mindstorms, Robot Inventor, Spike Prime
+1 16 0 0 -1.5 3.65625 0 0 0 0 3.65625 0 1.5 0 4-4con3.dat
+0 BFC INVERTNEXT
+1 16 0 0 -3.5 3.65625 0 0 0 0 3.65625 0 1.5 0 4-4con3.dat
+0 BFC INVERTNEXT
+1 16 0 0 0 10.96875 0 0 0 0 10.96875 0 -2 0 4-4cylo.dat
+1 16 0 0 -1.5 14.625 0 0 0 0 14.625 0 -2 0 4-4cylo.dat
