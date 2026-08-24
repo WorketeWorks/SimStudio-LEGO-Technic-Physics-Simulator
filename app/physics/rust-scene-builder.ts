@@ -234,6 +234,38 @@ export function buildRustGearConfigs(
       [bodyA, bodyB].sort((a, b) => a - b).join(":"),
     )) return [];
 
+    const currentFrame = (
+      piece: Piece,
+      savedCenter: [number, number, number],
+      savedAxis: THREE.Vector3,
+      localCenter?: THREE.Vector3,
+      localAxis?: THREE.Vector3,
+    ) => {
+      piece.mesh.updateMatrixWorld(true);
+      return {
+        center: localCenter
+          ? piece.mesh.localToWorld(localCenter.clone())
+          : new THREE.Vector3(...savedCenter),
+        axis: localAxis
+          ? localAxis.clone().transformDirection(piece.mesh.matrixWorld).normalize()
+          : savedAxis.clone().normalize(),
+      };
+    };
+    const frameA = currentFrame(
+        link.a.value,
+        link.a.center,
+        link.axisA,
+        link.localCenterA,
+        link.localAxisA,
+      ),
+      frameB = currentFrame(
+        link.b.value,
+        link.b.center,
+        link.axisB,
+        link.localCenterB,
+        link.localAxisB,
+      );
+
     const referenceFor = (piece: Piece, axis: THREE.Vector3): RustVec3 => {
       piece.mesh.updateMatrixWorld(true);
       const center = piece.mesh.localToWorld(new THREE.Vector3());
@@ -272,12 +304,12 @@ export function buildRustGearConfigs(
         nodeB: link.b.value.id,
         bodyA,
         bodyB,
-        axisA: vec3(link.axisA),
-        axisB: vec3(link.axisB),
-        centerA: [...link.a.center] as RustVec3,
-        centerB: [...link.b.center] as RustVec3,
-        referenceA: referenceFor(link.a.value, link.axisA),
-        referenceB: referenceFor(link.b.value, link.axisB),
+        axisA: vec3(frameA.axis),
+        axisB: vec3(frameB.axis),
+        centerA: vec3(frameA.center),
+        centerB: vec3(frameB.center),
+        referenceA: referenceFor(link.a.value, frameA.axis),
+        referenceB: referenceFor(link.b.value, frameB.axis),
         teethA: link.ratioOverride ?? link.a.spec.teeth,
         teethB: link.ratioOverride ? 1 : link.b.spec.teeth,
         signB: link.signB,

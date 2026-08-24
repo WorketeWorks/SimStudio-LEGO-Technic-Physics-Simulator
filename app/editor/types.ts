@@ -182,6 +182,11 @@ export type Connection = {
 export type RuntimeGearLink = GearPair<Piece> & {
   axisA: THREE.Vector3;
   axisB: THREE.Vector3;
+  /** Engagement frame stored on each piece, immune to world-space movement. */
+  localCenterA?: THREE.Vector3;
+  localCenterB?: THREE.Vector3;
+  localAxisA?: THREE.Vector3;
+  localAxisB?: THREE.Vector3;
   signB: number;
   perpendicular: boolean;
   /** Positive ratio magnitude supplied by a tagged special-gear zone. */
@@ -327,6 +332,7 @@ export type AppState = {
   contactFilterStats?: { tested: number; rejected: number };
   connections: Connection[];
   gearLinks: RuntimeGearLink[];
+  seedGearContacts: (links: RuntimeGearLink[]) => void;
   rubberBands: RubberBand[];
   gearAngles: Map<string, number>;
   gearBodyRotations: Map<number, THREE.Quaternion>;

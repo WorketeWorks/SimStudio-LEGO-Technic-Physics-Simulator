@@ -2949,6 +2949,7 @@ export default function Home() {
       selectedPieces: new Set<Piece>(),
       connections: [],
       gearLinks: [],
+      seedGearContacts: () => undefined,
       rubberBands: [],
       gearAngles: new Map(),
       gearBodyRotations: new Map(),
@@ -3642,6 +3643,22 @@ export default function Home() {
       string,
       { a: Piece; b: Piece; links: RuntimeGearLink[]; touching: boolean }
     >();
+    state.seedGearContacts = (links) => {
+      activeGearContacts.clear();
+      missedGearContactFrames.clear();
+      pendingGearContactChanges.clear();
+      links.forEach((link) => {
+        const key = gearLinkKey(link),
+          existing = activeGearContacts.get(key);
+        if (existing) existing.links.push(link);
+        else
+          activeGearContacts.set(key, {
+            a: link.a.value,
+            b: link.b.value,
+            links: [link],
+          });
+      });
+    };
 
     const updateDynamicMechanisms = () => {
       const dynamicScanStarted = performance.now();
@@ -3680,6 +3697,18 @@ export default function Home() {
         const sameOrder = previous.a.value === link.a.value;
         link.axisA.copy(sameOrder ? previous.axisA : previous.axisB);
         link.axisB.copy(sameOrder ? previous.axisB : previous.axisA);
+        link.localCenterA = (sameOrder
+          ? previous.localCenterA
+          : previous.localCenterB)?.clone();
+        link.localCenterB = (sameOrder
+          ? previous.localCenterB
+          : previous.localCenterA)?.clone();
+        link.localAxisA = (sameOrder
+          ? previous.localAxisA
+          : previous.localAxisB)?.clone();
+        link.localAxisB = (sameOrder
+          ? previous.localAxisB
+          : previous.localAxisA)?.clone();
         link.signB = previous.signB;
         link.perpendicular = previous.perpendicular;
         link.ratio = link.ratioOverride
@@ -6651,6 +6680,20 @@ export default function Home() {
               string,
               { a: Piece; b: Piece; links: RuntimeGearLink[] }
             >();
+          // Existing gear links are topology constraints, not Rapier contact
+          // manifolds. Their dedicated collision envelopes are deliberately
+          // smaller than the tooth envelope (to avoid physical tooth kicks),
+          // so broadphase contact can disappear at the exact nominal pitch
+          // distance. Validate retained pairs from their real pitch geometry;
+          // otherwise a perfectly spaced train repeatedly loses and recreates
+          // its phase while rotating in one plane.
+          activeGearContacts.forEach((retained, key) => {
+            const stillEngaged = detectGearLinks(
+              [retained.a, retained.b],
+              state.rigidIslandByPiece,
+            );
+            if (stillEngaged.length) currentGearContacts.set(key, retained);
+          });
           state.world.takeContactPairs().forEach(([leftId, rightId]) => {
             const left = piecesById.get(leftId),
               right = piecesById.get(rightId);
@@ -6662,19 +6705,13 @@ export default function Home() {
                 [left, right],
                 state.rigidIslandByPiece,
               );
-              const key = contactPairKey(left, right),
-                retained = activeGearContacts.get(key);
-              if (links.length)
+              const key = contactPairKey(left, right);
+              if (links.length && !currentGearContacts.has(key))
                 currentGearContacts.set(key, {
                   a: left,
                   b: right,
                   links,
                 });
-              else if (retained)
-                // Once engaged, keep the same link until Rapier reports that
-                // the pair has actually left contact. Borderline envelope
-                // measurements must not toggle the gear topology every frame.
-                currentGearContacts.set(key, retained);
             }
             if (
               left &&
@@ -6686,6 +6723,37 @@ export default function Home() {
                 b: right,
               });
           });
+          // While the user moves a mechanism, discover newly approaching gear
+          // pairs from pitch geometry as well. The physical gear colliders are
+          // intentionally inset and may not enter Rapier's broadphase until
+          // after the correct meshing distance has already been crossed.
+          if (spring?.dragged && state.dynamicConnectionFrame % 4 === 0) {
+            const scannedLinks = detectGearLinks(
+              state.pieces.filter((piece) => piece.gear),
+              state.rigidIslandByPiece,
+              differentialCarrierGearExclusions(
+                state.pieces,
+                state.connections,
+              ),
+            );
+            scannedLinks.forEach((link) => {
+              const key = gearLinkKey(link),
+                retained = activeGearContacts.get(key),
+                current = currentGearContacts.get(key);
+              if (current) {
+                if (!current.links.some((item) => gearLinkKey(item) === key))
+                  current.links.push(link);
+              } else
+                currentGearContacts.set(
+                  key,
+                  retained ?? {
+                    a: link.a.value,
+                    b: link.b.value,
+                    links: [link],
+                  },
+                );
+            });
+          }
           currentGearContacts.forEach((pair, key) => {
             missedGearContactFrames.delete(key);
             if (!activeGearContacts.has(key))
@@ -7341,6 +7409,12 @@ export default function Home() {
           detectionIslandByPiece,
           differentialCarrierGearExclusions(s.pieces, s.connections),
         );
+        // Seed dynamic contact tracking from the geometry scan used to build
+        // the initial Rust graph. Rapier's smaller anti-kick gear colliders do
+        // not necessarily overlap at nominal pitch distance, so waiting for a
+        // broadphase callback would make a valid initial link impossible to
+        // validate or remove deterministically.
+        s.seedGearContacts(s.gearLinks);
 
         const traversedConnectorPairs = detectShaftTraversals(s.pieces);
         const excludedPairs = buildConnectorContactExclusions(
@@ -7418,6 +7492,7 @@ export default function Home() {
         );
       } else {
         s.running = false;
+        s.seedGearContacts([]);
         s.gearLinks = [];
         s.gearAngles.clear();
         s.gearBodyRotations.clear();

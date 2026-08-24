@@ -266,7 +266,9 @@ export const detectGearLinks = (
       tangentB = new THREE.Vector3().crossVectors(axisB, radialB).normalize(),
       tangentDot = tangentA.dot(tangentB),
       signB = -Math.sign(Math.abs(tangentDot) > 0.2 ? tangentDot : -1),
-      perpendicular = Math.abs(axisA.dot(axisB)) < 0.2;
+      perpendicular = Math.abs(axisA.dot(axisB)) < 0.2,
+      inverseA = pair.a.value.mesh.matrixWorld.clone().invert(),
+      inverseB = pair.b.value.mesh.matrixWorld.clone().invert();
     return [
       {
         ...pair,
@@ -276,6 +278,15 @@ export const detectGearLinks = (
             : -pair.a.spec.teeth / (signB * pair.b.spec.teeth),
         axisA,
         axisB,
+        // Runtime topology can be rebuilt because an entirely different
+        // mechanism gained or lost tooth contact. World-space centres and
+        // axes from this detection instant would then be stale. Retain the
+        // engagement zone in each part's local frame so scene rebuilding can
+        // always reconstruct it at the current pose.
+        localCenterA: centerA.clone().applyMatrix4(inverseA),
+        localCenterB: centerB.clone().applyMatrix4(inverseB),
+        localAxisA: axisA.clone().transformDirection(inverseA),
+        localAxisB: axisB.clone().transformDirection(inverseB),
         signB,
         perpendicular,
         ratioOverride: pair.ratioMagnitude,

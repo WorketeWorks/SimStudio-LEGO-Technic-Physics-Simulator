@@ -32,6 +32,33 @@ vm.runInNewContext(
 );
 
 const { detectGearLinks } = module.exports;
+const sceneBuilderSource = readFileSync(
+  new URL("../app/physics/rust-scene-builder.ts", import.meta.url),
+  "utf8",
+);
+const sceneBuilderJs = ts.transpile(sceneBuilderSource, {
+  module: ts.ModuleKind.CommonJS,
+  target: ts.ScriptTarget.ES2022,
+});
+const sceneBuilderModule = { exports: {} };
+const sceneBuilderRequire = (request) => {
+  if (request === "three") return THREE;
+  if (request === "./exact-collider") return { exactTriangleMeshForPiece: () => undefined };
+  if (request === "./settings") return {
+    COLLISION_GROUP_GEAR_MESH: 1,
+    COLLISION_GROUP_GEAR_NORMAL: 2,
+    COLLISION_GROUP_NON_GEAR: 4,
+    COLLISION_GROUP_SPECIAL_GEAR_CONTACT: 8,
+    CONTACT_FRICTION: { gearMesh: 0, piece: 0 },
+  };
+  if (request === "./rubber-band") return { sampleRubberBand: () => [] };
+  throw new Error(`Unexpected scene-builder dependency: ${request}`);
+};
+vm.runInNewContext(
+  `(function(exports,module,require){${sceneBuilderJs}\n})(module.exports,module,require);`,
+  { module: sceneBuilderModule, require: sceneBuilderRequire },
+);
+const { buildRustGearConfigs } = sceneBuilderModule.exports;
 const cylinder = (center, radius, ratio) => ({
   shape: "cylinder",
   center: new THREE.Vector3(...center),
@@ -102,5 +129,34 @@ test("6573 exposes independent 1.5 and 1.0 external gear zones", () => {
   assert.deepEqual(
     Array.from(links, (link) => link.a.center[2]).sort((a, b) => a - b),
     [-1.5, 1.5],
+  );
+});
+
+test("rebuilding one drivetrain follows each gear's current local engagement frame", () => {
+  const left = piece("left", "94925", 0, 0, [cylinder([0, 0, 0], 1.05)]);
+  const right = piece("right", "94925", 2, 0, [cylinder([0, 0, 0], 1.05)]);
+  const [link] = detectGearLinks([left, right]);
+  assert.ok(link?.localCenterA && link.localAxisA);
+
+  const bodyIds = new Map([[left, 1], [right, 2]]);
+  const initial = buildRustGearConfigs([link], bodyIds, [])[0];
+  left.mesh.position.set(8, 3, -5);
+  left.mesh.rotation.set(0.4, -0.7, 0.2);
+  right.mesh.position.set(9.529684, 3.397339, -6.197173);
+  right.mesh.rotation.copy(left.mesh.rotation);
+  left.mesh.updateMatrixWorld(true);
+  right.mesh.updateMatrixWorld(true);
+
+  const rebuilt = buildRustGearConfigs([link], bodyIds, [])[0];
+  const expectedA = left.mesh.localToWorld(link.localCenterA.clone());
+  const expectedAxisA = link.localAxisA
+    .clone()
+    .transformDirection(left.mesh.matrixWorld)
+    .normalize();
+  assert.ok(new THREE.Vector3(...rebuilt.centerA).distanceTo(expectedA) < 1e-6);
+  assert.ok(new THREE.Vector3(...rebuilt.axisA).distanceTo(expectedAxisA) < 1e-6);
+  assert.ok(
+    new THREE.Vector3(...rebuilt.centerA).distanceTo(new THREE.Vector3(...initial.centerA)) > 5,
+    "a remote topology change must not rebuild this gear at its old world position",
   );
 });
