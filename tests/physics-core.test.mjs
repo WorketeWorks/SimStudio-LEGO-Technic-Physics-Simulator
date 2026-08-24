@@ -164,6 +164,114 @@ test("gear ratios and motor joints are solved inside Rust", () => {
     Math.abs(motor) > 0.1,
     `the native motor should rotate its body: ${JSON.stringify(Array.from(transforms))}`,
   );
+  transforms = engine.step(1 / 60, [
+    { kind: "setAngularVelocity", body: 1, velocity: [0, 60, 0] },
+  ]);
+  const limitedA = transforms[12];
+  const limitedB = transforms[stride + 12];
+  assert.ok(
+    Math.abs(20 * limitedA + 10 * limitedB) < 0.02,
+    `speed limiting must preserve the gear ratio: ${limitedA}, ${limitedB}`,
+  );
+  engine.free();
+});
+
+test("orbiting a meshed gear through a carrier produces axial rotation", () => {
+  const body = (id, fixed, position) => ({
+    id,
+    fixed,
+    position,
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 2,
+    ccd: false,
+    colliders: [{
+      ownerId: 300 + id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [body(1, true, [0, 0, 0]), body(2, false, [2, 0, 0])],
+    joints: [],
+    gears: [{
+      id: "fixed:planet",
+      nodeA: 1,
+      nodeB: 2,
+      bodyA: 1,
+      bodyB: 2,
+      axisA: [0, 0, 1],
+      axisB: [0, 0, 1],
+      centerA: [0, 0, 0],
+      centerB: [2, 0, 0],
+      referenceA: [1, 0, 0],
+      referenceB: [1, 0, 0],
+      teethA: 20,
+      teethB: 20,
+      signB: 1,
+      phaseLock: false,
+    }],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+
+  const transforms = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 2, 0] },
+  ]);
+  const stride = engine.transform_stride();
+  const orbitalRate = transforms[stride + 9] / transforms[stride + 1];
+  const axialSpeed = transforms[stride + 13];
+  assert.ok(
+    Math.abs(axialSpeed - 2 * orbitalRate) < 0.02,
+    `the carried gear must roll as its centre orbits: spin=${axialSpeed}, orbit=${orbitalRate}`,
+  );
+  assert.ok(
+    Math.abs(axialSpeed) > 0.2,
+    `orbital movement must not leave both gear meshes visually static: ${axialSpeed}`,
+  );
+  engine.free();
+});
+
+test("a carried bevel gear transmits motion across perpendicular axes", () => {
+  const body = (id, fixed, position) => ({
+    id, fixed, position, rotation: [0, 0, 0, 1], mass: 1,
+    linearDamping: 0, angularDamping: 0, additionalSolverIterations: 2, ccd: false,
+    colliders: [{ ownerId: 400 + id, center: [0, 0, 0], rotation: [0, 0, 0, 1],
+      friction: 0, density: 1, collisionGroup: 1, collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] } }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings,
+    bodies: [body(1, true, [0, 0, 0]), body(2, false, [1, 0, 1])],
+    joints: [],
+    gears: [{
+      id: "fixed:carried-bevel", nodeA: 1, nodeB: 2, bodyA: 1, bodyB: 2,
+      axisA: [0, 0, 1], axisB: [1, 0, 0],
+      centerA: [0, 0, 0], centerB: [1, 0, 1],
+      referenceA: [1, 0, 0], referenceB: [0, 0, 1],
+      teethA: 12, teethB: 12, signB: -1, phaseLock: false,
+    }],
+    differentials: [], excludedColliderPairs: [],
+  });
+
+  const transforms = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 2, 0] },
+  ]);
+  const stride = engine.transform_stride();
+  const carriedGearSpin = transforms[stride + 11];
+  assert.ok(
+    Math.abs(carriedGearSpin) > 1,
+    `perpendicular tooth contact must turn the carried bevel gear: ${carriedGearSpin}`,
+  );
   engine.free();
 });
 
@@ -313,7 +421,8 @@ test("a densely sampled rubber loop settles after a strong point drag", () => {
   engine.free();
 });
 
-test("a seven-gear train remains bounded and transmits through the whole chain", () => {
+test("a long gear train transmits opposing torque without exploding", () => {
+  const gearCount = 15;
   const gearBody = (id) => ({
     id,
     fixed: false,
@@ -340,7 +449,7 @@ test("a seven-gear train remains bounded and transmits through the whole chain",
     fixed: true,
     position: [0, 0, 0],
   };
-  const gears = Array.from({ length: 6 }, (_, index) => ({
+  const gears = Array.from({ length: gearCount - 1 }, (_, index) => ({
     id: `${index + 1}:${index + 2}`,
     nodeA: index + 1,
     nodeB: index + 2,
@@ -357,7 +466,7 @@ test("a seven-gear train remains bounded and transmits through the whole chain",
     signB: 1,
     phaseLock: false,
   }));
-  const joints = Array.from({ length: 7 }, (_, index) => ({
+  const joints = Array.from({ length: gearCount }, (_, index) => ({
     id: `axle-${index + 1}`,
     bodyA: 100,
     bodyB: index + 1,
@@ -375,18 +484,20 @@ test("a seven-gear train remains bounded and transmits through the whole chain",
   const engine = new PhysicsEngine({
     gravity: [0, 0, 0],
     settings,
-    bodies: [...Array.from({ length: 7 }, (_, index) => gearBody(index + 1)), support],
+    bodies: [...Array.from({ length: gearCount }, (_, index) => gearBody(index + 1)), support],
     joints,
     gears,
     differentials: [],
     excludedColliderPairs: [],
   });
-  let transforms = engine.step(1 / 60, [
-    { kind: "setAngularVelocity", body: 1, velocity: [0, 4, 0] },
-  ]);
-  for (let frame = 0; frame < 60; frame++) transforms = engine.step(1 / 60, []);
+  let transforms;
+  for (let frame = 0; frame < 120; frame++)
+    transforms = engine.step(1 / 60, [
+      { kind: "torqueImpulse", body: 1, impulse: [0, 0.08, 0] },
+      { kind: "torqueImpulse", body: gearCount, impulse: [0, -0.05, 0] },
+    ]);
   const stride = engine.transform_stride();
-  const angular = Array.from({ length: 7 }, (_, index) => transforms[index * stride + 12]);
+  const angular = Array.from({ length: gearCount }, (_, index) => transforms[index * stride + 12]);
   for (let index = 0; index < angular.length - 1; index++)
     assert.ok(
       Math.abs(angular[index] + angular[index + 1]) < 0.05,
@@ -396,6 +507,20 @@ test("a seven-gear train remains bounded and transmits through the whole chain",
     angular.every((speed) => Number.isFinite(speed) && Math.abs(speed) <= 80),
     `gear train velocity must stay bounded: ${angular.join(", ")}`,
   );
+  assert.ok(
+    Math.abs(angular.at(-1)) > 0.1,
+    `torque must reach the last gear against its load: ${angular.join(", ")}`,
+  );
+  const maximumLinearSpeed = Math.max(
+    ...Array.from({ length: gearCount }, (_, index) =>
+      Math.hypot(
+        transforms[index * stride + 8],
+        transforms[index * stride + 9],
+        transforms[index * stride + 10],
+      ),
+    ),
+  );
+  assert.ok(maximumLinearSpeed < 0.1, `gear torque injected linear speed: ${maximumLinearSpeed}`);
   engine.free();
 });
 

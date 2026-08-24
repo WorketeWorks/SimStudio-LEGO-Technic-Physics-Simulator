@@ -297,7 +297,6 @@ impl PhysicsEngine {
             &mut self.previous_gear_rotations,
             &self.world,
         );
-        gears::enforce_phase(&mut self.gears, &mut self.world);
         stops::enforce(&self.axial_stops, &mut self.world);
         self.elapsed_seconds += timestep;
         if startup {
@@ -476,18 +475,27 @@ impl PhysicsEngine {
 
 impl PhysicsEngine {
     fn clamp_motion(&mut self, elapsed_seconds: f32) {
-        let mut geared: HashSet<_> = self
-            .gears
-            .iter()
-            .flat_map(|gear| [gear.body_a, gear.body_b])
-            .collect();
-        for differential in &self.differentials {
-            geared.extend([
-                differential.left,
-                differential.right,
-                differential.carrier,
-            ]);
+        let release = ((elapsed_seconds - 0.35) / 0.65).clamp(0.0, 1.0);
+        let linear_limit = 2.0 + 10.0 * release;
+        let free_angular_limit = 3.0 + 11.0 * release;
+        let gear_angular_limit = 20.0 + 60.0 * release;
+        let mut graph: HashMap<RigidBodyHandle, Vec<RigidBodyHandle>> = HashMap::new();
+        let mut connect = |a, b| {
+            graph.entry(a).or_default().push(b);
+            graph.entry(b).or_default().push(a);
+        };
+        for gear in &self.gears {
+            connect(gear.body_a, gear.body_b);
+            if let Some(carrier) = gear.carrier_body {
+                connect(gear.body_a, carrier);
+                connect(gear.body_b, carrier);
+            }
         }
+        for differential in &self.differentials {
+            connect(differential.left, differential.right);
+            connect(differential.left, differential.carrier);
+        }
+        let geared: HashSet<_> = graph.keys().copied().collect();
         for (_, handle) in &self.ordered_bodies {
             let body = &mut self.world.bodies[*handle];
             if body.is_fixed() {
@@ -496,15 +504,44 @@ impl PhysicsEngine {
             // Release startup limits gradually instead of jumping from 2 to
             // 12 units/s in one frame. A discontinuous limit lets any residual
             // solver correction appear as an instantaneous acceleration.
-            let release = ((elapsed_seconds - 0.35) / 0.65).clamp(0.0, 1.0);
-            let linear_limit = 2.0 + 10.0 * release;
-            let angular_limit = if geared.contains(handle) {
-                20.0 + 60.0 * release
-            } else {
-                3.0 + 11.0 * release
-            };
             body.set_linvel(clamp_length(body.linvel(), linear_limit), true);
-            body.set_angvel(clamp_length(body.angvel(), angular_limit), true);
+            if !geared.contains(handle) {
+                body.set_angvel(clamp_length(body.angvel(), free_angular_limit), true);
+            }
+        }
+
+        // Scale a complete drivetrain together. Clamping each gear separately
+        // changed unequal ratios and looked exactly like tooth slip.
+        let mut visited = HashSet::new();
+        for root in geared {
+            if !visited.insert(root) {
+                continue;
+            }
+            let mut component = Vec::new();
+            let mut stack = vec![root];
+            while let Some(handle) = stack.pop() {
+                component.push(handle);
+                for neighbour in graph.get(&handle).into_iter().flatten() {
+                    if visited.insert(*neighbour) {
+                        stack.push(*neighbour);
+                    }
+                }
+            }
+            let maximum = component
+                .iter()
+                .filter_map(|handle| self.world.bodies.get(*handle))
+                .map(|body| body.angvel().length())
+                .fold(0.0_f32, f32::max);
+            if maximum <= gear_angular_limit {
+                continue;
+            }
+            let scale = gear_angular_limit / maximum;
+            for handle in component {
+                let body = &mut self.world.bodies[handle];
+                if !body.is_fixed() {
+                    body.set_angvel(body.angvel() * scale, true);
+                }
+            }
         }
     }
 

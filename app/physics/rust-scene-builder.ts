@@ -593,7 +593,9 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       linearDamping: 0.55,
       angularDamping: 0.95,
       additionalSolverIterations,
-      ccd: !largeSimulation,
+      // Gear pitch envelopes must never tunnel through each other under an
+      // editor drag or motor load, even when the rest of a large scene skips CCD.
+      ccd: !largeSimulation || island.some((piece) => piece.gear),
       colliders,
     };
   });

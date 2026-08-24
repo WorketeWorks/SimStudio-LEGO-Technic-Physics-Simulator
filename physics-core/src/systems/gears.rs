@@ -1,18 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use rapier3d::prelude::*;
 
 use crate::math::{normalized, vector};
-use crate::model::{GearConfig, JointMode};
-use super::joints::JointRuntime;
+use crate::model::GearConfig;
 
 // One forward/reverse sweep only propagates a driven velocity across roughly
 // one neighbouring contact before Rapier runs. Longer gear trains therefore
 // entered the step with mutually inconsistent velocities and could eject the
 // whole chain. Four cheap gear-only sweeps converge chains without adding
 // more Rapier substeps.
-const VELOCITY_SOLVER_PASSES: usize = 4;
-const BEVEL_SOLVER_PASSES: usize = 1;
+const VELOCITY_SOLVER_PASSES: usize = 8;
 const VELOCITY_EPSILON: Real = 1.0e-6;
 const GEOMETRY_EPSILON: Real = 1.0e-8;
 
@@ -83,8 +81,6 @@ fn initial_gear_angles(config: &GearConfig) -> (Real, Real) {
         signed_angle_around_axis(ref_b_raw.normalize(), radial_b, axis_b),
     )
 }
-
-
 pub fn build_gears(
     configs: &[GearConfig],
     bodies: &HashMap<u32, RigidBodyHandle>,
@@ -171,60 +167,6 @@ pub fn build_gears(
         .collect()
 }
 
-fn initial_gear_phase(config: &GearConfig) -> Real {
-    let axis_a = normalized(config.axis_a);
-    let axis_b = normalized(config.axis_b);
-
-    let center_a = vector(config.center_a);
-    let center_b = vector(config.center_b);
-    let center_delta = center_b - center_a;
-
-    let radial_a_raw =
-        center_delta - axis_a * center_delta.dot(axis_a);
-    let radial_b_raw =
-        -center_delta - axis_b * (-center_delta).dot(axis_b);
-
-    if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return 0.0;
-    }
-
-    let radial_a = radial_a_raw.normalize();
-    let radial_b = radial_b_raw.normalize();
-
-    let reference_a_world = normalized(config.reference_a);
-    let reference_b_world = normalized(config.reference_b);
-
-    let reference_a_plane =
-        reference_a_world - axis_a * reference_a_world.dot(axis_a);
-    let reference_b_plane =
-        reference_b_world - axis_b * reference_b_world.dot(axis_b);
-
-    if reference_a_plane.length_squared() <= GEOMETRY_EPSILON
-        || reference_b_plane.length_squared() <= GEOMETRY_EPSILON
-    {
-        return 0.0;
-    }
-
-    let ref_a = reference_a_plane.normalize();
-    let ref_b = reference_b_plane.normalize();
-
-    let angle_a =
-        signed_angle_around_axis(ref_a, radial_a, axis_a);
-    let angle_b =
-        signed_angle_around_axis(ref_b, radial_b, axis_b);
-
-    let teeth_a = config.teeth_a.max(1.0);
-    let teeth_b = config.teeth_b.max(1.0);
-    let sign_b =
-        if config.sign_b < 0.0 { -1.0 } else { 1.0 };
-
-    wrap_pi(
-        teeth_a * angle_a
-            + sign_b * teeth_b * angle_b,
-    )
-}
 
 
 pub fn project_velocities(
@@ -232,48 +174,17 @@ pub fn project_velocities(
     world: &mut PhysicsWorld,
     dt: Real,
 ) {
-    /*
-     * Spur gears:
-     *
-     * Estos no dependen de que Rapier redistribuya una fuerza
-     * física mediante joints, así que pueden iterarse varias veces.
-     */
-    for _ in 0..VELOCITY_SOLVER_PASSES {
+    // One bilateral angular constraint transfers torque without injecting
+    // linear impulses into every axle. Longer graphs receive more cheap
+    // Gauss-Seidel passes, capped to keep large mechanisms predictable.
+    let passes = gears.len().min(24).max(VELOCITY_SOLVER_PASSES);
+    for _ in 0..passes {
         for gear in gears {
-            if !gear_is_perpendicular(gear, world) {
-                solve_gear_velocity(gear, world, dt);
-            }
+            solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
         }
 
         for gear in gears.iter().rev() {
-            if !gear_is_perpendicular(gear, world) {
-                solve_gear_velocity(gear, world, dt);
-            }
-        }
-    }
-
-    /*
-     * Bevel gears:
-     *
-     * Muy pocas iteraciones.
-     *
-     * Después de esto vuelve lib.rs y ejecuta:
-     *
-     *     world.step_with_events(...)
-     *
-     * Rapier puede entonces transmitir la reacción por los joints.
-     */
-    for _ in 0..BEVEL_SOLVER_PASSES {
-        for gear in gears {
-            if gear_is_perpendicular(gear, world) {
-                solve_gear_velocity(gear, world, dt);
-            }
-        }
-
-        for gear in gears.iter().rev() {
-            if gear_is_perpendicular(gear, world) {
-                solve_gear_velocity(gear, world, dt);
-            }
+            solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
         }
     }
 
@@ -282,369 +193,137 @@ pub fn project_velocities(
     }
 }
 
-fn gear_is_perpendicular(
-    gear: &GearRuntime,
-    world: &PhysicsWorld,
-) -> bool {
-    let Some(body_a) = world.bodies.get(gear.body_a) else {
-        return false;
+fn phase_velocity_bias(gear: &GearRuntime, world: &PhysicsWorld, dt: Real) -> Real {
+    if !gear.phase_lock || dt <= 1.0e-6 {
+        return 0.0;
+    }
+    let (Some(body_a), Some(body_b)) = (
+        world.bodies.get(gear.body_a),
+        world.bodies.get(gear.body_b),
+    ) else {
+        return 0.0;
     };
-
-    let Some(body_b) = world.bodies.get(gear.body_b) else {
-        return false;
-    };
-
-    let axis_a =
-        body_a.position().rotation * gear.local_axis_a;
-
-    let axis_b =
-        body_b.position().rotation * gear.local_axis_b;
-
-    axis_a.dot(axis_b).abs() < 0.2
-}
-fn solve_gear_velocity(
-    gear: &GearRuntime,
-    world: &mut PhysicsWorld,
-    dt: Real,
-) {
-    let Some(body_a) = world.bodies.get(gear.body_a) else {
-        return;
-    };
-    let Some(body_b) = world.bodies.get(gear.body_b) else {
-        return;
-    };
-
     let position_a = *body_a.position();
     let position_b = *body_b.position();
-
     let axis_a = position_a.rotation * gear.local_axis_a;
     let axis_b = position_b.rotation * gear.local_axis_b;
-
     let center_a = position_a.transform_point(gear.local_center_a);
     let center_b = position_b.transform_point(gear.local_center_b);
-
-    let fixed_a = body_a.is_fixed();
-    let fixed_b = body_b.is_fixed();
-
-    if fixed_a && fixed_b {
-        return;
-    }
-
-    let linear_a = body_a.linvel();
-    let linear_b = body_b.linvel();
-    let angular_a = body_a.angvel();
-    let angular_b = body_b.angvel();
-
-    let perpendicular = axis_a.dot(axis_b).abs() < 0.2;
-    let center_delta = center_b - center_a;
-
-    let radial_a_raw = center_delta - axis_a * center_delta.dot(axis_a);
-    let radial_b_raw = -center_delta - axis_b * (-center_delta).dot(axis_b);
-
-    if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
+    let delta = center_b - center_a;
+    let radial_a = delta - axis_a * delta.dot(axis_a);
+    let radial_b = -delta - axis_b * (-delta).dot(axis_b);
+    if radial_a.length_squared() <= GEOMETRY_EPSILON
+        || radial_b.length_squared() <= GEOMETRY_EPSILON
     {
-        if perpendicular {
-            return;
-        }
-
-        solve_angular_ratio_fallback(
-            gear,
-            world,
-            axis_a,
-            axis_b,
-            angular_a,
-            angular_b,
-            fixed_a,
-            fixed_b,
-        );
-        return;
+        return 0.0;
     }
-
-    let radial_a = radial_a_raw.normalize();
-    let radial_b = radial_b_raw.normalize();
-
-    let tangent_a_raw = axis_a.cross(radial_a);
-    let tangent_b_raw = axis_b.cross(radial_b);
-
-    if tangent_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || tangent_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        if perpendicular {
-            return;
-        }
-
-        solve_angular_ratio_fallback(
-            gear,
-            world,
-            axis_a,
-            axis_b,
-            angular_a,
-            angular_b,
-            fixed_a,
-            fixed_b,
-        );
-        return;
-    }
-
-    let tangent_a = tangent_a_raw.normalize();
-    let mut tangent_b = tangent_b_raw.normalize();
-
-    if tangent_a.dot(tangent_b) < 0.0 {
-        tangent_b = -tangent_b;
-    }
-
-    let tangent_sum = tangent_a + tangent_b;
-    let tangent = if tangent_sum.length_squared() > GEOMETRY_EPSILON {
-        tangent_sum.normalize()
-    } else {
-        tangent_a
-    };
-
-    let distance = center_delta.length();
-    if distance <= GEOMETRY_EPSILON {
-        return;
-    }
-
-    let teeth_b = gear.signed_teeth_b.abs().max(1.0);
-    let total_teeth = (gear.teeth_a + teeth_b).max(1.0);
-
-    let (radius_a, radius_b) = if perpendicular {
-        (
-            center_delta.dot(axis_b).abs(),
-            center_delta.dot(axis_a).abs(),
-        )
-    } else {
-        (
-            distance * gear.teeth_a / total_teeth,
-            distance * teeth_b / total_teeth,
-        )
-    };
-
-    if radius_a <= GEOMETRY_EPSILON || radius_b <= GEOMETRY_EPSILON {
-        return;
-    }
-
-    let pitch_point_a = center_a + radial_a * radius_a;
-    let pitch_point_b = center_b + radial_b * radius_b;
-
-    if perpendicular {
-        let contact = (pitch_point_a + pitch_point_b) * 0.5;
-
-        let phase_bias = bevel_phase_velocity_bias(
-            gear,
-            world,
-            radial_a,
-            radial_b,
-            radius_a,
-            radius_b,
-            dt,
-        );
-
-        solve_bevel_contact_impulse(
-            gear,
-            world,
-            contact,
-            tangent,
-            phase_bias,
-        );
-        return;
-    }
-
-    let r_a = pitch_point_a - position_a.translation;
-    let r_b = pitch_point_b - position_b.translation;
-
-    let point_velocity_a = linear_a + angular_a.cross(r_a);
-    let point_velocity_b = linear_b + angular_b.cross(r_b);
-
-    let velocity_a = point_velocity_a.dot(tangent);
-    let velocity_b = point_velocity_b.dot(tangent);
-
-    let surface_sign = if gear.signed_teeth_b < 0.0 {
-        -1.0
-    } else {
-        1.0
-    };
-
-    let _contact_error = velocity_a - surface_sign * velocity_b;
-
     let phase_error = unwrapped_phase_error(
         gear,
         position_a,
         position_b,
-        radial_a,
-        radial_b,
+        radial_a.normalize(),
+        radial_b.normalize(),
     );
-
-    let pitch_scale = distance / total_teeth;
-    let phase_bias = if gear.phase_lock && dt > 1.0e-6 {
-        (phase_error * pitch_scale * PHASE_BAUMGARTE / dt)
-            .clamp(-MAX_PHASE_CORRECTION_SPEED, MAX_PHASE_CORRECTION_SPEED)
-    } else {
-        0.0
-    };
-
-    // Spur gears are solved as a bilateral physical contact too.
-    // Never overwrite angular velocity directly here: that would ignore
-    // the linear reaction at the tooth contact and can inject energy.
-    solve_spur_contact_impulse(
-        gear,
-        world,
-        pitch_point_a,
-        pitch_point_b,
-        tangent,
-        surface_sign,
-        phase_bias,
-    );
+    let max_phase_rate = MAX_PHASE_CORRECTION_SPEED
+        * gear.teeth_a.min(gear.signed_teeth_b.abs()).max(1.0);
+    (phase_error * PHASE_BAUMGARTE / dt)
+        .clamp(-max_phase_rate, max_phase_rate)
 }
 
-fn bevel_phase_velocity_bias(
-    gear: &GearRuntime,
-    world: &PhysicsWorld,
-    radial_a: Vector,
-    radial_b: Vector,
-    radius_a: Real,
-    radius_b: Real,
-    dt: Real,
-) -> Real {
-    if !gear.phase_lock || dt <= 1.0e-6 {
-        return 0.0;
-    }
-
-    let Some(body_a) = world.bodies.get(gear.body_a) else {
-        return 0.0;
-    };
-    let Some(body_b) = world.bodies.get(gear.body_b) else {
-        return 0.0;
-    };
-
-    let phase_error = unwrapped_phase_error(
-        gear,
-        *body_a.position(),
-        *body_b.position(),
-        radial_a,
-        radial_b,
-    );
-
-    let teeth_b = gear.signed_teeth_b.abs().max(1.0);
-    let pitch_scale = 0.5
-        * (
-            radius_a / gear.teeth_a.max(1.0)
-            + radius_b / teeth_b
-        );
-
-    (phase_error * pitch_scale * PHASE_BAUMGARTE / dt)
-        .clamp(-MAX_PHASE_CORRECTION_SPEED, MAX_PHASE_CORRECTION_SPEED)
-}
-
-fn solve_spur_contact_impulse(
+fn solve_ideal_gear_velocity(
     gear: &GearRuntime,
     world: &mut PhysicsWorld,
-    point_a: Vector,
-    point_b: Vector,
-    tangent: Vector,
-    _surface_sign: Real,
     phase_bias: Real,
 ) {
-    // A single common contact point is essential for frame invariance.
-    // If the whole mechanism translates or rotates rigidly, both bodies have
-    // the same rigid-motion velocity at this exact world point, so the gear
-    // constraint sees zero slip.
-    let contact = (point_a + point_b) * 0.5;
-
-    let (
-        relative_speed,
-        denominator,
-        fixed_a,
-        fixed_b,
-    ) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
+    if gear.carrier_body.is_some() && gear.local_carrier_axis.is_some() {
+        solve_differential_impulse(gear, world);
+        return;
+    }
+    let (axis_a, axis_b, speed_a, speed_b, inv_a, inv_b, fixed_a, fixed_b) = {
+        let (Some(body_a), Some(body_b)) = (
+            world.bodies.get(gear.body_a),
+            world.bodies.get(gear.body_b),
+        ) else {
             return;
         };
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        let relative_speed =
-            (body_a.velocity_at_point(contact)
-                - body_b.velocity_at_point(contact))
-                .dot(tangent);
-
-        let denominator =
-            point_impulse_denominator(body_a, contact, tangent)
-            + point_impulse_denominator(body_b, contact, tangent);
-
+        let position_a = *body_a.position();
+        let position_b = *body_b.position();
+        let axis_a = (position_a.rotation * gear.local_axis_a).normalize();
+        let axis_b = (position_b.rotation * gear.local_axis_b).normalize();
+        let center_a = position_a.transform_point(gear.local_center_a);
+        let center_b = position_b.transform_point(gear.local_center_b);
+        let center_velocity_a = body_a.velocity_at_point(center_a);
+        let center_velocity_b = body_b.velocity_at_point(center_b);
         (
-            relative_speed,
-            denominator,
+            axis_a,
+            axis_b,
+            mesh_speed_in_body_frame(
+                axis_a,
+                center_b - center_a,
+                center_velocity_b - center_velocity_a,
+                body_a.angvel(),
+            ),
+            mesh_speed_in_body_frame(
+                axis_b,
+                center_a - center_b,
+                center_velocity_a - center_velocity_b,
+                body_b.angvel(),
+            ),
+            axis_a.dot(body_a.mass_properties().effective_world_inv_inertia * axis_a),
+            axis_b.dot(body_b.mass_properties().effective_world_inv_inertia * axis_b),
             body_a.is_fixed(),
             body_b.is_fixed(),
         )
     };
-
-    let error = relative_speed - phase_bias;
-
-    if error.abs() <= VELOCITY_EPSILON
-        || denominator <= GEOMETRY_EPSILON
-    {
+    if fixed_a && fixed_b {
         return;
     }
-
+    let coefficient_a = gear.teeth_a.max(1.0);
+    let coefficient_b = gear.signed_teeth_b;
+    let error = coefficient_a * speed_a + coefficient_b * speed_b - phase_bias;
+    let denominator = coefficient_a * coefficient_a * inv_a
+        + coefficient_b * coefficient_b * inv_b;
+    if error.abs() <= VELOCITY_EPSILON || denominator <= GEOMETRY_EPSILON {
+        return;
+    }
     let lambda = -error / denominator;
-    let impulse = tangent * lambda;
-
     if !fixed_a {
-        world.bodies[gear.body_a].apply_impulse_at_point(
-            impulse,
-            contact,
-            true,
-        );
+        world.bodies[gear.body_a]
+            .apply_torque_impulse(axis_a * (lambda * coefficient_a), true);
     }
-
     if !fixed_b {
-        world.bodies[gear.body_b].apply_impulse_at_point(
-            -impulse,
-            contact,
-            true,
-        );
+        world.bodies[gear.body_b]
+            .apply_torque_impulse(axis_b * (lambda * coefficient_b), true);
     }
 }
 
-fn hard_phase_contact_bias(
-    gear: &GearRuntime,
-    position_a: Pose,
-    position_b: Pose,
-    radial_a: Vector,
-    radial_b: Vector,
-    pitch_scale: Real,
-    dt: Real,
+/// Axial tooth speed measured against the moving line between both gear
+/// centres.  Using only `angvel · axis` is correct for two stationary axles,
+/// but misses the essential planetary case: a fork/carrier can orbit one gear
+/// around another while both axial speeds initially remain zero.
+///
+/// The radial line is measured in this gear's rotating body frame. Its signed
+/// angular rate is subtracted from the body's axial rate, so translating a
+/// meshed gear tangentially produces the exact spin required for rolling
+/// contact. The solver still applies torque impulses only; axle joints receive
+/// the reaction without the destabilising linear impulses of tooth colliders.
+fn mesh_speed_in_body_frame(
+    axis: Vector,
+    center_delta: Vector,
+    center_delta_velocity: Vector,
+    body_angular_velocity: Vector,
 ) -> Real {
-    if !gear.phase_lock || dt <= 1.0e-6 {
-        return 0.0;
+    let radial = center_delta - axis * center_delta.dot(axis);
+    let radial_length_squared = radial.length_squared();
+    if radial_length_squared <= GEOMETRY_EPSILON {
+        return body_angular_velocity.dot(axis);
     }
 
-    let phase_error = unwrapped_phase_error(
-        gear,
-        position_a,
-        position_b,
-        radial_a,
-        radial_b,
-    );
-
-    if phase_error.abs() <= 1.0e-6 {
-        return 0.0;
-    }
-
-    // phase_error * pitch_scale is tangential tooth displacement.
-    //
-    // Near the target we remove the complete error in one substep.
-    // For a badly misaligned imported model, capture progressively to avoid
-    // an unphysical one-frame impulse while still guaranteeing convergence.
-    let desired = phase_error * pitch_scale / dt;
-    let max_capture_speed: Real = 4.0;
-
-    desired.clamp(-max_capture_speed, max_capture_speed)
+    let radial_velocity_in_body_frame =
+        center_delta_velocity - body_angular_velocity.cross(center_delta);
+    -axis.dot(radial.cross(radial_velocity_in_body_frame)) / radial_length_squared
 }
+
 
 
 fn unwrapped_phase_error(
@@ -702,291 +381,18 @@ pub fn project_exact_no_slip(
     // Repeated forward/reverse Gauss-Seidel sweeps make every gear contact
     // satisfy zero relative tooth velocity. There is no clutch, tolerance,
     // phase spring, or permitted tooth slip.
-    for _ in 0..4 {
+    let passes = gears.len().min(24).max(VELOCITY_SOLVER_PASSES);
+    for _ in 0..passes {
         for gear in gears {
-            project_one_exact_no_slip(gear, world);
+            solve_ideal_gear_velocity(gear, world, 0.0);
         }
 
         for gear in gears.iter().rev() {
-            project_one_exact_no_slip(gear, world);
+            solve_ideal_gear_velocity(gear, world, 0.0);
         }
     }
 }
 
-fn project_one_exact_no_slip(
-    gear: &GearRuntime,
-    world: &mut PhysicsWorld,
-) {
-    let (
-        position_a,
-        position_b,
-        fixed_a,
-        fixed_b,
-    ) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
-            return;
-        };
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        (
-            *body_a.position(),
-            *body_b.position(),
-            body_a.is_fixed(),
-            body_b.is_fixed(),
-        )
-    };
-
-    if fixed_a && fixed_b {
-        return;
-    }
-
-    let axis_a = position_a.rotation * gear.local_axis_a;
-    let axis_b = position_b.rotation * gear.local_axis_b;
-
-    let center_a = position_a.transform_point(gear.local_center_a);
-    let center_b = position_b.transform_point(gear.local_center_b);
-    let center_delta = center_b - center_a;
-
-    if center_delta.length_squared() <= GEOMETRY_EPSILON {
-        return;
-    }
-
-    let radial_a_raw =
-        center_delta - axis_a * center_delta.dot(axis_a);
-    let radial_b_raw =
-        -center_delta - axis_b * (-center_delta).dot(axis_b);
-
-    if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let radial_a = radial_a_raw.normalize();
-    let radial_b = radial_b_raw.normalize();
-
-    let tangent_a_raw = axis_a.cross(radial_a);
-    let tangent_b_raw = axis_b.cross(radial_b);
-
-    if tangent_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || tangent_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let tangent_a = tangent_a_raw.normalize();
-    let mut tangent_b = tangent_b_raw.normalize();
-
-    if tangent_a.dot(tangent_b) < 0.0 {
-        tangent_b = -tangent_b;
-    }
-
-    let tangent_sum = tangent_a + tangent_b;
-    let tangent =
-        if tangent_sum.length_squared() > GEOMETRY_EPSILON {
-            tangent_sum.normalize()
-        } else {
-            tangent_a
-        };
-
-    let perpendicular = axis_a.dot(axis_b).abs() < 0.2;
-    let distance = center_delta.length();
-
-    let teeth_b = gear.signed_teeth_b.abs().max(1.0);
-    let total_teeth = (gear.teeth_a + teeth_b).max(1.0);
-
-    let (radius_a, radius_b) = if perpendicular {
-        (
-            center_delta.dot(axis_b).abs(),
-            center_delta.dot(axis_a).abs(),
-        )
-    } else {
-        (
-            distance * gear.teeth_a / total_teeth,
-            distance * teeth_b / total_teeth,
-        )
-    };
-
-    if radius_a <= GEOMETRY_EPSILON
-        || radius_b <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let point_a = center_a + radial_a * radius_a;
-    let point_b = center_b + radial_b * radius_b;
-
-    // IMPORTANT:
-    // Both bodies are evaluated at the SAME world-space contact point.
-    // Therefore a global rigid translation/rotation cancels exactly and
-    // cannot be mistaken for tooth slip.
-    let contact = (point_a + point_b) * 0.5;
-
-    // Bevel gears have skew tooth tangents.  A point impulse at the averaged
-    // tangent introduces an artificial axial/ejection force, especially when
-    // the gear is blocked by a joint.  Keep the exact post-step projection
-    // consistent with the velocity solver and enforce the constraint as a
-    // pure reaction torque around each gear axis.
-    if perpendicular {
-        solve_bevel_contact_impulse(gear, world, contact, tangent, 0.0);
-        return;
-    }
-
-    let (
-        relative_speed,
-        denominator,
-    ) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
-            return;
-        };
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        let relative_speed =
-            (body_a.velocity_at_point(contact)
-                - body_b.velocity_at_point(contact))
-                .dot(tangent);
-
-        let denominator =
-            point_impulse_denominator(body_a, contact, tangent)
-            + point_impulse_denominator(body_b, contact, tangent);
-
-        (relative_speed, denominator)
-    };
-
-    // This function is only a hard NO-SLIP velocity constraint.
-    // Do not inject phase-position error as velocity here.
-    if relative_speed.abs() <= VELOCITY_EPSILON
-        || denominator <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let lambda = -relative_speed / denominator;
-    let impulse = tangent * lambda;
-
-    // Newton's third law: always equal and opposite.
-    if !fixed_a {
-        world.bodies[gear.body_a].apply_impulse_at_point(
-            impulse,
-            contact,
-            true,
-        );
-    }
-
-    if !fixed_b {
-        world.bodies[gear.body_b].apply_impulse_at_point(
-            -impulse,
-            contact,
-            true,
-        );
-    }
-}
-
-fn point_impulse_denominator(
-    body: &RigidBody,
-    point: Vector,
-    direction: Vector,
-) -> Real {
-    if body.is_fixed() {
-        return 0.0;
-    }
-
-    let mprops = body.mass_properties();
-    let linear = direction.dot(direction * mprops.effective_inv_mass);
-
-    let r = point - mprops.world_com;
-    let angular_jacobian = r.cross(direction);
-    let angular = angular_jacobian.dot(
-        mprops.effective_world_inv_inertia * angular_jacobian,
-    );
-
-    (linear + angular).max(0.0)
-}
-
-fn solve_bevel_contact_impulse(
-    gear: &GearRuntime,
-    world: &mut PhysicsWorld,
-    _contact: Vector,
-    _tangent: Vector,
-    phase_bias: Real,
-) {
-    if gear.carrier_body.is_some() && gear.local_carrier_axis.is_some() {
-        solve_differential_impulse(gear, world);
-        return;
-    }
-
-    // A bevel mesh does not have one common tangent in world space: the two
-    // tooth tangents are generally skew. Averaging them creates an axial
-    // force, which can eject the bevel gear from its axle (as in the reported
-    // differential log). The ideal bevel constraint is a pure reaction torque
-    // around each gear axis; that torque is still applied to the complete
-    // rigid body, so connected structures receive the transmitted load.
-    let (axis_a, axis_b, angular_a, angular_b, inverse_a, inverse_b, fixed_a, fixed_b) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
-            return;
-        };
-
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        let position_a = *body_a.position();
-        let position_b = *body_b.position();
-        let axis_a = (position_a.rotation * gear.local_axis_a).normalize();
-        let axis_b = (position_b.rotation * gear.local_axis_b).normalize();
-        let m_a = body_a.mass_properties();
-        let m_b = body_b.mass_properties();
-        (
-            axis_a,
-            axis_b,
-            body_a.angvel(),
-            body_b.angvel(),
-            axis_a.dot(m_a.effective_world_inv_inertia * axis_a),
-            axis_b.dot(m_b.effective_world_inv_inertia * axis_b),
-            body_a.is_fixed(),
-            body_b.is_fixed(),
-        )
-    };
-
-    let error = gear.teeth_a * angular_a.dot(axis_a)
-        + gear.signed_teeth_b * angular_b.dot(axis_b)
-        - phase_bias;
-    let denominator = gear.teeth_a * gear.teeth_a * inverse_a
-        + gear.signed_teeth_b * gear.signed_teeth_b * inverse_b;
-
-    if error.abs() < VELOCITY_EPSILON {
-        return;
-    }
-
-    if denominator <= GEOMETRY_EPSILON {
-        return;
-    }
-
-    let lambda = -error / denominator;
-
-    if !fixed_a {
-        world.bodies[gear.body_a]
-            .apply_torque_impulse(axis_a * (lambda * gear.teeth_a), true);
-    }
-
-    if !fixed_b {
-        world.bodies[gear.body_b].apply_torque_impulse(
-            axis_b * (lambda * gear.signed_teeth_b),
-            true,
-        );
-    }
-}
-
-/// Temporary ideal differential model.  The two side shafts are constrained
-/// relative to the carrier, so with equal side gears:
-/// `ω_left + ω_right = 2 * ω_carrier`.
-/// The impulse is a pure torque triplet; therefore a locked side shaft sends
-/// its share of the carrier torque to the other side, while two locked sides
-/// also lock the carrier.
 fn solve_differential_impulse(gear: &GearRuntime, world: &mut PhysicsWorld) {
     let (Some(carrier_handle), Some(local_carrier_axis)) =
         (gear.carrier_body, gear.local_carrier_axis)
@@ -1158,118 +564,6 @@ fn settle_near_rest(gear: &GearRuntime, world: &mut PhysicsWorld) {
     }
 }
 
-pub fn project_phase_constraints(
-    gears: &[GearRuntime],
-    world: &mut PhysicsWorld,
-) {
-    for gear in gears {
-        project_one_phase_constraint(gear, world);
-    }
-}
-
-fn project_one_phase_constraint(
-    gear: &GearRuntime,
-    world: &mut PhysicsWorld,
-) {
-    if !gear.phase_lock {
-        return;
-    }
-
-    let (position_a, position_b, fixed_a, fixed_b) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
-            return;
-        };
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        (
-            *body_a.position(),
-            *body_b.position(),
-            body_a.is_fixed(),
-            body_b.is_fixed(),
-        )
-    };
-
-    if fixed_a && fixed_b {
-        return;
-    }
-
-    let axis_a = position_a.rotation * gear.local_axis_a;
-    let axis_b = position_b.rotation * gear.local_axis_b;
-
-    let center_a = position_a.transform_point(gear.local_center_a);
-    let center_b = position_b.transform_point(gear.local_center_b);
-    let center_delta = center_b - center_a;
-
-    let radial_a_raw =
-        center_delta - axis_a * center_delta.dot(axis_a);
-    let radial_b_raw =
-        -center_delta - axis_b * (-center_delta).dot(axis_b);
-
-    if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let radial_a = radial_a_raw.normalize();
-    let radial_b = radial_b_raw.normalize();
-
-    let reference_a_world =
-        position_a.rotation * gear.local_reference_a;
-    let reference_b_world =
-        position_b.rotation * gear.local_reference_b;
-
-    let reference_a_plane =
-        reference_a_world - axis_a * reference_a_world.dot(axis_a);
-    let reference_b_plane =
-        reference_b_world - axis_b * reference_b_world.dot(axis_b);
-
-    if reference_a_plane.length_squared() <= GEOMETRY_EPSILON
-        || reference_b_plane.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let ref_a = reference_a_plane.normalize();
-    let ref_b = reference_b_plane.normalize();
-
-    let angle_a = signed_angle_around_axis(ref_a, radial_a, axis_a);
-    let angle_b = signed_angle_around_axis(ref_b, radial_b, axis_b);
-
-    let teeth_b = gear.signed_teeth_b.abs().max(1.0);
-    let sign_b = if gear.signed_teeth_b < 0.0 { -1.0 } else { 1.0 };
-
-    let current_phase = wrap_pi(
-        gear.teeth_a * angle_a + sign_b * teeth_b * angle_b
-    );
-    let phase_error = wrap_pi(current_phase - gear.initial_phase);
-
-    // Tiny numerical drift only. Large errors should be resisted by
-    // the physical no-slip gear constraint, not teleported away.
-    if phase_error.abs() <= 1.0e-5 || phase_error.abs() > 0.20 {
-        return;
-    }
-
-    // Correct one side only when possible. This avoids changing both
-    // free bodies in opposite directions and creating a positional "kick".
-    if !fixed_b {
-        let correction = -phase_error / (sign_b * teeth_b);
-        let local_delta =
-            Rotation::from_scaled_axis(gear.local_axis_b.normalize() * correction);
-        let mut pos = *world.bodies[gear.body_b].position();
-        pos.rotation = pos.rotation * local_delta;
-        world.bodies[gear.body_b].set_position(pos, false);
-    } else if !fixed_a {
-        let correction = -phase_error / gear.teeth_a.max(1.0);
-        let local_delta =
-            Rotation::from_scaled_axis(gear.local_axis_a.normalize() * correction);
-        let mut pos = *world.bodies[gear.body_a].position();
-        pos.rotation = pos.rotation * local_delta;
-        world.bodies[gear.body_a].set_position(pos, false);
-    }
-}
 
 
 fn signed_angle_around_axis(from: Vector, to: Vector, axis: Vector) -> Real {
@@ -1286,317 +580,7 @@ pub fn wrapped_delta(value: Real, reference: Real) -> Real {
     wrap_pi(value - wrap_pi(reference))
 }
 
-fn solve_angular_ratio_fallback(
-    gear: &GearRuntime,
-    world: &mut PhysicsWorld,
-    axis_a: Vector,
-    axis_b: Vector,
-    angular_a: Vector,
-    angular_b: Vector,
-    fixed_a: bool,
-    fixed_b: bool,
-) {
-    if fixed_a && fixed_b {
-        return;
-    }
 
-    let velocity_a = angular_a.dot(axis_a);
-    let velocity_b = angular_b.dot(axis_b);
-
-    let error =
-        gear.teeth_a * velocity_a + gear.signed_teeth_b * velocity_b;
-
-    if error.abs() < VELOCITY_EPSILON {
-        return;
-    }
-
-    let (delta_a, delta_b) = if fixed_a {
-        (0.0, -error / gear.signed_teeth_b)
-    } else if fixed_b {
-        (-error / gear.teeth_a, 0.0)
-    } else {
-        let denominator =
-            gear.teeth_a * gear.teeth_a
-            + gear.signed_teeth_b * gear.signed_teeth_b;
-
-        (
-            -error * gear.teeth_a / denominator,
-            -error * gear.signed_teeth_b / denominator,
-        )
-    };
-
-    if !fixed_a {
-        world.bodies[gear.body_a].set_angvel(
-            angular_a + axis_a * delta_a,
-            true,
-        );
-    }
-
-    if !fixed_b {
-        world.bodies[gear.body_b].set_angvel(
-            angular_b + axis_b * delta_b,
-            true,
-        );
-    }
-}
-
-pub fn project_hard_phase_positions(
-    gears: &mut [GearRuntime],
-    joints: &[JointRuntime],
-    world: &mut PhysicsWorld,
-) {
-    // Final positional authority for tooth phase.
-    //
-    // This is intentionally a position projection, not a spring:
-    // any pre-existing or newly-created phase error is removed completely.
-    // Fixed-connected bodies move as one rigid component so axle-cross:fixed
-    // and other fixed joints are not torn apart by the correction.
-    for _ in 0..6 {
-        for gear in gears.iter_mut() {
-            project_one_hard_phase_position(gear, joints, world);
-        }
-
-        for gear in gears.iter_mut().rev() {
-            project_one_hard_phase_position(gear, joints, world);
-        }
-    }
-}
-
-fn fixed_component(
-    root: RigidBodyHandle,
-    joints: &[JointRuntime],
-) -> Vec<RigidBodyHandle> {
-    let mut visited = HashSet::new();
-    let mut stack = vec![root];
-
-    visited.insert(root);
-
-    while let Some(body) = stack.pop() {
-        for joint in joints {
-            if joint.mode != JointMode::Fixed {
-                continue;
-            }
-
-            let other = if joint.body_a == body {
-                Some(joint.body_b)
-            } else if joint.body_b == body {
-                Some(joint.body_a)
-            } else {
-                None
-            };
-
-            if let Some(other) = other {
-                if visited.insert(other) {
-                    stack.push(other);
-                }
-            }
-        }
-    }
-
-    visited.into_iter().collect()
-}
-
-fn component_contains_fixed(
-    component: &[RigidBodyHandle],
-    world: &PhysicsWorld,
-) -> bool {
-    component.iter().any(|handle| {
-        world.bodies
-            .get(*handle)
-            .map_or(true, |body| body.is_fixed())
-    })
-}
-
-fn rotate_rigid_component(
-    component: &[RigidBodyHandle],
-    pivot: Vector,
-    axis: Vector,
-    angle: Real,
-    world: &mut PhysicsWorld,
-) {
-    if angle.abs() <= 1.0e-8 {
-        return;
-    }
-
-    let axis_len2 = axis.length_squared();
-    if axis_len2 <= GEOMETRY_EPSILON {
-        return;
-    }
-
-    let delta = Rotation::from_scaled_axis(axis.normalize() * angle);
-
-    for handle in component {
-        let Some(body) = world.bodies.get(*handle) else {
-            continue;
-        };
-
-        if body.is_fixed() {
-            continue;
-        }
-
-        let mut position = *body.position();
-        let linear = body.linvel();
-        let angular = body.angvel();
-
-        let offset = position.translation - pivot;
-        position.translation =
-            pivot + delta.mul_vec3(offset);
-        position.rotation = delta * position.rotation;
-
-        let rotated_linear = delta.mul_vec3(linear);
-        let rotated_angular = delta.mul_vec3(angular);
-
-        let body = &mut world.bodies[*handle];
-        body.set_position(position, false);
-        body.set_linvel(rotated_linear, false);
-        body.set_angvel(rotated_angular, true);
-    }
-}
-
-fn project_one_hard_phase_position(
-    gear: &mut GearRuntime,
-    joints: &[JointRuntime],
-    world: &mut PhysicsWorld,
-) {
-    if !gear.phase_lock {
-        return;
-    }
-
-    let (position_a, position_b) = {
-        let Some(body_a) = world.bodies.get(gear.body_a) else {
-            return;
-        };
-        let Some(body_b) = world.bodies.get(gear.body_b) else {
-            return;
-        };
-
-        (*body_a.position(), *body_b.position())
-    };
-
-    let axis_a = position_a.rotation * gear.local_axis_a;
-    let axis_b = position_b.rotation * gear.local_axis_b;
-
-    let center_a = position_a.transform_point(gear.local_center_a);
-    let center_b = position_b.transform_point(gear.local_center_b);
-    let center_delta = center_b - center_a;
-
-    let radial_a_raw =
-        center_delta - axis_a * center_delta.dot(axis_a);
-    let radial_b_raw =
-        -center_delta - axis_b * (-center_delta).dot(axis_b);
-
-    if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let radial_a = radial_a_raw.normalize();
-    let radial_b = radial_b_raw.normalize();
-
-    // Update the unwrapped geometric angles from the current transforms
-    // BEFORE calculating the correction. This catches external overwrites.
-    let reference_a =
-        position_a.rotation * gear.local_reference_a;
-    let reference_b =
-        position_b.rotation * gear.local_reference_b;
-
-    let ref_a_raw =
-        reference_a - axis_a * reference_a.dot(axis_a);
-    let ref_b_raw =
-        reference_b - axis_b * reference_b.dot(axis_b);
-
-    if ref_a_raw.length_squared() <= GEOMETRY_EPSILON
-        || ref_b_raw.length_squared() <= GEOMETRY_EPSILON
-    {
-        return;
-    }
-
-    let wrapped_a = signed_angle_around_axis(
-        ref_a_raw.normalize(),
-        radial_a,
-        axis_a,
-    );
-    let wrapped_b = signed_angle_around_axis(
-        ref_b_raw.normalize(),
-        radial_b,
-        axis_b,
-    );
-
-    gear.angle_a += wrap_pi(wrapped_a - wrap_pi(gear.angle_a));
-    gear.angle_b += wrap_pi(wrapped_b - wrap_pi(gear.angle_b));
-
-    let phase_error =
-        gear.teeth_a * gear.angle_a
-            + gear.signed_teeth_b * gear.angle_b
-            - gear.phase_target;
-
-    if phase_error.abs() <= 1.0e-6 {
-        return;
-    }
-
-    let component_a = fixed_component(gear.body_a, joints);
-    let component_b = fixed_component(gear.body_b, joints);
-
-    // If both gears belong to the same fixed component, their phase cannot
-    // be corrected by rotating one relative to the other without breaking
-    // that fixed assembly.
-    if component_a.iter().any(|h| component_b.contains(h)) {
-        return;
-    }
-
-    let locked_a = component_contains_fixed(&component_a, world);
-    let locked_b = component_contains_fixed(&component_b, world);
-
-    if locked_a && locked_b {
-        return;
-    }
-
-    let teeth_a = gear.teeth_a.max(1.0);
-    let signed_teeth_b = if gear.signed_teeth_b.abs() <= 1.0e-6 {
-        return;
-    } else {
-        gear.signed_teeth_b
-    };
-
-    // C = Na*thetaA + signedNb*thetaB - target = 0
-    //
-    // Remove C completely. If both rigid components are free, split the
-    // correction equally in phase-space. If one is anchored, the other
-    // receives the full correction.
-    let (delta_a, delta_b) = if locked_a {
-        (0.0, -phase_error / signed_teeth_b)
-    } else if locked_b {
-        (-phase_error / teeth_a, 0.0)
-    } else {
-        (
-            -0.5 * phase_error / teeth_a,
-            -0.5 * phase_error / signed_teeth_b,
-        )
-    };
-
-    if delta_a != 0.0 {
-        rotate_rigid_component(
-            &component_a,
-            center_a,
-            axis_a,
-            delta_a,
-            world,
-        );
-        gear.angle_a += delta_a;
-    }
-
-    if delta_b != 0.0 {
-        rotate_rigid_component(
-            &component_b,
-            center_b,
-            axis_b,
-            delta_b,
-            world,
-        );
-        gear.angle_b += delta_b;
-    }
-}
 
 
 pub fn accumulate_angles(
@@ -1661,6 +645,3 @@ pub fn accumulate_angles(
         gear.angle_b += wrap_pi(wrapped_b - wrap_pi(gear.angle_b));
     }
 }
-
-pub fn enforce_phase(_gears: &mut [GearRuntime], _world: &mut PhysicsWorld) {}
-
