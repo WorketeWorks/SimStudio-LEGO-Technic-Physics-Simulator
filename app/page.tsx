@@ -227,8 +227,11 @@ const belongsToDefaultPalette = (part: CatalogPart) =>
     .filter(Boolean)
     .some((value) => paletteReferenceSet.has(value!.toLowerCase()));
 
+const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188"]);
 const isGearPart = (p: CatalogPart) =>
-  p.gear === true || p.family === "gears" || /\bgear\b/i.test(p.name);
+  nonPhysicalGearParts.has(p.part)
+    ? false
+    : p.gear === true || p.family === "gears" || /\bgear\b/i.test(p.name);
 
 /** Physical rotation axis of a gear, taken from its cylindrical gear collider. */
 const gearAxisForPiece = (piece: Piece) => {

@@ -104,6 +104,7 @@ const invalidGeometry=new Set<string>();
 const modelAlias:Record<string,string>={"4265c":"32123b","4185":"4185b","6538":"6538a","6538c":"59443","6542":"6542a","3648":"3648b","44":"32126","18938u":"18938","62520c01":"62520","6628a":"6628"};
 export const paletteRequestAliases:Record<string,string>={"32123a":"4265c","32556b":"32556"};
 const thumbAlias:Record<string,string>={"32556":"32556b","19467c01":"19467","21828c01":"21828","3167":"3167s01","2477":"24779s01"};
+const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188"]);
 const thumbId:Record<string,number>={
   "3713":6784,"32123b":5579,"4185b":8129,"11214":388,"43093":8530,"3749":6834,"32062":5541,"18651":1221,"4519":8934,"24316":2294,"3705":6762,"87083":13103,"32073":5553,"15462":851,"3706":6765,"44294":8683,"3707":6767,"55013":10160,"60485":10650,"3737":6803,"23948":2182,"3708":6769,"42610":8436,"56904":10268,"50951":9907,"99008":15067,"2736":3057,"85543":12935,"85544":12936,"85545":52503,"85546":12938,
   "45590":9043,"39793":7471,"62462":11259,"48496":9688,"32557":5822,"44809":8823,"32039":5527,"4274":8466,"32002":5491,"32138":5589,"41669":7984,"6628":11877,"32013":5501,"32034":5526,"32016":5504,"32192":5624,"32015":5503,"32014":5502,"22961":2013,"27940":3116,"10197":242,"6536":11777,"42003":8199,"32184":5614,"32291":5697,"41678":7992,"92907":13823,"63869":11564,"6538a":11779,"6539":11781,"26287":2850,"6641":11915,"35186":6163,"35188":6164,"18947":1300,
@@ -120,7 +121,7 @@ const thumbId:Record<string,number>={
 };
 
 export const paletteParts=Object.entries(groups).flatMap(([family,entries])=>entries.map(([part,name,bricklinkColor])=>{const modelPart=modelAlias[part]??part,id=thumbId[modelPart],thumbPart=thumbAlias[part]??modelPart,sourceColor=ldrawColor[bricklinkColor]??71,color=defaultColorOverride[part]??sourceColor;return{
-  part,name,family:family as PaletteFamily,color,sourceColor,kind:(family==="gears"||family==="wheels"||family==="specials"?"wheel":family==="spike"&&/motor/i.test(name)?"motor":"beam") as "beam"|"wheel"|"motor",gear:family==="gears",modelPart,rawThumb:true,
+  part,name,family:family as PaletteFamily,color,sourceColor,kind:(family==="gears"||family==="wheels"||family==="specials"?"wheel":family==="spike"&&/motor/i.test(name)?"motor":"beam") as "beam"|"wheel"|"motor",gear:family==="gears"&&!nonPhysicalGearParts.has(part),modelPart,rawThumb:true,
   origin:"default-palette" as const,sourceKind:(invalidGeometry.has(part)?"ldraw-network":"packaged-cache") as "ldraw-network"|"packaged-cache",requestedPart:part,catalogReturnedPart:part,resolvedPart:modelPart,
   geometry:invalidGeometry.has(part)?undefined:`catalog/geometry/${part}-${color}.json`,
   thumb:id?(invalidGeometry.has(part)?`https://library.ldraw.org/media/parts/${id}/conversions/${thumbPart}-thumb.png`:`catalog/renders/${modelPart}.png`):undefined,
