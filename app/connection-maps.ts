@@ -10,6 +10,149 @@ export type StoredConnector = {
 
 // Generated from the reviewed maps exported by Sim Studio's map editor.
 export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
+  "44": [
+    {
+      "local": [
+        -0.25,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8
+    },
+    {
+      "local": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6500000000000001
+    }
+  ],
+  "2477": [
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        -3.885780586188048e-16,
+        -3
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -4
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        2,
+        -2.7755575615628914e-16,
+        -4
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        1,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
   "2736": [
     {
       "local": [
@@ -25,6 +168,40 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "kind": "axle",
       "role": "shaft",
       "diameter": 0.8000000000000002,
+      "length": 1
+    }
+  ],
+  "2780": [
+    {
+      "local": [
+        -0.5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.45,
+      "length": 1
+    },
+    {
+      "local": [
+        0.5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.45,
       "length": 1
     }
   ],
@@ -90,6 +267,87 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "socket",
       "diameter": 0.24,
       "length": 0.5
+    }
+  ],
+  "3167": [
+    {
+      "local": [
+        1,
+        5.551115123125783e-17,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        1,
+        5.551115123125783e-17,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -1,
+        5.551115123125783e-17,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -1,
+        5.551115123125783e-17,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -0.012499999999999997,
+        -0.04999999999999999
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125
     }
   ],
   "3648": [
@@ -527,7 +785,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
         0
       ],
       "kind": "round",
-      "role": "socket",
+      "role": "shaft",
       "diameter": 0.8,
       "length": 1
     }
@@ -698,6 +956,55 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "length": 1
     }
   ],
+  "11455": [
+    {
+      "local": [
+        0,
+        0.028165515694617838,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0563310313892367
+    },
+    {
+      "local": [
+        0,
+        0.028165515694617838,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0563310313892367
+    },
+    {
+      "local": [
+        1,
+        -3.885780586188048e-16,
+        -3
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
   "11478": [
     {
       "local": [
@@ -812,6 +1119,372 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "shaft",
       "diameter": 0.8,
       "length": 1
+    }
+  ],
+  "15458": [
+    {
+      "local": [
+        -5,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -4,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -4,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        4,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        4,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -3,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -3,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
     }
   ],
   "18651": [
@@ -995,6 +1668,184 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "shaft",
       "diameter": 0.8000000000000002,
       "length": 0.705
+    }
+  ],
+  "32009": [
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        3,
+        4.996003610813204e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        6
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        2,
+        4.996003610813204e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        0,
+        4.996003610813204e-16,
+        8
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        1,
+        4.996003610813204e-16,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        4,
+        4.996003610813204e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1.0000000000000009
     }
   ],
   "32013": [
@@ -1350,7 +2201,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "kind": "axle",
       "role": "shaft",
       "diameter": 0.6000000000000002,
-      "length": 2
+      "length": 1
     }
   ],
   "32063": [
@@ -1552,6 +2403,88 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "diameter": 0.8
     }
   ],
+  "32138": [
+    {
+      "local": [
+        -1,
+        0.5,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 1.9000000000000001,
+      "length": 1.41
+    },
+    {
+      "local": [
+        -1,
+        -0.5,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 1.9000000000000001,
+      "length": 1.41
+    },
+    {
+      "local": [
+        1,
+        0.5,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 1.9000000000000001,
+      "length": 1.41
+    },
+    {
+      "local": [
+        1,
+        -0.5,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 1.9000000000000001,
+      "length": 1.41
+    },
+    {
+      "local": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.9000000000000002
+    }
+  ],
   "32140": [
     {
       "local": [
@@ -1742,6 +2675,266 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "socket",
       "diameter": 0.6,
       "length": 0.5
+    }
+  ],
+  "32249": [
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000003
+    },
+    {
+      "local": [
+        1,
+        -1.1102230246251565e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000003
+    },
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000003
+    },
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000003
+    },
+    {
+      "local": [
+        2,
+        -1.1102230246251565e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000003
+    }
+  ],
+  "32251": [
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -4
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        2,
+        -3.608224830031759e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        3,
+        -3.608224830031759e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        1,
+        -3.608224830031759e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "half",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        -6
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        0,
+        -3.608224830031759e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000009
+    },
+    {
+      "local": [
+        4,
+        -3.608224830031759e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.5000000000000009
     }
   ],
   "32269": [
@@ -2112,6 +3305,802 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "length": 1.0000000000000007
     }
   ],
+  "32556": [
+    {
+      "local": [
+        -1,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.8,
+      "length": 1
+    },
+    {
+      "local": [
+        1,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.8000000000000002,
+      "length": 1
+    },
+    {
+      "local": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "39790": [
+    {
+      "local": [
+        5,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        -7.216449660063518e-16,
+        -6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        7.216449660063518e-16,
+        6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        -7.216449660063518e-16,
+        -6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        7.216449660063518e-16,
+        6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -5,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        5,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        3,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        1,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        3,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        1,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        5,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -3,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -3,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -1,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        -5,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.000000000000002
+    },
+    {
+      "local": [
+        4,
+        -8.326672684688674e-16,
+        -7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        0,
+        -8.604228440844963e-16,
+        -7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        -8.326672684688674e-16,
+        -7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [
+        -4,
+        -8.326672684688674e-16,
+        -7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -2,
+        -8.326672684688674e-16,
+        -7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [
+        4,
+        8.326672684688674e-16,
+        7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        2,
+        8.326672684688674e-16,
+        7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -4,
+        8.326672684688674e-16,
+        7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -2,
+        8.326672684688674e-16,
+        7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        0,
+        8.604228440844963e-16,
+        7
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
   "39793": [
     {
       "local": [
@@ -2252,6 +4241,504 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "socket",
       "diameter": 0.8,
       "length": 1.0000000000000004
+    }
+  ],
+  "39794": [
+    {
+      "local": [
+        3,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        3,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        3,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        3,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        3,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -3,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -3,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -3,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -3,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -3,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        3,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        3,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        3,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        1,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -1,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        1,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        3,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        3,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        -3,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000016
+    },
+    {
+      "local": [
+        2,
+        6.106226635438361e-16,
+        5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -2,
+        6.106226635438361e-16,
+        5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        0,
+        6.38378239159465e-16,
+        5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        -6.106226635438361e-16,
+        -5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [
+        2,
+        -6.106226635438361e-16,
+        -5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [
+        0,
+        -6.38378239159465e-16,
+        -5
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
     }
   ],
   "41677": [
@@ -2395,6 +4882,40 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "kind": "round",
       "role": "socket",
       "diameter": 0.8
+    }
+  ],
+  "45590": [
+    {
+      "local": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1
+    },
+    {
+      "local": [
+        1,
+        0,
+        0
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1
     }
   ],
   "46372": [
@@ -2861,6 +5382,40 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "length": 0.5
     }
   ],
+  "62462": [
+    {
+      "local": [
+        -0.5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 1.0000000000000002,
+      "length": 0.94
+    },
+    {
+      "local": [
+        0.5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 1.0000000000000002,
+      "length": 0.94
+    }
+  ],
   "62821": [
     {
       "local": [
@@ -2955,6 +5510,2170 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "kind": "round",
       "role": "socket",
       "diameter": 0.8
+    }
+  ],
+  "64178": [
+    {
+      "local": [
+        2,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        2,
+        -6.106226635438361e-16,
+        -5
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        2,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        2,
+        6.106226635438361e-16,
+        5
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        2,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -2,
+        -6.106226635438361e-16,
+        -5
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        -2,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -2,
+        6.106226635438361e-16,
+        5
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        -2,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        -2,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        -2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        2,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        -2,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        -2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000013
+    },
+    {
+      "local": [
+        1,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        -1,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        0,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        1,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        -1,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        0,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    }
+  ],
+  "64179": [
+    {
+      "local": [
+        2,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        -2,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        -2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        2,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        -2,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        -2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000009
+    },
+    {
+      "local": [
+        1,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        -1,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        0,
+        -0.012500000000000386,
+        -3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        1,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        -1,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    },
+    {
+      "local": [
+        0,
+        -0.012499999999999609,
+        3.05
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8125000000000001
+    }
+  ],
+  "64782": [
+    {
+      "local": [
+        -5,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -5,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        5,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -4,
+        0,
+        2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000007
+    },
+    {
+      "local": [
+        -4,
+        0,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000007
+    },
+    {
+      "local": [
+        4,
+        0,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000007
+    },
+    {
+      "local": [
+        4,
+        0,
+        2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000007
+    },
+    {
+      "local": [
+        -3,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        -2.498001805406602e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -3,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        2,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        2.498001805406602e-16,
+        2
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
+  "67491": [
+    {
+      "local": [
+        1,
+        -9.71445146547012e-16,
+        -8
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        1,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        1,
+        -7.216449660063518e-16,
+        -6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        1,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        1,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        9.71445146547012e-16,
+        8
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        1,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        1,
+        7.216449660063518e-16,
+        6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        -4.996003610813204e-16,
+        -4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -1,
+        -9.71445146547012e-16,
+        -8
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        -1,
+        -7.216449660063518e-16,
+        -6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        2.220446049250313e-16,
+        2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -1,
+        -2.220446049250313e-16,
+        -2
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -1,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        4.996003610813204e-16,
+        4
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.5999999999999999
+    },
+    {
+      "local": [
+        -1,
+        9.71445146547012e-16,
+        8
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000003
+    },
+    {
+      "local": [
+        -1,
+        7.216449660063518e-16,
+        6
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        0,
+        -9
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -9
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        5
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        7
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        9
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        9
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        0,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        1,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        0,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        -1,
+        0,
+        3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000024
+    },
+    {
+      "local": [
+        0,
+        -1.1379786002407855e-15,
+        -9
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        1.1379786002407855e-15,
+        9
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
+  "71709": [
+    {
+      "local": [
+        -3,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -3,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -3,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        3,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        2,
+        0,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        2,
+        0,
+        1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        -1,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        -1.1102230246251565e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        -1,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        1,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    },
+    {
+      "local": [
+        0,
+        1.1102230246251565e-16,
+        1
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6000000000000001
+    }
+  ],
+  "80286": [
+    {
+      "local": [
+        1,
+        -2.7755575615628914e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        0
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -1
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -4
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -2
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
+    },
+    {
+      "local": [
+        0,
+        -2.7755575615628914e-16,
+        -3
+      ],
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.0000000000000004
     }
   ],
   "87082": [
@@ -3191,6 +7910,24 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "kind": "round",
       "role": "socket",
       "diameter": 0.8
+    }
+  ],
+  "99021": [
+    {
+      "local": [
+        0,
+        0,
+        -5.551115123125783e-17
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 1
     }
   ],
   "99773": [

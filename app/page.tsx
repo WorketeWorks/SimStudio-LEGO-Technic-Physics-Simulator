@@ -136,11 +136,11 @@ const MODEL_LOAD_TIMEOUT = 20_000;
 
 const AUTO_CONNECTIONS_ENABLED = true;
 
-const CORRECTION_MAP_REVISION = "2026-08-10-corrections-1";
+const CORRECTION_MAP_REVISION = "2026-08-24-corrections-2";
 
 const collisionMapRevision = (part: string) =>
   part.toLowerCase() === "6573"
-    ? "2026-08-18-6573-special-gear-1"
+    ? "2026-08-24-6573-special-gear-2"
     : CORRECTION_MAP_REVISION;
 
 const invalidPackagedGeometry = new Set<string>();
@@ -1387,13 +1387,25 @@ export default function Home() {
     const analyzePart = (wrapper: THREE.Object3D, p: CatalogPart) => {
       let connectors: MeshConnector[] | undefined,
         hasSavedConnectorMap = false,
+        savedCollisionRevision = localStorage.getItem(
+          `sim-colliders-revision:${p.part}`,
+        ),
         specialGear =
           p.specialGear === true ||
           preloadedSpecialGearParts.has(p.part.toLowerCase()) ||
-          localStorage.getItem(`sim-special-gear-v1:${p.part}`) === "true";
+          ((!preloadedCollisionMaps[p.part] ||
+            savedCollisionRevision === collisionMapRevision(p.part)) &&
+            localStorage.getItem(`sim-special-gear-v1:${p.part}`) === "true");
       try {
-        const saved = localStorage.getItem(`sim-connectors-v4:${p.part}`);
-        if (saved) {
+        const saved = localStorage.getItem(`sim-connectors-v4:${p.part}`),
+          savedRevision = localStorage.getItem(
+            `sim-connectors-revision:${p.part}`,
+          );
+        if (
+          saved &&
+          (!preloadedConnectionMaps[p.part] ||
+            savedRevision === CORRECTION_MAP_REVISION)
+        ) {
           hasSavedConnectorMap = true;
           connectors = (
             JSON.parse(saved) as {
@@ -1486,7 +1498,11 @@ export default function Home() {
       if (!colliders)
         try {
           const saved = localStorage.getItem(`sim-colliders-v1:${p.part}`);
-          if (saved) {
+          if (
+            saved &&
+            (!preloadedCollisionMaps[p.part] ||
+              savedCollisionRevision === collisionMapRevision(p.part))
+          ) {
             const stored = JSON.parse(saved) as {
               shape: "box" | "cylinder";
               center: number[];
@@ -1583,7 +1599,11 @@ export default function Home() {
       if (isGearPart(p)) {
         try {
           const saved = localStorage.getItem(`sim-gear-colliders-v1:${p.part}`);
-          if (saved) {
+          if (
+            saved &&
+            (!preloadedGearCollisionMaps[p.part] ||
+              savedCollisionRevision === collisionMapRevision(p.part))
+          ) {
             const rows = JSON.parse(saved) as {
               shape: "box" | "cylinder";
               center: number[];
@@ -8675,11 +8695,10 @@ export default function Home() {
           : `sim-colliders-v1:${piece.part}`,
         JSON.stringify(colliderData(normalized)),
       );
-      if (layer === "normal")
-        localStorage.setItem(
-          `sim-colliders-revision:${piece.part}`,
-          collisionMapRevision(piece.part),
-        );
+      localStorage.setItem(
+        `sim-colliders-revision:${piece.part}`,
+        collisionMapRevision(piece.part),
+      );
     } catch {}
     state.debug.colliders = true;
     setDebugViews((current) => ({ ...current, colliders: true }));
@@ -8726,6 +8745,10 @@ export default function Home() {
     if (enabled)
       localStorage.setItem(`sim-special-gear-v1:${selected.part}`, "true");
     else localStorage.removeItem(`sim-special-gear-v1:${selected.part}`);
+    localStorage.setItem(
+      `sim-colliders-revision:${selected.part}`,
+      collisionMapRevision(selected.part),
+    );
     setColliderRevision((value) => value + 1);
   };
 

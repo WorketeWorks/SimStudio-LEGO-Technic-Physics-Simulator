@@ -186,13 +186,13 @@ test("gears, tyres and axle connector shells use a 0.95 envelope", () => {
 test("keeps every restored correction map preloaded", () => {
   for (const part of [
     "3713", "32016", "32034", "32192", "55615", "4265c", "11478",
-    "32062", "99773",
+    "32062", "45590", "62462", "99773",
   ])
     assert.ok(preloadedConnectionMaps[part]?.length, `${part} connection map`);
   for (const part of [
     "32013", "32016", "32034", "32192", "3713", "87408", "18654",
     "2825", "32062", "32184", "32271", "4265c", "45590", "55615",
-    "60484", "64179", "99773",
+    "60484", "64179", "3649", "10928", "32498", "94925", "99773",
   ])
     assert.ok(preloadedCollisionMaps[part]?.length, `${part} collision map`);
 });
@@ -206,7 +206,7 @@ test("the 6573 differential exposes lateral sockets, a rotation-only axle stud a
   assert.equal(sockets[2].role, "shaft");
   assert.equal(sockets[2].rotationOnly, true);
   assert.equal(sockets[2].length, undefined);
-  assert.deepEqual(sockets[2].local, [0, -0.8, 0]);
+  assert.deepEqual(sockets[2].local, [0, -0.75, 0]);
   const gearVolumes = preloadedGearCollisionMaps["6573"];
   assert.equal(gearVolumes.length, 2);
   assert.deepEqual(gearVolumes.map((volume) => volume.center[2]), [-1.5, 1.5]);

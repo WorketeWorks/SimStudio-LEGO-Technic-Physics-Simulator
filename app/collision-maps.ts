@@ -98,6 +98,56 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
       ]
     }
   ],
+  "3649": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2.6,
+      "halfHeight": 0.25,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2,
+      "halfHeight": 0.4,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.6,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    }
+  ],
   "3713": [
     {
       "shape": "cylinder",
@@ -166,8 +216,8 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
         0,
         0.7071067811865476
       ],
-      "gearCollision": false,
-      "gearRatio": 1.5
+      "gearRatio": 1.5,
+      "gearCollision": false
     },
     {
       "shape": "box",
@@ -224,8 +274,8 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
         0,
         0.7071067811865476
       ],
-      "gearCollision": false,
-      "gearRatio": 1
+      "gearRatio": 1,
+      "gearCollision": false
     },
     {
       "shape": "cylinder",
@@ -293,6 +343,24 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
         0,
         0,
         0.7071067811865476
+      ]
+    }
+  ],
+  "10928": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.65,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
       ]
     }
   ],
@@ -780,6 +848,24 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
         0,
         0,
         1
+      ]
+    }
+  ],
+  "32498": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2.35,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
       ]
     }
   ],
@@ -1585,6 +1671,40 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
       ]
     }
   ],
+  "94925": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 1.08,
+      "halfHeight": 0.25,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
+      ]
+    },
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.6,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    }
+  ],
   "99773": [
     {
       "shape": "box",
@@ -1759,7 +1879,25 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
         0
       ],
       "radius": 1.3539019744873046,
-      "halfHeight": 0.4389000000000002,
+      "halfHeight": 0.25,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
+      ]
+    }
+  ],
+  "3649": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        -0.1337499976158143,
+        0
+      ],
+      "radius": 2.35,
+      "halfHeight": 0.25,
       "rotation": [
         0.7071067811865475,
         0,
@@ -1836,6 +1974,24 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
       ]
     }
   ],
+  "10928": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.4,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
+      ]
+    }
+  ],
   "32039": [],
   "32062": [],
   "32184": [],
@@ -1894,6 +2050,24 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
     }
   ],
   "32271": [],
+  "32498": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 2,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865475
+      ]
+    }
+  ],
   "32556": [],
   "45590": [],
   "46372": [
@@ -1904,8 +2078,8 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
         0,
         0
       ],
-      "radius": 1.5383235221862794,
-      "halfHeight": 0.4560000000000002,
+      "radius": 1.5,
+      "halfHeight": 0.5,
       "rotation": [
         0.7071067811865475,
         0,
@@ -1919,6 +2093,40 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
   "60484": [],
   "63869": [],
   "64179": [],
+  "94925": [
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.85,
+      "halfHeight": 0.25,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        0
+      ],
+      "radius": 0.5,
+      "halfHeight": 0.5,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    }
+  ],
   "99773": [],
   "4265c": []
 };
