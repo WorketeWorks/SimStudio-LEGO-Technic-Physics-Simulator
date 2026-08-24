@@ -190,7 +190,6 @@ const categories = [
   { id: "gears", icon: "⚙" },
   { id: "wheels", icon: "◉" },
   { id: "specials", icon: "✦" },
-  { id: "spike", icon: "⬢" },
   { id: "imported", icon: "↓" },
 ] as const;
 
