@@ -281,6 +281,7 @@ impl PhysicsEngine {
             differentials::project_velocities(
                 &self.differentials,
                 &driven_bodies,
+                substep_dt,
                 &mut self.world,
             );
             gears::project_velocities(&self.gears, &mut self.world, substep_dt);
@@ -288,6 +289,7 @@ impl PhysicsEngine {
             differentials::project_velocities(
                 &self.differentials,
                 &driven_bodies,
+                substep_dt,
                 &mut self.world,
             );
             gears::project_exact_no_slip(&self.gears, &mut self.world);
@@ -320,6 +322,7 @@ impl PhysicsEngine {
         differentials::project_velocities(
             &self.differentials,
             &driven_bodies,
+            timestep,
             &mut self.world,
         );
         gears::accumulate_angles(
@@ -494,6 +497,10 @@ impl PhysicsEngine {
         for differential in &self.differentials {
             connect(differential.left, differential.right);
             connect(differential.left, differential.carrier);
+            for satellite in &differential.satellites {
+                connect(satellite.body, differential.carrier);
+                connect(satellite.body, satellite.side_body);
+            }
         }
         let geared: HashSet<_> = graph.keys().copied().collect();
         for (_, handle) in &self.ordered_bodies {

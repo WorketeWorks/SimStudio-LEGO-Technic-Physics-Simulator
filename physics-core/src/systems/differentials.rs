@@ -5,6 +5,23 @@ use rapier3d::prelude::*;
 use crate::model::DifferentialConfig;
 
 const EPSILON: Real = 1.0e-6;
+const PHASE_BAUMGARTE: Real = 0.35;
+const MAX_PHASE_SPIN_SPEED: Real = 1.5;
+
+#[derive(Clone)]
+pub struct DifferentialSatelliteRuntime {
+    pub body: RigidBodyHandle,
+    pub side_body: RigidBodyHandle,
+    pub local_axis: Vector,
+    pub local_side_axis: Vector,
+    pub local_center: Vector,
+    pub local_side_center: Vector,
+    pub local_reference: Vector,
+    pub local_side_reference: Vector,
+    pub coefficient: Real,
+    pub side_coefficient: Real,
+    pub phase_lock: bool,
+}
 
 #[derive(Clone)]
 pub struct DifferentialRuntime {
@@ -14,6 +31,7 @@ pub struct DifferentialRuntime {
     pub local_axis_left: Vector,
     pub local_axis_right: Vector,
     pub local_axis_carrier: Vector,
+    pub satellites: Vec<DifferentialSatelliteRuntime>,
 }
 
 fn vector(value: [f32; 3]) -> Vector {
@@ -36,6 +54,28 @@ pub fn build(
         let left_body = world.bodies.get(left)?;
         let right_body = world.bodies.get(right)?;
         let carrier_body = world.bodies.get(carrier)?;
+        let satellites = config.satellites.iter().filter_map(|satellite| {
+            let body = *bodies.get(&satellite.body)?;
+            let side_body = *bodies.get(&satellite.side_body)?;
+            if body == side_body || body == carrier || satellite.coefficient.abs() <= EPSILON {
+                return None;
+            }
+            let satellite_body = world.bodies.get(body)?;
+            let side = world.bodies.get(side_body)?;
+            Some(DifferentialSatelliteRuntime {
+                body,
+                side_body,
+                local_axis: satellite_body.position().inverse_transform_vector(vector(satellite.axis).normalize()),
+                local_side_axis: side.position().inverse_transform_vector(vector(satellite.side_axis).normalize()),
+                local_center: satellite_body.position().inverse_transform_point(vector(satellite.center)),
+                local_side_center: side.position().inverse_transform_point(vector(satellite.side_center)),
+                local_reference: satellite_body.position().inverse_transform_vector(vector(satellite.reference).normalize()),
+                local_side_reference: side.position().inverse_transform_vector(vector(satellite.side_reference).normalize()),
+                coefficient: satellite.coefficient,
+                side_coefficient: satellite.side_coefficient,
+                phase_lock: satellite.phase_lock,
+            })
+        }).collect();
         Some(DifferentialRuntime {
             left,
             right,
@@ -43,6 +83,7 @@ pub fn build(
             local_axis_left: left_body.position().inverse_transform_vector(axis),
             local_axis_right: right_body.position().inverse_transform_vector(axis),
             local_axis_carrier: carrier_body.position().inverse_transform_vector(axis),
+            satellites,
         })
     }).collect()
 }
@@ -52,6 +93,7 @@ pub fn build(
 pub fn project_velocities(
     differentials: &[DifferentialRuntime],
     driven_bodies: &HashSet<RigidBodyHandle>,
+    dt: Real,
     world: &mut PhysicsWorld,
 ) {
     for differential in differentials {
@@ -132,6 +174,76 @@ pub fn project_velocities(
         if !fixed_r { world.bodies[differential.right].apply_torque_impulse(axis_r * impulse, true); }
         if !fixed_c { world.bodies[differential.carrier].apply_torque_impulse(axis_c * (-2.0 * impulse), true); }
     }
+    for differential in differentials {
+        project_satellites(differential, dt, world);
+    }
+}
+
+fn project_satellites(
+    differential: &DifferentialRuntime,
+    dt: Real,
+    world: &mut PhysicsWorld,
+) {
+    for satellite in &differential.satellites {
+        let (axis, carrier_angular, side_relative_speed, phase_error, fixed) = {
+            let Some(body) = world.bodies.get(satellite.body) else { continue; };
+            let Some(side) = world.bodies.get(satellite.side_body) else { continue; };
+            let Some(carrier) = world.bodies.get(differential.carrier) else { continue; };
+            let pose = *body.position();
+            let side_pose = *side.position();
+            let axis = (pose.rotation * satellite.local_axis).normalize();
+            let side_axis = (side_pose.rotation * satellite.local_side_axis).normalize();
+            let center = pose.transform_point(satellite.local_center);
+            let side_center = side_pose.transform_point(satellite.local_side_center);
+            let delta = side_center - center;
+            let radial = delta - axis * delta.dot(axis);
+            let side_radial = -delta - side_axis * (-delta).dot(side_axis);
+            let phase_error = if satellite.phase_lock && radial.length_squared() > EPSILON && side_radial.length_squared() > EPSILON {
+                let reference = pose.rotation * satellite.local_reference;
+                let side_reference = side_pose.rotation * satellite.local_side_reference;
+                let reference = reference - axis * reference.dot(axis);
+                let side_reference = side_reference - side_axis * side_reference.dot(side_axis);
+                if reference.length_squared() > EPSILON && side_reference.length_squared() > EPSILON {
+                    let angle = signed_angle(reference.normalize(), radial.normalize(), axis);
+                    let side_angle = signed_angle(side_reference.normalize(), side_radial.normalize(), side_axis);
+                    wrap_pi(
+                        satellite.coefficient * angle
+                            + satellite.side_coefficient * side_angle
+                            - std::f32::consts::PI,
+                    )
+                } else { 0.0 }
+            } else { 0.0 };
+            let carrier_angular = carrier.angvel();
+            (
+                axis,
+                carrier_angular,
+                (side.angvel() - carrier_angular).dot(side_axis),
+                phase_error,
+                body.is_fixed(),
+            )
+        };
+        if fixed { continue; }
+        let phase_rate = if dt > EPSILON {
+            (phase_error * PHASE_BAUMGARTE / dt).clamp(
+                -MAX_PHASE_SPIN_SPEED * satellite.coefficient.abs(),
+                MAX_PHASE_SPIN_SPEED * satellite.coefficient.abs(),
+            )
+        } else { 0.0 };
+        let target_relative =
+            (phase_rate - satellite.side_coefficient * side_relative_speed)
+                / satellite.coefficient;
+        let target = carrier_angular.dot(axis) + target_relative;
+        set_axis_speed(world, satellite.body, axis, target);
+    }
+}
+
+fn signed_angle(from: Vector, to: Vector, axis: Vector) -> Real {
+    axis.dot(from.cross(to)).atan2(from.dot(to))
+}
+
+fn wrap_pi(value: Real) -> Real {
+    (value + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI
 }
 
 fn set_axis_speed(

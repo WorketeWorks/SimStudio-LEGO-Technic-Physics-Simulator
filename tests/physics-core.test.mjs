@@ -692,6 +692,89 @@ test("three-body differential routes motion through every free member", () => {
   assert.ok(Math.abs(blockedCarrier) < 1e-5, `two blocked outputs must lock the carrier: ${blockedCarrier}`);
 });
 
+test("a differential satellite spins with the output difference and corrects tooth phase", () => {
+  const body = (id, position) => ({
+    id,
+    fixed: false,
+    position,
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 2,
+    ccd: false,
+    colliders: [{
+      ownerId: 800 + id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.2, 0.2, 0.2] },
+    }],
+  });
+  const scene = (reference) => ({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [
+      body(1, [0, 0, -1]),
+      body(2, [0, 0, 1]),
+      body(3, [0, 0, 0]),
+      body(4, [0, 1, 0]),
+    ],
+    joints: [],
+    gears: [],
+    differentials: [{
+      id: "diff-with-satellite",
+      leftBody: 1,
+      rightBody: 2,
+      carrierBody: 3,
+      axis: [0, 0, 1],
+      satellites: [{
+        body: 4,
+        sideBody: 1,
+        axis: [0, 1, 0],
+        sideAxis: [0, 0, 1],
+        center: [0, 1, 0],
+        sideCenter: [0, 0, -1],
+        reference,
+        sideReference: [0, 1, 0],
+        coefficient: 12,
+        sideCoefficient: 12,
+        phaseLock: true,
+      }],
+    }],
+    excludedColliderPairs: [],
+  });
+
+  const alignedReference = [-Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)];
+  let engine = new PhysicsEngine(scene(alignedReference));
+  let transforms = engine.step(1 / 60, [
+    { kind: "setAngularVelocity", body: 1, velocity: [0, 0, 6] },
+  ]);
+  const stride = engine.transform_stride();
+  const satelliteSpin = transforms[stride * 3 + 12];
+  assert.ok(Math.abs(satelliteSpin) > 2.5, `satellite must visibly spin: ${satelliteSpin}`);
+  engine.free();
+
+  engine = new PhysicsEngine(scene([0, 0, 1]));
+  transforms = engine.step(1 / 60, []);
+  const phaseCorrectionSpin = transforms[stride * 3 + 12];
+  assert.ok(
+    Math.abs(phaseCorrectionSpin) > 0.5,
+    `tooth-on-tooth satellite must move toward a gap: ${phaseCorrectionSpin}`,
+  );
+  for (let index = 0; index < 180; index++)
+    transforms = engine.step(1 / 60, []);
+  const settledPhaseSpin = transforms[stride * 3 + 12];
+  assert.ok(
+    Math.abs(settledPhaseSpin) < 0.1,
+    `satellite phase correction must settle instead of spinning forever: ${settledPhaseSpin}`,
+  );
+  engine.free();
+});
+
 test("tooth phase captures an initially tooth-on-tooth gear into a valid gap", () => {
   const body = (id, fixed, position) => ({
     id,

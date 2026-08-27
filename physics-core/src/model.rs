@@ -159,6 +159,24 @@ pub struct DifferentialConfig {
     pub right_body: u32,
     pub carrier_body: u32,
     pub axis: Vec3,
+    #[serde(default)]
+    pub satellites: Vec<DifferentialSatelliteConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DifferentialSatelliteConfig {
+    pub body: u32,
+    pub side_body: u32,
+    pub axis: Vec3,
+    pub side_axis: Vec3,
+    pub center: Vec3,
+    pub side_center: Vec3,
+    pub reference: Vec3,
+    pub side_reference: Vec3,
+    pub coefficient: f32,
+    pub side_coefficient: f32,
+    pub phase_lock: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

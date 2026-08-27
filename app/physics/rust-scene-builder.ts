@@ -324,6 +324,7 @@ export function buildRustDifferentialConfigs(
   pieces: Piece[],
   connections: Connection[],
   bodyIdByPiece: Map<Piece, number>,
+  gearLinks: RuntimeGearLink[] = [],
 ): RustDifferentialConfig[] {
   const differentialRefs = new Set(["6573", "62821"]);
   const isCarrier = (piece: Piece) =>
@@ -356,12 +357,105 @@ export function buildRustDifferentialConfigs(
 
     const axis = outputs[0].axis.clone();
     if (axis.dot(outputs[1].axis) < 0) outputs[1].axis.negate();
+    const referenceFor = (piece: Piece, gearAxis: THREE.Vector3): RustVec3 => {
+      piece.mesh.updateMatrixWorld(true);
+      const center = piece.mesh.localToWorld(new THREE.Vector3());
+      for (const local of [
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(0, 0, 1),
+      ]) {
+        const reference = piece.mesh.localToWorld(local).sub(center);
+        reference.addScaledVector(gearAxis, -reference.dot(gearAxis));
+        if (reference.lengthSq() > 1.0e-8) return vec3(reference.normalize());
+      }
+      const fallback = Math.abs(gearAxis.x) < 0.8
+        ? new THREE.Vector3(1, 0, 0)
+        : new THREE.Vector3(0, 0, 1);
+      return vec3(
+        fallback.addScaledVector(gearAxis, -fallback.dot(gearAxis)).normalize(),
+      );
+    };
+    const satellitePieces = connections.flatMap((connection) => {
+      if (connection.mode !== "rotation" || connection.profile !== "axle-cross")
+        return [];
+      const satellite = connection.a === carrier
+        ? connection.b
+        : connection.b === carrier
+          ? connection.a
+          : undefined;
+      return satellite ? [satellite] : [];
+    });
+    const satellites = [
+      ...new Map(
+        satellitePieces.flatMap((satellite) => {
+          const body = bodyIdByPiece.get(satellite);
+          if (!body || body === carrierBody) return [];
+          const link = gearLinks.find((candidate) => {
+            const other = candidate.a.value === satellite
+              ? candidate.b.value
+              : candidate.b.value === satellite
+                ? candidate.a.value
+                : undefined;
+            return other && outputs.some((output) => bodyIdByPiece.get(other) === output.body);
+          });
+          if (!link) return [];
+          const satelliteIsA = link.a.value === satellite,
+            satellitePose = satelliteIsA ? link.a : link.b,
+            sidePose = satelliteIsA ? link.b : link.a,
+            satelliteAxis = satelliteIsA ? link.axisA : link.axisB,
+            sideAxis = satelliteIsA ? link.axisB : link.axisA,
+            satelliteCenter = satelliteIsA
+              ? link.localCenterA
+                ? satellite.mesh.localToWorld(link.localCenterA.clone())
+                : new THREE.Vector3(...link.a.center)
+              : link.localCenterB
+                ? satellite.mesh.localToWorld(link.localCenterB.clone())
+                : new THREE.Vector3(...link.b.center),
+            sidePiece = sidePose.value,
+            sideBody = bodyIdByPiece.get(sidePiece);
+          if (!sideBody) return [];
+          sidePiece.mesh.updateMatrixWorld(true);
+          const sideCenter = satelliteIsA
+              ? link.localCenterB
+                ? sidePiece.mesh.localToWorld(link.localCenterB.clone())
+                : new THREE.Vector3(...link.b.center)
+              : link.localCenterA
+                ? sidePiece.mesh.localToWorld(link.localCenterA.clone())
+                : new THREE.Vector3(...link.a.center),
+            coefficient = satelliteIsA
+              ? satellitePose.spec.teeth
+              : link.signB * satellitePose.spec.teeth,
+            sideCoefficient = satelliteIsA
+              ? link.signB * sidePose.spec.teeth
+              : sidePose.spec.teeth;
+          return [[body, {
+            body,
+            sideBody,
+            axis: vec3(satelliteAxis.clone().normalize()),
+            sideAxis: vec3(sideAxis.clone().normalize()),
+            center: vec3(satelliteCenter),
+            sideCenter: vec3(sideCenter),
+            reference: referenceFor(satellite, satelliteAxis),
+            sideReference: referenceFor(sidePiece, sideAxis),
+            coefficient,
+            sideCoefficient,
+            phaseLock:
+              Number.isInteger(satellitePose.spec.teeth) &&
+              Number.isInteger(sidePose.spec.teeth) &&
+              satellitePose.spec.teeth % 2 === 0 &&
+              sidePose.spec.teeth % 2 === 0,
+          }] as const];
+        }),
+      ).values(),
+    ];
     return [{
       id: `differential:${carrier.id}`,
       leftBody: outputs[0].body,
       rightBody: outputs[1].body,
       carrierBody,
       axis: vec3(axis),
+      satellites,
     }];
   });
 }
@@ -729,6 +823,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     physicalPieces,
     physicalConnections,
     bodyIdByPiece,
+    gearLinks,
   );
   // The explicit three-body constraint replaces the internal bevel contact;
   // buildRustGearConfigs applies the same exclusion during dynamic rescans.

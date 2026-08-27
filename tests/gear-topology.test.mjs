@@ -58,7 +58,7 @@ vm.runInNewContext(
   `(function(exports,module,require){${sceneBuilderJs}\n})(module.exports,module,require);`,
   { module: sceneBuilderModule, require: sceneBuilderRequire },
 );
-const { buildRustGearConfigs } = sceneBuilderModule.exports;
+const { buildRustDifferentialConfigs, buildRustGearConfigs } = sceneBuilderModule.exports;
 const cylinder = (center, radius, ratio) => ({
   shape: "cylinder",
   center: new THREE.Vector3(...center),
@@ -158,5 +158,39 @@ test("rebuilding one drivetrain follows each gear's current local engagement fra
   assert.ok(
     new THREE.Vector3(...rebuilt.centerA).distanceTo(new THREE.Vector3(...initial.centerA)) > 5,
     "a remote topology change must not rebuild this gear at its old world position",
+  );
+});
+
+test("a 6573 differential exports its internal satellite mesh", () => {
+  const carrier = piece("carrier", "6573", 0, 0, []);
+  const left = piece("left", "6589", 0, -0.85, []);
+  const right = piece("right", "6589", 0, 0.85, []);
+  const satellite = piece("satellite", "6589", 0, 0, []);
+  satellite.mesh.position.y = -0.85;
+  satellite.mesh.updateMatrixWorld(true);
+  const connections = [
+    { a: carrier, b: left, profile: "axle-round", mode: "rotation-linear", axis: new THREE.Vector3(0, 0, 1), point: new THREE.Vector3(0, 0, -0.85) },
+    { a: carrier, b: right, profile: "axle-round", mode: "rotation-linear", axis: new THREE.Vector3(0, 0, 1), point: new THREE.Vector3(0, 0, 0.85) },
+    { a: carrier, b: satellite, profile: "axle-cross", mode: "rotation", axis: new THREE.Vector3(0, 1, 0), point: new THREE.Vector3() },
+  ];
+  const link = {
+    a: { value: satellite, spec: { teeth: 12 }, center: [0, -0.85, 0] },
+    b: { value: left, spec: { teeth: 12 }, center: [0, 0, -0.85] },
+    axisA: new THREE.Vector3(0, 1, 0),
+    axisB: new THREE.Vector3(0, 0, 1),
+    signB: 1,
+    perpendicular: true,
+  };
+  const bodyIds = new Map([[carrier, 1], [left, 2], [right, 3], [satellite, 4]]);
+  const [config] = buildRustDifferentialConfigs(
+    [carrier, left, right, satellite],
+    connections,
+    bodyIds,
+    [link],
+  );
+  assert.equal(config.satellites.length, 1);
+  assert.deepEqual(
+    { body: config.satellites[0].body, sideBody: config.satellites[0].sideBody },
+    { body: 4, sideBody: 2 },
   );
 });

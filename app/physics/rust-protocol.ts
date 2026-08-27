@@ -95,6 +95,20 @@ export type RustDifferentialConfig = {
   carrierBody: number;
   /** Common world-space axle direction used for all three angular speeds. */
   axis: RustVec3;
+  /** Internal bevel gears carried by the differential cage. */
+  satellites?: {
+    body: number;
+    sideBody: number;
+    axis: RustVec3;
+    sideAxis: RustVec3;
+    center: RustVec3;
+    sideCenter: RustVec3;
+    reference: RustVec3;
+    sideReference: RustVec3;
+    coefficient: number;
+    sideCoefficient: number;
+    phaseLock: boolean;
+  }[];
 };
 
 export type RustAxialStopConfig = {
