@@ -938,6 +938,55 @@ test("dynamic axle joints correct radial and angular capture error", () => {
   engine.free();
 });
 
+test("a two-hinge Cardan transmits rotation between angled axle bearings", () => {
+  const bend = Math.PI / 7, half = bend / 2, rootHalf = Math.SQRT1_2,
+    outputRotation = [Math.cos(half) * rootHalf, Math.cos(half) * rootHalf,
+      Math.sin(half) * rootHalf, -Math.sin(half) * rootHalf],
+    outputAxis = [0, Math.sin(bend), -Math.cos(bend)],
+    body = (id, fixed, rotation = [0, 0, 0, 1]) => ({
+      id, fixed, position: [0, 2, 0], rotation, mass: 0.65,
+      linearDamping: 0, angularDamping: 0.05,
+      additionalSolverIterations: 8, ccd: false,
+      colliders: [{ ownerId: 600 + id, center: [0, 0, 0],
+        rotation: [0, 0, 0, 1], friction: 0, density: 0.1,
+        collisionGroup: 1, collisionMask: 0,
+        shape: { kind: "box", halfExtents: [0.1, 0.1, 0.1] } }],
+    }),
+    joint = (id, bodyA, bodyB, axis, mode = "rotation") => ({
+      id, bodyA, bodyB, mode,
+      worldAnchorA: [0, 2, 0], worldAnchorB: [0, 2, 0],
+      worldAxisA: axis, worldAxisB: axis, travel: 0,
+      motorSpeed: mode === "motor" ? 3 : 0,
+      motorForce: mode === "motor" ? 500 : 0,
+      passiveMotorForce: 0, dynamicAxle: false,
+    });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings,
+    bodies: [body(1, true), body(2, false), body(3, false, outputRotation), body(4, false)],
+    joints: [
+      joint("input-bearing", 1, 2, [0, 0, 1], "motor"),
+      joint("output-bearing", 1, 3, outputAxis),
+      joint("cardan-yoke-a", 2, 4, [0, 1, 0]),
+      joint("cardan-yoke-b", 3, 4, [1, 0, 0]),
+    ],
+    gears: [], differentials: [], axialStops: [], rubberBands: [],
+    excludedColliderPairs: [],
+  });
+  let transforms;
+  for (let frame = 0; frame < 180; frame++) transforms = engine.step(1 / 60, []);
+  const stride = engine.transform_stride(), inputSpeed = transforms[stride + 13],
+    outputOffset = stride * 2,
+    outputSpeed = transforms[outputOffset + 11] * outputAxis[0] +
+      transforms[outputOffset + 12] * outputAxis[1] +
+      transforms[outputOffset + 13] * outputAxis[2];
+  assert.ok(Math.abs(inputSpeed) > 1, `input motor did not turn: ${inputSpeed}`);
+  assert.ok(Math.abs(outputSpeed) > 0.5,
+    `the angled Cardan output did not receive rotation: ${outputSpeed}`);
+  assert.ok(Math.abs(Math.abs(outputSpeed / inputSpeed) - 1) < 0.35,
+    `the Cardan ratio should remain near 1:1: ${inputSpeed} -> ${outputSpeed}`);
+  engine.free();
+});
+
 test("spring dragging scales to Rapier's real compound-body mass", () => {
   const engine = new PhysicsEngine({
     gravity: [0, 0, 0],

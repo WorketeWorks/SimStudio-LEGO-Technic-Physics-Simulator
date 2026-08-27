@@ -235,6 +235,9 @@ const modelText = (part) =>
     role: connector.role,
     diameter: connector.diameter,
     ...(connector.length === undefined ? {} : { length: connector.length }),
+    ...(connector.rotationOnly === undefined
+      ? {}
+      : { rotationOnly: connector.rotationOnly }),
   }),
   serializeCollider = (collider) => ({
     shape: collider.shape,

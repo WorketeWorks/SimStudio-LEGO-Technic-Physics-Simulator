@@ -10,6 +10,45 @@ export type StoredConnector = {
 
 // Generated from the reviewed maps exported by Sim Studio's map editor.
 export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
+  "62519": [
+    {
+      "local": [0, 0, 0],
+      "axis": [1, 0, 0],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.6,
+      "length": 0.9,
+      "rotationOnly": true
+    },
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 1, 0],
+      "kind": "round",
+      "role": "shaft",
+      "diameter": 0.6,
+      "length": 0.9,
+      "rotationOnly": true
+    }
+  ],
+  "62520": [
+    {
+      "local": [0, 0, -1],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.65,
+      "length": 1
+    },
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 1, 0],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6,
+      "length": 0.9,
+      "rotationOnly": true
+    }
+  ],
   "44": [
     {
       "local": [

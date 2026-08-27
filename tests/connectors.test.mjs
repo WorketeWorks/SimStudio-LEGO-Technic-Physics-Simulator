@@ -240,6 +240,28 @@ test("the 6573 differential exposes lateral sockets, a rotation-only axle stud a
   assert.equal(normalVolumes.filter((volume) => volume.gearCollision).length, 6);
 });
 
+test("the 61903 Cardan components expose two perpendicular free pivots", () => {
+  const centre = preloadedConnectionMaps["62519"],
+    end = preloadedConnectionMaps["62520"];
+  assert.equal(centre.length, 2);
+  assert.deepEqual(centre.map((connector) => connector.axis), [
+    [1, 0, 0],
+    [0, 1, 0],
+  ]);
+  assert.ok(centre.every((connector) =>
+    connector.role === "shaft" &&
+    connector.kind === "round" &&
+    connector.rotationOnly === true
+  ));
+  assert.equal(end.length, 2);
+  assert.equal(end[0].kind, "axle");
+  assert.deepEqual(end[0].local, [0, 0, -1]);
+  assert.equal(end[1].kind, "round");
+  assert.equal(end[1].rotationOnly, true);
+  assert.equal(preloadedCollisionMaps["62519"].length, 2);
+  assert.equal(preloadedCollisionMaps["62520"].length, 1);
+});
+
 test("a shaft ignores the full rigid host islands but not adjacent mobile islands", () => {
   const hostA = { id: 1 },
     hostAExtension = { id: 2 },

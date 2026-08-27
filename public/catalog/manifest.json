@@ -23420,6 +23420,169 @@
         ]
       }
     },
+    "61903": {
+      "name": "Technic Universal Joint 3L (Complete)",
+      "family": "connectors",
+      "modelPart": "61903",
+      "modelFile": "parts/61903.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            -1.1102230246251565e-16,
+            -1
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            -1.6653345369377348e-16,
+            -1.4
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6500089168548584
+        },
+        {
+          "local": [
+            0,
+            -8.326672684688674e-17,
+            -0.6000000000000001
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6500089168548584
+        },
+        {
+          "local": [
+            0,
+            1.1102230246251565e-16,
+            1
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            1.6653345369377348e-16,
+            1.4
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6500089168548584
+        },
+        {
+          "local": [
+            0,
+            8.326672684688674e-17,
+            0.6000000000000001
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6500089168548584
+        },
+        {
+          "local": [
+            0,
+            2.7755575615628914e-17,
+            0.35
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            8.326672684688674e-17,
+            0.75
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6500089168548585
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            5.551115123125783e-17,
+            0
+          ],
+          "size": [
+            0.7920000000000003,
+            0.7920000000000004,
+            2.64
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -0.4500000000000001,
+          -0.4500000000000002,
+          -1.5
+        ],
+        "max": [
+          0.4500000000000001,
+          0.4500000000000003,
+          1.5
+        ]
+      }
+    },
     "62462": {
       "name": "Technic Pin Joiner Round with Slot",
       "family": "connectors",
@@ -23489,6 +23652,169 @@
           1,
           0.5000000000000001,
           0.5000000000000001
+        ]
+      }
+    },
+    "62519": {
+      "name": "Technic Universal Joint 3L Centre",
+      "family": "connectors",
+      "modelPart": "62519",
+      "modelFile": "parts/62519.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "kind": "round",
+          "role": "shaft",
+          "diameter": 0.6,
+          "length": 0.9,
+          "rotationOnly": true
+        },
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "kind": "round",
+          "role": "shaft",
+          "diameter": 0.6,
+          "length": 0.9,
+          "rotationOnly": true
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.16,
+          "halfHeight": 0.34,
+          "rotation": [
+            0,
+            0,
+            -0.7071067811865475,
+            0.7071067811865476
+          ]
+        },
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.16,
+          "halfHeight": 0.34,
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -0.43950000000000006,
+          -0.43950000000000006,
+          -0.20000000000000007
+        ],
+        "max": [
+          0.43950000000000006,
+          0.43950000000000006,
+          0.20000000000000007
+        ]
+      }
+    },
+    "62520": {
+      "name": "Technic Universal Joint 3L End",
+      "family": "connectors",
+      "modelPart": "62520",
+      "modelFile": "parts/62520.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            -1
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.65,
+          "length": 1
+        },
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 0.9,
+          "rotationOnly": true
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            -0.95
+          ],
+          "radius": 0.45,
+          "halfHeight": 0.55,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865476
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -0.45,
+          -0.4500000000000002,
+          -1.5
+        ],
+        "max": [
+          0.45,
+          0.45000000000000007,
+          0.25000000000000006
         ]
       }
     },
@@ -32212,6 +32538,21 @@
       "geometry": "catalog/geometry/7446-14.json",
       "render": "catalog/renders/7446.png",
       "color": 14
+    },
+    "61903-71": {
+      "geometry": "catalog/geometry/61903-71.json",
+      "render": "catalog/renders/61903.png",
+      "color": 71
+    },
+    "62519-71": {
+      "geometry": "catalog/geometry/62519-71.json",
+      "render": "catalog/renders/62519.png",
+      "color": 71
+    },
+    "62520-71": {
+      "geometry": "catalog/geometry/62520-71.json",
+      "render": "catalog/renders/62520.png",
+      "color": 71
     }
   }
 }

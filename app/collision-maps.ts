@@ -11,6 +11,31 @@ export type StoredCollisionPrimitive = {
 
 // Generated from the reviewed maps exported by Sim Studio's collider editor.
 export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> = {
+  "62519": [
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 0.16,
+      "halfHeight": 0.34,
+      "rotation": [0, 0, -0.7071067811865475, 0.7071067811865476]
+    },
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 0.16,
+      "halfHeight": 0.34,
+      "rotation": [0, 0, 0, 1]
+    }
+  ],
+  "62520": [
+    {
+      "shape": "cylinder",
+      "center": [0, 0, -0.95],
+      "radius": 0.45,
+      "halfHeight": 0.55,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    }
+  ],
   "2825": [
     {
       "shape": "box",

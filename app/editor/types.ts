@@ -35,6 +35,8 @@ export type CatalogPart = {
   gear?: boolean;
   /** Uses ratio-tagged normal colliders to expose multiple gear engagements. */
   specialGear?: boolean;
+  /** Internal palette asset used to build a compound part, not shown alone. */
+  paletteHidden?: boolean;
   origin?: PartOrigin;
   sourceKind?: PartSource;
   requestedPart?: string;

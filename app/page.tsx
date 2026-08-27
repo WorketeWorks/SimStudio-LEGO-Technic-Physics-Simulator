@@ -3176,7 +3176,75 @@ export default function Home() {
       p: CatalogPart,
       position: THREE.Vector3,
       rotation?: THREE.Quaternion,
-    ) => {
+    ): Promise<Piece | null> => {
+      if (p.part.toLowerCase() === "61903" && !p.embeddedGeometry) {
+        const endCatalog = paletteParts.find((part) => part.part === "62520"),
+          centreCatalog = paletteParts.find((part) => part.part === "62519");
+        if (!endCatalog || !centreCatalog) return null;
+        const wasBulkLoading = state.bulkLoading,
+          baseRotation = rotation?.clone() ?? new THREE.Quaternion(),
+          flippedEndRotation = baseRotation.clone().multiply(
+            new THREE.Quaternion(
+              Math.SQRT1_2,
+              Math.SQRT1_2,
+              0,
+              0,
+            ),
+          ),
+          component = (catalog: CatalogPart): CatalogPart => ({
+            ...catalog,
+            color: p.color,
+            sourceColor: catalog.color,
+          });
+        state.bulkLoading = true;
+        try {
+          const firstEnd = await addPart(
+              component(endCatalog),
+              position.clone(),
+              baseRotation,
+            ),
+            secondEnd = await addPart(
+              component(endCatalog),
+              position.clone(),
+              flippedEndRotation,
+            ),
+            centre = await addPart(
+              component(centreCatalog),
+              position.clone(),
+              baseRotation,
+            ),
+            assembly = [firstEnd, secondEnd, centre].filter(
+              (piece): piece is Piece => Boolean(piece),
+            );
+          if (assembly.length !== 3) return null;
+          if (!rotation) {
+            const bounds = new THREE.Box3();
+            assembly.forEach((piece) => bounds.expandByObject(piece.mesh));
+            const lift = -bounds.min.y;
+            assembly.forEach((piece) => {
+              piece.mesh.position.y += lift;
+              piece.mesh.updateMatrixWorld(true);
+            });
+          }
+          assembly.forEach((piece) => {
+            piece.mesh.visible = true;
+            verifyPieceConnections(piece, false);
+          });
+          return firstEnd;
+        } finally {
+          state.bulkLoading = wasBulkLoading;
+          if (!wasBulkLoading) {
+            setCount(state.pieces.length);
+            setMessage(
+              language === "es"
+                ? "61903 · Junta Cardán física de 3 piezas"
+                : "61903 · Physical 3-piece universal joint",
+            );
+            refreshDebug();
+            scheduleRenderBatchRebuild();
+          }
+        }
+      }
       if (!state.bulkLoading) setMessage(`Cargando ${p.part}…`);
       try {
         const exact = await loadPartModel(p);
@@ -7508,10 +7576,12 @@ export default function Home() {
   const visible = useMemo(
     () =>
       category === "imported" && search
-        ? results.filter((p) =>
-            (p.part + " " + p.name).toLowerCase().includes(search.toLowerCase()),
+        ? results.filter(
+            (p) =>
+              !p.paletteHidden &&
+              (p.part + " " + p.name).toLowerCase().includes(search.toLowerCase()),
           )
-        : results,
+        : results.filter((p) => !p.paletteHidden),
     [category, results, search],
   );
 

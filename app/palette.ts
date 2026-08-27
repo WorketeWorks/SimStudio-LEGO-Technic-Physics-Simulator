@@ -84,7 +84,9 @@ const inventoryExtras: Entry[] = [
   ["98585", "Technic Connector Circular with 2 Pin Holes and 3 Axle Holes", 86], ["99009", "Technic Turntable 28 Tooth Bottom", 86],
   ["99010", "Technic Turntable 28 Tooth Top", 11], ["99021", "Technic Pneumatic Hose Connector with Bush", 85],
   ["99948", "Technic Steel Ball 18mm", 67],
-  ["62520c01", "Technic Cable/Connector (variant 62520)", 86],
+  ["61903", "Technic Universal Joint 3L (Complete)", 86],
+  ["62519", "Technic Universal Joint 3L Centre", 86],
+  ["62520", "Technic Universal Joint 3L End", 86],
   ["18938u", "Technic Turntable (variant 18938)", 11],
 ];
 
@@ -108,8 +110,8 @@ for(const family of ["axles","pins","connectors","gears","wheels","specials","sp
 const ldrawColor:Record<number,number>={2:19,5:4,7:1,11:0,85:72,86:71,88:70};
 const defaultColorOverride:Record<string,number>={"4265c":14,"15458":72,"32002":19,"4274":1,"48496":0,"39793":0,"32138":0,"32139":0,"6628":0,"50951":0,"6539":4,"18947":72,"35188":25,"35186":14,"3584":25,"4158":73,"4159":73,"7445":4,"7446":14,"85543":15,"85544":4,"85545":1,"85546":14};
 const invalidGeometry=new Set<string>();
-const modelAlias:Record<string,string>={"4265c":"32123b","4185":"4185b","6538":"6538a","6538c":"59443","6542":"6542a","3648":"3648b","44":"32126","18938u":"18938","62520c01":"62520","6628a":"6628"};
-export const paletteRequestAliases:Record<string,string>={"32123a":"4265c","32556b":"32556"};
+const modelAlias:Record<string,string>={"4265c":"32123b","4185":"4185b","6538":"6538a","6538c":"59443","6542":"6542a","3648":"3648b","44":"32126","18938u":"18938","6628a":"6628"};
+export const paletteRequestAliases:Record<string,string>={"32123a":"4265c","32556b":"32556","62520c01":"61903"};
 const thumbAlias:Record<string,string>={"32556":"32556b","19467c01":"19467","21828c01":"21828","3167":"3167s01","2477":"24779s01"};
 const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188", "3584", "4158", "4159", "7445", "7446"]);
 const thumbId:Record<string,number>={
@@ -124,12 +126,14 @@ const thumbId:Record<string,number>={
   "55981":10219,"55982":10222,"56145":10228,"56903":10266,"56908":10271,"61408":46051,"64781":11700,
   "65249":11769,"6553":11811,"6587":11862,"6592":11866,"6629":11878,"6630":11879,"67491":26092,"71709":26189,"71710":12166,"73507":12326,
   "77765":12586,"78442":26329,"80286":26373,"86652":13015,"87407":13111,"87761":13203,"89678":13327,"92911":13827,"98585":15050,
-  "99009":15068,"99010":15069,"99021":15074,"99948":15156,"62520":11291,"62821":11387,"6628":11877,"32126":5582
+  "99009":15068,"99010":15069,"99021":15074,"99948":15156,"61903":11177,"62519":11290,"62520":11291,"62821":11387,"6628":11877,"32126":5582
 };
 
 const thumbExtras:Record<string,number>={"3584":39899,"4158":32581,"4159":32584,"7446":53322};
+const compoundPartAssets = new Set(["62519", "62520"]);
 export const paletteParts=Object.entries(groups).flatMap(([family,entries])=>entries.map(([part,name,bricklinkColor])=>{const modelPart=modelAlias[part]??part,id=thumbId[modelPart]??thumbExtras[modelPart],thumbPart=thumbAlias[part]??modelPart,sourceColor=ldrawColor[bricklinkColor]??71,color=defaultColorOverride[part]??sourceColor;return{
   part,name,family:family as PaletteFamily,color,sourceColor,kind:(family==="gears"||family==="wheels"||family==="specials"?"wheel":family==="spike"&&/motor/i.test(name)?"motor":"beam") as "beam"|"wheel"|"motor",gear:family==="gears"&&!nonPhysicalGearParts.has(part),modelPart,rawThumb:true,
+  paletteHidden:compoundPartAssets.has(part),
   origin:"default-palette" as const,sourceKind:(invalidGeometry.has(part)?"ldraw-network":"packaged-cache") as "ldraw-network"|"packaged-cache",requestedPart:part,catalogReturnedPart:part,resolvedPart:modelPart,
   geometry:invalidGeometry.has(part)?undefined:`catalog/geometry/${part}-${color}.json`,
   thumb:id?(invalidGeometry.has(part)?`https://library.ldraw.org/media/parts/${id}/conversions/${thumbPart}-thumb.png`:`catalog/renders/${modelPart}.png`):undefined,
