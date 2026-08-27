@@ -52,6 +52,7 @@ const selectedReferences = new Set(
   renderRoot = join(catalogRoot, "renders"),
   sourceBases = [
     "https://library.ldraw.org/library/official/",
+    "https://library.ldraw.org/library/unofficial/",
     "https://cdn.jsdelivr.net/gh/remig/ldraw_parts@master/",
     "https://cdn.jsdelivr.net/gh/pybricks/ldraw@master/",
   ],

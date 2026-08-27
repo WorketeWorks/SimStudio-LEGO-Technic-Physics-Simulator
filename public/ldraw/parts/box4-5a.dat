@@ -1,0 +1,16 @@
+0 Box with 4 Faces without 5 Edges
+0 Name: box4-5a.dat
+0 Author: Steffen [Steffen]
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 BFC CERTIFY CCW
+2 24 1 1 1 -1 1 1
+2 24 -1 1 1 -1 1 -1
+2 24 1 1 -1 1 1 1
+2 24 1 0 1 1 1 1
+2 24 1 0 -1 1 1 -1
+2 24 -1 0 1 -1 1 1
+2 24 -1 0 -1 -1 1 -1
+4 16 1 1 -1 -1 1 -1 -1 1 1 1 1 1
+4 16 -1 1 1 -1 0 1 1 0 1 1 1 1
+4 16 -1 1 -1 -1 0 -1 -1 0 1 -1 1 1
+4 16 1 1 1 1 0 1 1 0 -1 1 1 -1

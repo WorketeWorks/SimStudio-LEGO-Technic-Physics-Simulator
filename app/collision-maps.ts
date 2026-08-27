@@ -1948,7 +1948,7 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
         0,
         -0.1
       ],
-      "radius": 0.55,
+      "radius": 0.49,
       "halfHeight": 0.25,
       "rotation": [
         0.7071067811865475,
@@ -1962,10 +1962,26 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
       "center": [
         0,
         0,
-        -0.05
+        -0.02
       ],
-      "radius": 0.8,
-      "halfHeight": 0.05,
+      "radius": 0.805,
+      "halfHeight": 0.02,
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "shape": "cylinder",
+      "center": [
+        0,
+        0,
+        -0.03
+      ],
+      "radius": 0.79,
+      "halfHeight": 0.029,
       "rotation": [
         0.7071067811865475,
         0,

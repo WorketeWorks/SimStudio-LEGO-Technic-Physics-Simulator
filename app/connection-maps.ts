@@ -8087,5 +8087,86 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "socket",
       "diameter": 0.6000000000000001
     }
+  ],
+  "18947": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "35188": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "6539": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "4159": [
+    {
+      "local": [0, 0.5, 0],
+      "axis": [0, 1, 0],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [-1, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6
+    },
+    {
+      "local": [1, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.6
+    }
+  ],
+  "6538": [
+    {
+      "local": [0, 0, 0.5],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    },
+    {
+      "local": [0, 0, -0.5],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "6542": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
   ]
 };

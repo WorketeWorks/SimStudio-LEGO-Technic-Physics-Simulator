@@ -1162,6 +1162,79 @@
         ]
       }
     },
+    "3584": {
+      "name": "Technic Changeover Cylinder with Groove",
+      "family": "gears",
+      "modelPart": "3584",
+      "modelFile": "parts/3584.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            5.551115123125783e-17,
+            0.51
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            -5.551115123125783e-17,
+            -0.49
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            2.64,
+            2.6400000000000006,
+            1.7600000000000005
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -1.5,
+          -1.5000000000000002,
+          -1.0000000000000002
+        ],
+        "max": [
+          1.5,
+          1.5000000000000002,
+          1.0000000000000002
+        ]
+      }
+    },
     "3648": {
       "name": "Technic Gear 24 Tooth",
       "family": "gears",
@@ -2091,6 +2164,199 @@
           1,
           0.4000000000000001,
           0.4000000000000001
+        ]
+      }
+    },
+    "4158": {
+      "name": "Technic Changeover Cylinder with Groove",
+      "family": "gears",
+      "modelPart": "4158",
+      "modelFile": "parts/4158.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            5.551115123125783e-17,
+            0.51
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            -5.551115123125783e-17,
+            -0.49
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.5758789658546448
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "size": [
+            2.64,
+            2.6400000000000006,
+            1.7600000000000005
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -1.5,
+          -1.5000000000000002,
+          -1.0000000000000002
+        ],
+        "max": [
+          1.5,
+          1.5000000000000002,
+          1.0000000000000002
+        ]
+      }
+    },
+    "4159": {
+      "name": "Technic Changeover Catch Fork",
+      "family": "gears",
+      "modelPart": "4159",
+      "modelFile": "parts/4159.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0.5,
+            -5.551115123125783e-17
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            -1,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            1,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            1,
+            -1.1102230246251565e-16
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 1.0000000000000004
+        },
+        {
+          "local": [
+            0,
+            2,
+            -1.1102230246251565e-16
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6,
+          "length": 1.0000000000000004
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "box",
+          "center": [
+            0.23465003967285147,
+            1.0175000190734864,
+            -1.1102230246251565e-16
+          ],
+          "size": [
+            2.964984069824219,
+            2.5828000335693364,
+            0.8800000000000004
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -1.4500000000000002,
+          -0.4500000000000001,
+          -0.5000000000000003
+        ],
+        "max": [
+          1.9193000793457031,
+          2.485000038146973,
+          0.5000000000000001
         ]
       }
     },
@@ -4173,6 +4439,161 @@
           0.5,
           0.4500000000000003,
           2.3000000000000003
+        ]
+      }
+    },
+    "7445": {
+      "name": "Technic Gear Shifter with Axle Hole 30 degrees Offset",
+      "family": "gears",
+      "modelPart": "7445",
+      "modelFile": "parts/7445.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            -5.551115123125783e-17,
+            -0.49
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.5841082453727723
+        },
+        {
+          "local": [
+            0,
+            5.551115123125783e-17,
+            0.51
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 1.3893750000000002,
+          "halfHeight": 0.9500000000000002,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -1.4625000000000001,
+          -1.4625000000000004,
+          -1.0000000000000002
+        ],
+        "max": [
+          1.4625000000000001,
+          1.4625000000000004,
+          1.0000000000000002
+        ]
+      }
+    },
+    "7446": {
+      "name": "Technic Gear Shifter with Axle Hole 60 degrees Offset",
+      "family": "gears",
+      "modelPart": "7446",
+      "modelFile": "parts/7446.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            -5.551115123125783e-17,
+            -0.51
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6000000000000001
+        },
+        {
+          "local": [
+            0,
+            5.551115123125783e-17,
+            0.49
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.5949976086616516
+        },
+        {
+          "local": [
+            0.5860624969005586,
+            0.6504875004291536,
+            0.64
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "axle",
+          "role": "socket",
+          "diameter": 0.6290999889373781
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0.0005000114440918413
+          ],
+          "radius": 1.425,
+          "halfHeight": 0.9504750108718875,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": false,
+      "gearColliders": [],
+      "bounds": {
+        "min": [
+          -1.5,
+          -1.5000000000000002,
+          -1.0000000000000002
+        ],
+        "max": [
+          1.5,
+          1.5000000000000002,
+          1.001000022888184
         ]
       }
     },
@@ -31765,6 +32186,31 @@
     "35186-14": {
       "geometry": "catalog/geometry/35186-14.json",
       "render": "catalog/renders/35186.png",
+      "color": 14
+    },
+    "4159-73": {
+      "geometry": "catalog/geometry/4159-73.json",
+      "render": "catalog/renders/4159.png",
+      "color": 73
+    },
+    "3584-25": {
+      "geometry": "catalog/geometry/3584-25.json",
+      "render": "catalog/renders/3584.png",
+      "color": 25
+    },
+    "4158-73": {
+      "geometry": "catalog/geometry/4158-73.json",
+      "render": "catalog/renders/4158.png",
+      "color": 73
+    },
+    "7445-4": {
+      "geometry": "catalog/geometry/7445-4.json",
+      "render": "catalog/renders/7445.png",
+      "color": 4
+    },
+    "7446-14": {
+      "geometry": "catalog/geometry/7446-14.json",
+      "render": "catalog/renders/7446.png",
       "color": 14
     }
   }

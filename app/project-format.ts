@@ -107,6 +107,10 @@ export type SavedRubberBand = {
   color: number;
 };
 
+export type SavedMapBaseline = Partial<
+  Record<"connectors" | "colliders" | "gearColliders" | "specialGear", string>
+>;
+
 export type SimStudioProjectDocument = {
   format: typeof PROJECT_FORMAT;
   version: typeof PROJECT_VERSION;
@@ -122,6 +126,8 @@ export type SimStudioProjectDocument = {
   connections: SavedConnection[];
   gearLinks: SavedGearLink[];
   rubberBands?: SavedRubberBand[];
+  /** Fingerprints of the packaged maps that embedded part maps were based on. */
+  mapBaselines?: Record<string, SavedMapBaseline>;
   importedCatalog: JsonObject[];
   camera: {
     position: [number, number, number];
@@ -444,6 +450,28 @@ const sanitizeProjectDocument = (
         } satisfies SavedRubberBand];
       },
     ),
+    mapBaselines = Object.fromEntries(
+      Object.entries(
+        document.mapBaselines && typeof document.mapBaselines === "object"
+          ? document.mapBaselines
+          : {},
+      ).flatMap(([part, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const baseline = Object.fromEntries(
+          ["connectors", "colliders", "gearColliders", "specialGear"].flatMap(
+            (layer) => {
+              const fingerprint = (value as Record<string, unknown>)[layer];
+              return typeof fingerprint === "string" && fingerprint.length <= 80
+                ? [[layer, fingerprint]]
+                : [];
+            },
+          ),
+        ) as SavedMapBaseline;
+        return Object.keys(baseline).length
+          ? [[part.toLowerCase().slice(0, 80), baseline]]
+          : [];
+      }),
+    ),
     physics = Object.fromEntries(
       Object.entries(
         document.settings?.physics && typeof document.settings.physics === "object"
@@ -488,6 +516,7 @@ const sanitizeProjectDocument = (
     connections,
     gearLinks,
     rubberBands,
+    mapBaselines: Object.keys(mapBaselines).length ? mapBaselines : undefined,
     importedCatalog: Array.isArray(document.importedCatalog)
       ? document.importedCatalog.filter(
           (catalog): catalog is JsonObject =>

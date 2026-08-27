@@ -197,6 +197,25 @@ test("keeps every restored correction map preloaded", () => {
     assert.ok(preloadedCollisionMaps[part]?.length, `${part} collision map`);
 });
 
+test("loads the downloaded connection corrections", () => {
+  assert.deepEqual(preloadedConnectionMaps["18947"], [{
+    local: [0, 0, 0], axis: [0, 0, 1], kind: "axle", role: "socket",
+    diameter: 0.8, length: 1,
+  }]);
+  assert.deepEqual(preloadedConnectionMaps["35188"], preloadedConnectionMaps["18947"]);
+  assert.deepEqual(preloadedConnectionMaps["6539"], preloadedConnectionMaps["18947"]);
+  assert.equal(preloadedConnectionMaps["4159"].length, 3);
+  assert.equal(preloadedConnectionMaps["6538"].length, 2);
+  assert.equal(preloadedConnectionMaps["6542"][0].kind, "round");
+});
+
+test("loads the downloaded 6589 gear collision correction", () => {
+  const colliders = preloadedGearCollisionMaps["6589"];
+  assert.equal(colliders.length, 3);
+  assert.deepEqual(colliders.map((collider) => collider.radius), [0.49, 0.805, 0.79]);
+  assert.deepEqual(colliders.map((collider) => collider.halfHeight), [0.25, 0.02, 0.029]);
+});
+
 test("the 6573 differential exposes lateral sockets, a rotation-only axle stud and two gear volumes", () => {
   const sockets = preloadedConnectionMaps["6573"];
   assert.equal(sockets.length, 3);

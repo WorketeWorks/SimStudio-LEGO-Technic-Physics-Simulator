@@ -55,9 +55,22 @@ import {
   type ProjectSummary,
   type SavedCollisionPrimitive,
   type SavedConnector,
+  type SavedMapBaseline,
   type SavedRubberBand,
   type SimStudioProjectDocument,
 } from "./project-format";
+import {
+  MAP_BASELINE_STORAGE_PREFIX,
+  changedMapLayers,
+  differentMapLayers,
+  fingerprintMapBundle,
+  mapLayerCounts,
+  preloadedMapBundle,
+  preloadedMapFingerprint,
+  type MapFingerprintSnapshot,
+  type MapUpdateLayer,
+  type PartMapBundle,
+} from "./map-updates";
 import { disposeRubberBand, drawRubberBand, makeRubberBandLine, makeRubberBandMarkers, makeRubberBandVisual, rubberBandLength } from "./physics/rubber-band";
 import { createStudioGrid, GRID_RECENTER_STEP, GRID_SIZE } from "./renderer/studio-grid";
 import { configureDistanceScaledOutlineMaterial } from "./renderer/outline-material";
@@ -118,10 +131,21 @@ type FogSettings = {
   far: number;
 };
 
+type MapUpdateCandidate = {
+  key: string;
+  part: string;
+  name: string;
+  thumb?: string;
+  layers: MapUpdateLayer[];
+  localCounts: ReturnType<typeof mapLayerCounts>;
+  preloadedCounts: ReturnType<typeof mapLayerCounts>;
+  sources: ("browser" | "project")[];
+};
+
 const DEFAULT_FOG_SETTINGS: FogSettings = {
   enabled: true,
-  near: 18,
-  far: 60,
+  near: 30,
+  far: 100,
 };
 
 // --- Catalog sources and packaged metadata ---------------------------------
@@ -142,6 +166,84 @@ const collisionMapRevision = (part: string) =>
   part.toLowerCase() === "6573"
     ? "2026-08-24-6573-special-gear-2"
     : CORRECTION_MAP_REVISION;
+
+const parseStoredMap = (storage: Storage, key: string) => {
+  const value = storage.getItem(key);
+  if (value === null) return undefined;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+};
+
+const storedMapBundle = (storage: Storage, part: string): PartMapBundle => {
+  const specialGear = parseStoredMap(storage, `sim-special-gear-v1:${part}`);
+  return {
+    connectors: parseStoredMap(storage, `sim-connectors-v4:${part}`),
+    colliders: parseStoredMap(storage, `sim-colliders-v1:${part}`),
+    gearColliders: parseStoredMap(storage, `sim-gear-colliders-v1:${part}`),
+    specialGear: typeof specialGear === "boolean" ? specialGear : undefined,
+  };
+};
+
+const readStoredMapBaseline = (
+  storage: Storage,
+  part: string,
+): MapFingerprintSnapshot | undefined => {
+  const value = parseStoredMap(storage, `${MAP_BASELINE_STORAGE_PREFIX}${part}`);
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as MapFingerprintSnapshot)
+    : undefined;
+};
+
+const writeStoredMapBaseline = (
+  storage: Storage,
+  part: string,
+  baseline = preloadedMapFingerprint(part),
+) => {
+  storage.setItem(`${MAP_BASELINE_STORAGE_PREFIX}${part}`, JSON.stringify(baseline));
+};
+
+const legacyMapBaseline = (
+  storage: Storage,
+  part: string,
+  current: MapFingerprintSnapshot,
+) => {
+  const result: MapFingerprintSnapshot = {};
+  if (storage.getItem(`sim-connectors-revision:${part}`) === CORRECTION_MAP_REVISION)
+    result.connectors = current.connectors;
+  if (
+    storage.getItem(`sim-colliders-revision:${part}`) === collisionMapRevision(part)
+  ) {
+    result.colliders = current.colliders;
+    result.gearColliders = current.gearColliders;
+    result.specialGear = current.specialGear;
+  }
+  return result;
+};
+
+const runtimeConnectorFromStored = (value: unknown): MeshConnector => {
+  const connector = value as SavedConnector;
+  return {
+    ...connector,
+    role: connector.role ?? "socket",
+    local: new THREE.Vector3().fromArray(connector.local),
+    axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
+  };
+};
+
+const runtimeColliderFromStored = (value: unknown): CollisionPrimitive => {
+  const collider = value as SavedCollisionPrimitive;
+  return {
+    ...collider,
+    center: new THREE.Vector3().fromArray(collider.center),
+    size: collider.size
+      ? new THREE.Vector3().fromArray(collider.size)
+      : undefined,
+    rotation: new THREE.Quaternion().fromArray(collider.rotation),
+  };
+};
 
 const invalidPackagedGeometry = new Set<string>();
 
@@ -179,6 +281,10 @@ const packagedParts = preloadedCatalog.parts as Record<
     }[];
   }
 >;
+const correctionStorageKeyFor = (p: CatalogPart) =>
+  correctionPartKeys(p).find(
+    (key) => preloadedConnectionMaps[key] || preloadedCollisionMaps[key] || packagedParts[key],
+  ) ?? p.part.toLowerCase();
 // Palette tabs are deliberately presentation-only; part data lives in
 // palette.ts and imported catalog entries live in the runtime state.
 
@@ -227,9 +333,13 @@ const belongsToDefaultPalette = (part: CatalogPart) =>
     .filter(Boolean)
     .some((value) => paletteReferenceSet.has(value!.toLowerCase()));
 
-const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188"]);
+const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188", "3584", "4158", "4159", "7445", "7446"]);
+const correctionPartKeys = (p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">) =>
+  [...new Set([p.part, p.modelPart, p.resolvedPart].filter(Boolean).map((value) => value!.toLowerCase()))];
+const correctionMapFor = <T,>(maps: Record<string, T[]>, p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">) =>
+  correctionPartKeys(p).map((key) => maps[key]).find(Boolean);
 const isGearPart = (p: CatalogPart) =>
-  nonPhysicalGearParts.has(p.part)
+  correctionPartKeys(p).some((key) => nonPhysicalGearParts.has(key))
     ? false
     : p.gear === true || p.family === "gears" || /\bgear\b/i.test(p.name);
 
@@ -708,6 +818,7 @@ export default function Home() {
   const projectCreatedAtRef = useRef(new Date().toISOString());
   const projectRevisionRef = useRef(0);
   const savedProjectRevisionRef = useRef<number | null>(null);
+  const projectMapBaselinesRef = useRef<Record<string, SavedMapBaseline>>({});
 
   // Physics preferences are mirrored in refs for the requestAnimationFrame loop.
   const structuralModeRef = useRef<StructuralMode>("rigid");
@@ -757,6 +868,8 @@ export default function Home() {
   const [connectionMapOpen, setConnectionMapOpen] = useState(false);
   const [collisionMapOpen, setCollisionMapOpen] = useState(false);
   const [collisionLayer, setCollisionLayer] = useState<"normal" | "gear">("normal");
+  const [mapUpdates, setMapUpdates] = useState<MapUpdateCandidate[]>([]);
+  const [mapUpdatesOpen, setMapUpdatesOpen] = useState(false);
 
   // Placement, snapping and pending import controls.
   const [rotationAngle, setRotationAngle] = useState(15);
@@ -807,6 +920,107 @@ export default function Home() {
 
   // Translated labels are computed once per render and shared by the inspector.
   const t = translations[language];
+  const queueMapUpdates = (updates: MapUpdateCandidate[], openAutomatically = true) => {
+    if (!updates.length) return;
+    setMapUpdates((current) => {
+      const merged = new Map(current.map((item) => [item.key, item]));
+      for (const update of updates) {
+        const previous = merged.get(update.key);
+        merged.set(
+          update.key,
+          previous
+            ? {
+                ...previous,
+                layers: [...new Set([...previous.layers, ...update.layers])],
+                sources: [...new Set([...previous.sources, ...update.sources])],
+                localCounts: update.localCounts,
+                preloadedCounts: update.preloadedCounts,
+              }
+            : update,
+        );
+      }
+      return [...merged.values()].sort((left, right) =>
+        left.part.localeCompare(right.part, undefined, { numeric: true }),
+      );
+    });
+    if (openAutomatically) setMapUpdatesOpen(true);
+  };
+  const acknowledgeManualMapEdit = (
+    key: string,
+    layers: MapUpdateLayer[],
+  ) => {
+    const current = preloadedMapFingerprint(key),
+      storedBaseline =
+        readStoredMapBaseline(localStorage, key) ??
+        legacyMapBaseline(localStorage, key, current),
+      browserBaseline = { ...storedBaseline },
+      projectBaseline = {
+        ...(projectMapBaselinesRef.current[key] ?? current),
+      };
+    for (const layer of layers) {
+      if (current[layer] !== undefined) {
+        browserBaseline[layer] = current[layer];
+        projectBaseline[layer] = current[layer];
+      }
+    }
+    writeStoredMapBaseline(localStorage, key, browserBaseline);
+    projectMapBaselinesRef.current[key] = projectBaseline;
+    const actualBundle = storedMapBundle(localStorage, key),
+      browserDifferences = differentMapLayers(
+        current,
+        fingerprintMapBundle(actualBundle),
+      ),
+      editedDifferences = layers.filter((layer) =>
+        browserDifferences.includes(layer),
+      ),
+      catalog = paletteParts.find(
+        (part) => correctionStorageKeyFor(part) === key,
+      );
+    setMapUpdates((currentUpdates) => {
+      let found = false;
+      const remaining = currentUpdates.flatMap((candidate) => {
+        if (candidate.key !== key) return [candidate];
+        found = true;
+        const pendingLayers = [
+            ...new Set([
+              ...candidate.layers.filter((layer) => !layers.includes(layer)),
+              ...editedDifferences,
+            ]),
+          ],
+          sources: MapUpdateCandidate["sources"] = candidate.sources.filter(
+            (source) => source !== "browser",
+          );
+        if (pendingLayers.some((layer) => browserDifferences.includes(layer)))
+          sources.push("browser");
+        return pendingLayers.length
+          ? [
+              {
+                ...candidate,
+                layers: pendingLayers,
+                sources,
+                localCounts: mapLayerCounts(actualBundle),
+              },
+            ]
+          : [];
+      });
+      if (!found && editedDifferences.length) {
+        remaining.push({
+          key,
+          part: catalog?.part ?? key,
+          name: catalog?.name ?? `LEGO ${key}`,
+          thumb: catalog?.thumb,
+          layers: editedDifferences,
+          localCounts: mapLayerCounts(actualBundle),
+          preloadedCounts: mapLayerCounts(preloadedMapBundle(key)),
+          sources: ["browser"],
+        });
+      }
+      if (!remaining.length) setMapUpdatesOpen(false);
+      return remaining.sort((left, right) =>
+        left.part.localeCompare(right.part, undefined, { numeric: true }),
+      );
+    });
+  };
   const modeLabels: Record<JointMode, string> =
     language === "es"
       ? modeLabel
@@ -817,6 +1031,20 @@ export default function Home() {
           "rotation-linear": "Free rotation and linear travel",
           motor: "Motor",
         };
+  const mapLayerLabel = (layer: MapUpdateLayer) =>
+    language === "es"
+      ? {
+          connectors: "conexiones",
+          colliders: "colisión",
+          gearColliders: "colisión de engranajes",
+          specialGear: "tipo de engranaje",
+        }[layer]
+      : {
+          connectors: "connections",
+          colliders: "collision",
+          gearColliders: "gear collision",
+          specialGear: "gear type",
+        }[layer];
   const profileLabels: Record<ConnectionProfile, string> =
     language === "es"
       ? profileLabel
@@ -824,7 +1052,56 @@ export default function Home() {
           "pin-round": "Orange ↔ blue",
           "axle-cross": "Purple ↔ green",
           "axle-round": "Purple ↔ blue",
-        };
+      };
+
+  useEffect(() => {
+    try {
+      const parts = new Set<string>();
+      for (let index = 0; index < localStorage.length; index++) {
+        const storageKey = localStorage.key(index);
+        const prefix = [
+          "sim-connectors-v4:",
+          "sim-colliders-v1:",
+          "sim-gear-colliders-v1:",
+          "sim-special-gear-v1:",
+        ].find((candidate) => storageKey?.startsWith(candidate));
+        if (prefix && storageKey) parts.add(storageKey.slice(prefix.length).toLowerCase());
+      }
+      const updates: MapUpdateCandidate[] = [];
+      let openAutomatically = false;
+      for (const key of parts) {
+        const actualBundle = storedMapBundle(localStorage, key),
+          actual = fingerprintMapBundle(actualBundle),
+          current = preloadedMapFingerprint(key),
+          storedBaseline = readStoredMapBaseline(localStorage, key),
+          baseline = storedBaseline ?? legacyMapBaseline(localStorage, key, current),
+          layers = differentMapLayers(current, actual),
+          automaticLayers = changedMapLayers(baseline, current, actual);
+        if (!storedBaseline) writeStoredMapBaseline(localStorage, key, baseline);
+        if (!layers.length) {
+          writeStoredMapBaseline(localStorage, key, current);
+          continue;
+        }
+        if (automaticLayers.length) openAutomatically = true;
+        const catalog = paletteParts.find(
+          (part) => correctionStorageKeyFor(part) === key,
+        );
+        updates.push({
+          key,
+          part: catalog?.part ?? key,
+          name: catalog?.name ?? `LEGO ${key}`,
+          thumb: catalog?.thumb,
+          layers,
+          localCounts: mapLayerCounts(actualBundle),
+          preloadedCounts: mapLayerCounts(preloadedMapBundle(key)),
+          sources: ["browser"],
+        });
+      }
+      queueMapUpdates(updates, openAutomatically);
+    } catch {
+      // Storage can be unavailable in private or hardened browser contexts.
+    }
+  }, []);
 
   useEffect(
     () => () => {
@@ -937,8 +1214,16 @@ export default function Home() {
         localStorage.getItem("sim-studio:fog-settings") ?? "null",
       ) as Partial<FogSettings> | null;
       if (savedFog) {
-        const near = THREE.MathUtils.clamp(Number(savedFog.near) || 18, 1, 149),
-          far = THREE.MathUtils.clamp(Number(savedFog.far) || 60, near + 1, 160);
+        const near = THREE.MathUtils.clamp(
+            Number(savedFog.near) || DEFAULT_FOG_SETTINGS.near,
+            1,
+            149,
+          ),
+          far = THREE.MathUtils.clamp(
+            Number(savedFog.far) || DEFAULT_FOG_SETTINGS.far,
+            near + 1,
+            160,
+          );
         setFogSettings({
           enabled: savedFog.enabled !== false,
           near,
@@ -1388,27 +1673,26 @@ export default function Home() {
         axis: connector.axis.clone(),
       }));
     const analyzePart = (wrapper: THREE.Object3D, p: CatalogPart) => {
-      let connectors: MeshConnector[] | undefined,
-        hasSavedConnectorMap = false,
-        savedCollisionRevision = localStorage.getItem(
-          `sim-colliders-revision:${p.part}`,
+      const correctionKeys = correctionPartKeys(p),
+        preloadedConnections = correctionMapFor(preloadedConnectionMaps, p),
+        preloadedCollisions = correctionMapFor(preloadedCollisionMaps, p),
+        preloadedGearCollisions = correctionMapFor(preloadedGearCollisionMaps, p),
+        packaged = correctionKeys.map((key) => packagedParts[key]).find(Boolean),
+        correctionStorageKey = correctionStorageKeyFor(p),
+        hasPreloadedConnectionMap = Boolean(preloadedConnections);
+      const storedSpecialGear = localStorage.getItem(
+          `sim-special-gear-v1:${correctionStorageKey}`,
         ),
         specialGear =
           p.specialGear === true ||
-          preloadedSpecialGearParts.has(p.part.toLowerCase()) ||
-          ((!preloadedCollisionMaps[p.part] ||
-            savedCollisionRevision === collisionMapRevision(p.part)) &&
-            localStorage.getItem(`sim-special-gear-v1:${p.part}`) === "true");
+          (storedSpecialGear === null
+            ? correctionKeys.some((key) => preloadedSpecialGearParts.has(key))
+            : storedSpecialGear === "true");
+      let connectors: MeshConnector[] | undefined,
+        hasSavedConnectorMap = false;
       try {
-        const saved = localStorage.getItem(`sim-connectors-v4:${p.part}`),
-          savedRevision = localStorage.getItem(
-            `sim-connectors-revision:${p.part}`,
-          );
-        if (
-          saved &&
-          (!preloadedConnectionMaps[p.part] ||
-            savedRevision === CORRECTION_MAP_REVISION)
-        ) {
+        const saved = localStorage.getItem(`sim-connectors-v4:${correctionStorageKey}`);
+        if (saved) {
           hasSavedConnectorMap = true;
           connectors = (
             JSON.parse(saved) as {
@@ -1430,21 +1714,21 @@ export default function Home() {
       } catch {}
       if (!connectors)
         connectors = straightAxleConnectors(p.name);
-      if (!connectors && preloadedConnectionMaps[p.part])
-        connectors = preloadedConnectionMaps[p.part].map((connector) => ({
+      if (!connectors && preloadedConnections)
+        connectors = preloadedConnections.map((connector) => ({
           ...connector,
           local: new THREE.Vector3().fromArray(connector.local),
           axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
         }));
-      if (!connectors && packagedParts[p.part])
-        connectors = packagedParts[p.part].connectors.map((connector) => ({
+      if (!connectors && packaged)
+        connectors = packaged.connectors.map((connector) => ({
           ...connector,
           local: new THREE.Vector3().fromArray(connector.local),
           axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
         }));
       if (!connectors)
         connectors =
-          connectorCache.get(p.part) && cloneConnectors(connectorCache.get(p.part)!);
+          connectorCache.get(correctionStorageKey) && cloneConnectors(connectorCache.get(correctionStorageKey)!);
       if (!connectors) {
         if (isPinPart(p)) {
           const shafts = /^Technic Axle Pin/i.test(p.name)
@@ -1475,7 +1759,7 @@ export default function Home() {
         if (!connectors.length) connectors = fallbackBeamConnectors(wrapper, p.name);
         try {
           localStorage.setItem(
-            `sim-connectors-v4:${p.part}`,
+            `sim-connectors-v4:${correctionStorageKey}`,
             JSON.stringify(
               connectors.map((connector) => ({
                 ...connector,
@@ -1494,18 +1778,14 @@ export default function Home() {
               ? "half"
               : connector.kind,
         }));
-      connectorCache.set(p.part, cloneConnectors(connectors));
+      connectorCache.set(correctionStorageKey, cloneConnectors(connectors));
       let colliders: CollisionPrimitive[] | undefined = straightAxleCollisionPrimitives(
         p.name,
       );
       if (!colliders)
         try {
-          const saved = localStorage.getItem(`sim-colliders-v1:${p.part}`);
-          if (
-            saved &&
-            (!preloadedCollisionMaps[p.part] ||
-              savedCollisionRevision === collisionMapRevision(p.part))
-          ) {
+          const saved = localStorage.getItem(`sim-colliders-v1:${correctionStorageKey}`);
+          if (saved) {
             const stored = JSON.parse(saved) as {
               shape: "box" | "cylinder";
               center: number[];
@@ -1550,8 +1830,8 @@ export default function Home() {
                 }));
           }
         } catch {}
-      if (!colliders && preloadedCollisionMaps[p.part])
-        colliders = preloadedCollisionMaps[p.part].map((primitive) => ({
+      if (!colliders && preloadedCollisions)
+        colliders = preloadedCollisions.map((primitive) => ({
           ...primitive,
           center: new THREE.Vector3().fromArray(primitive.center),
           size: primitive.size
@@ -1560,7 +1840,7 @@ export default function Home() {
           rotation: new THREE.Quaternion().fromArray(primitive.rotation),
         }));
       if (!colliders)
-        colliders = collisionCache.get(p.part)?.map((primitive) => ({
+        colliders = collisionCache.get(correctionStorageKey)?.map((primitive) => ({
           ...primitive,
           center: primitive.center.clone(),
           size: primitive.size?.clone(),
@@ -1571,14 +1851,14 @@ export default function Home() {
       // was packaged before that corrected map existed.
       if (
         !colliders &&
-        packagedParts[p.part] &&
+        packaged &&
         !/^Technic (Beam|Panel)/i.test(p.name) &&
         !/wheel|tyre|tire|gear|bush/i.test(p.name) &&
         !/^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(p.name) &&
-        !preloadedConnectionMaps[p.part] &&
+        !hasPreloadedConnectionMap &&
         !hasSavedConnectorMap
       )
-        colliders = packagedParts[p.part].colliders.map((primitive) => ({
+        colliders = packaged.colliders.map((primitive) => ({
           ...primitive,
           center: new THREE.Vector3().fromArray(primitive.center),
           size: primitive.size
@@ -1589,7 +1869,7 @@ export default function Home() {
       if (!colliders) {
         colliders = approximateCollisionPrimitives(wrapper, p.name, connectors);
         collisionCache.set(
-          p.part,
+          correctionStorageKey,
           colliders.map((primitive) => ({
             ...primitive,
             center: primitive.center.clone(),
@@ -1601,12 +1881,8 @@ export default function Home() {
       let gearColliders: CollisionPrimitive[] = [];
       if (isGearPart(p)) {
         try {
-          const saved = localStorage.getItem(`sim-gear-colliders-v1:${p.part}`);
-          if (
-            saved &&
-            (!preloadedGearCollisionMaps[p.part] ||
-              savedCollisionRevision === collisionMapRevision(p.part))
-          ) {
+          const saved = localStorage.getItem(`sim-gear-colliders-v1:${correctionStorageKey}`);
+          if (saved) {
             const rows = JSON.parse(saved) as {
               shape: "box" | "cylinder";
               center: number[];
@@ -1626,8 +1902,8 @@ export default function Home() {
               }));
           }
         } catch {}
-        if (!gearColliders.length && preloadedGearCollisionMaps[p.part])
-          gearColliders = preloadedGearCollisionMaps[p.part].map((primitive) => ({
+        if (!gearColliders.length && preloadedGearCollisions)
+          gearColliders = preloadedGearCollisions.map((primitive) => ({
             ...primitive,
             center: new THREE.Vector3().fromArray(primitive.center),
             size: primitive.size
@@ -1637,14 +1913,14 @@ export default function Home() {
           }));
         if (!gearColliders.length)
           gearColliders =
-            gearCollisionCache.get(p.part)?.map((primitive) => ({
+            gearCollisionCache.get(correctionStorageKey)?.map((primitive) => ({
               ...primitive,
               center: primitive.center.clone(),
               size: primitive.size?.clone(),
               rotation: primitive.rotation.clone(),
             })) ?? [];
-        if (!gearColliders.length && packagedParts[p.part]?.gearColliders)
-          gearColliders = packagedParts[p.part].gearColliders!.map((primitive) => ({
+        if (!gearColliders.length && packaged?.gearColliders)
+          gearColliders = packaged.gearColliders.map((primitive) => ({
             ...primitive,
             center: new THREE.Vector3().fromArray(primitive.center),
             size: primitive.size
@@ -1655,7 +1931,7 @@ export default function Home() {
         if (!gearColliders.length) {
           gearColliders = approximateGearCollisionPrimitives(colliders);
           gearCollisionCache.set(
-            p.part,
+            correctionStorageKey,
             gearColliders.map((primitive) => ({
               ...primitive,
               center: primitive.center.clone(),
@@ -4999,7 +5275,16 @@ export default function Home() {
                 ];
               }),
           ).values(),
-        ];
+        ],
+        mapBaselines = Object.fromEntries(
+          [...new Set(state.pieces.map(correctionStorageKeyFor))].flatMap((key) => {
+            const current = preloadedMapFingerprint(key);
+            if (!Object.keys(current).length) return [];
+            const baseline = projectMapBaselinesRef.current[key] ?? current;
+            projectMapBaselinesRef.current[key] = baseline;
+            return [[key, baseline]];
+          }),
+        );
       return {
         format: "simstudio-project",
         version: 1,
@@ -5015,6 +5300,7 @@ export default function Home() {
         connections,
         gearLinks,
         rubberBands,
+        mapBaselines,
         importedCatalog,
         camera: {
           position: tuple3(camera.position),
@@ -5054,6 +5340,12 @@ export default function Home() {
 
     const restoreProjectDocument = async (document: SimStudioProjectDocument) => {
       if (state.running) return;
+      setMapUpdates((current) =>
+        current.flatMap((candidate) => {
+          const sources = candidate.sources.filter((source) => source !== "project");
+          return sources.length ? [{ ...candidate, sources }] : [];
+        }),
+      );
       restoringProject = true;
       projectRestoringRef.current = true;
       recoveryGeneration++;
@@ -5077,7 +5369,10 @@ export default function Home() {
       state.rubberBands = [];
       state.selected = undefined;
       state.selectedPieces.clear();
-      const piecesById = new Map<string, Piece>();
+      projectMapBaselinesRef.current = { ...(document.mapBaselines ?? {}) };
+      const piecesById = new Map<string, Piece>(),
+        projectMapUpdateCandidates = new Map<string, MapUpdateCandidate>();
+      let projectHasAutomaticMapUpdate = false;
       try {
         for (const saved of document.pieces) {
           const asset = document.assets[saved.asset];
@@ -5114,6 +5409,51 @@ export default function Home() {
             scene.add(piece.lockSprite);
           }
           piecesById.set(saved.id, piece);
+
+          const mapKey = correctionStorageKeyFor(piece),
+            currentMap = preloadedMapFingerprint(mapKey);
+          if (Object.keys(currentMap).length) {
+            const actualBundle: PartMapBundle = {
+                connectors: saved.connectors,
+                colliders: saved.colliders,
+                gearColliders: saved.gearColliders,
+                specialGear: piece.specialGear,
+              },
+              actualMap = fingerprintMapBundle(actualBundle);
+            let baseline = projectMapBaselinesRef.current[mapKey];
+            if (!baseline) {
+              const browserBaseline = readStoredMapBaseline(localStorage, mapKey),
+                browserActual = fingerprintMapBundle(
+                  storedMapBundle(localStorage, mapKey),
+                ),
+                comparableLayers = Object.keys(browserActual) as MapUpdateLayer[];
+              baseline =
+                browserBaseline &&
+                comparableLayers.length > 0 &&
+                comparableLayers.every(
+                  (layer) => browserActual[layer] === actualMap[layer],
+                )
+                  ? browserBaseline
+                  : currentMap;
+            }
+            projectMapBaselinesRef.current[mapKey] = baseline;
+            const layers = differentMapLayers(currentMap, actualMap),
+              automaticLayers = changedMapLayers(baseline, currentMap, actualMap);
+            if (automaticLayers.length) projectHasAutomaticMapUpdate = true;
+            if (layers.length) {
+              const previous = projectMapUpdateCandidates.get(mapKey);
+              projectMapUpdateCandidates.set(mapKey, {
+                key: mapKey,
+                part: piece.part,
+                name: piece.name,
+                thumb: piece.thumb,
+                layers: [...new Set([...(previous?.layers ?? []), ...layers])],
+                localCounts: mapLayerCounts(actualBundle),
+                preloadedCounts: mapLayerCounts(preloadedMapBundle(mapKey)),
+                sources: ["project"],
+              });
+            }
+          }
         }
         state.connections = document.connections.flatMap((saved) => {
           const a = piecesById.get(saved.a),
@@ -5218,6 +5558,10 @@ export default function Home() {
         setSelectedId(null);
         setCount(state.pieces.length);
         setConnectionRevision((value) => value + 1);
+        queueMapUpdates(
+          [...projectMapUpdateCandidates.values()],
+          projectHasAutomaticMapUpdate,
+        );
         undoStack.length = 0;
         redoStack.length = 0;
       } finally {
@@ -8011,6 +8355,103 @@ export default function Home() {
   };
   saveShortcutRef.current = requestProjectSave;
 
+  const resolveMapUpdates = async (
+    candidates: MapUpdateCandidate[],
+    usePreloaded: boolean,
+  ) => {
+    if (!candidates.length || running) return;
+    const state = appRef.current,
+      affectedKeys = new Set(candidates.map((candidate) => candidate.key)),
+      hasRuntimeInstances =
+        state?.pieces.some((piece) =>
+          affectedKeys.has(correctionStorageKeyFor(piece)),
+        ) ?? false;
+    let connectorsChanged = false,
+      runtimeChanged = false;
+    if (usePreloaded && state && hasRuntimeInstances) state.recordHistory();
+
+    for (const candidate of candidates) {
+      const current = preloadedMapFingerprint(candidate.key),
+        bundle = preloadedMapBundle(candidate.key),
+        hasBrowserCopy = candidate.sources.includes("browser");
+      try {
+        if (usePreloaded && hasBrowserCopy) {
+          if (candidate.layers.includes("connectors")) {
+            localStorage.removeItem(`sim-connectors-v4:${candidate.key}`);
+            localStorage.removeItem(`sim-connectors-revision:${candidate.key}`);
+          }
+          if (candidate.layers.includes("colliders"))
+            localStorage.removeItem(`sim-colliders-v1:${candidate.key}`);
+          if (candidate.layers.includes("gearColliders"))
+            localStorage.removeItem(`sim-gear-colliders-v1:${candidate.key}`);
+          if (candidate.layers.includes("specialGear"))
+            localStorage.removeItem(`sim-special-gear-v1:${candidate.key}`);
+        }
+        if (hasBrowserCopy)
+          writeStoredMapBaseline(localStorage, candidate.key, current);
+      } catch {}
+      projectMapBaselinesRef.current[candidate.key] = current;
+
+      if (!usePreloaded || !state) continue;
+      const instances = state.pieces.filter(
+        (piece) => correctionStorageKeyFor(piece) === candidate.key,
+      );
+      if (!instances.length) continue;
+      runtimeChanged = true;
+      for (const piece of instances) {
+        if (candidate.layers.includes("connectors") && Array.isArray(bundle.connectors)) {
+          piece.connectors = bundle.connectors.map(runtimeConnectorFromStored);
+          piece.mesh.userData.connectorReach = connectorMapReach(piece.connectors);
+          connectorsChanged = true;
+        }
+        if (candidate.layers.includes("colliders") && Array.isArray(bundle.colliders))
+          piece.colliders = bundle.colliders.map(runtimeColliderFromStored);
+        if (
+          candidate.layers.includes("gearColliders") &&
+          Array.isArray(bundle.gearColliders)
+        )
+          piece.gearColliders = bundle.gearColliders.map(runtimeColliderFromStored);
+        if (
+          candidate.layers.includes("specialGear") &&
+          bundle.specialGear !== undefined
+        )
+          piece.specialGear = bundle.specialGear;
+      }
+    }
+
+    if (state && runtimeChanged) {
+      if (connectorsChanged) await state.verifyConnectionsAsync();
+      state.gearLinks = detectGearLinks(
+        state.pieces,
+        undefined,
+        differentialCarrierGearExclusions(state.pieces, state.connections),
+      );
+      state.rebuildRenderBatches();
+      state.refreshDebug();
+      state.scheduleRecoverySave();
+      setConnectorRevision((value) => value + 1);
+      setColliderRevision((value) => value + 1);
+      setConnectionRevision((value) => value + 1);
+    } else if (state && candidates.some((candidate) => candidate.sources.includes("project"))) {
+      state.scheduleRecoverySave();
+    }
+
+    setMapUpdates((current) => {
+      const remaining = current.filter((candidate) => !affectedKeys.has(candidate.key));
+      if (!remaining.length) setMapUpdatesOpen(false);
+      return remaining;
+    });
+    setMessage(
+      usePreloaded
+        ? language === "es"
+          ? `${candidates.length} mapa${candidates.length === 1 ? "" : "s"} actualizado${candidates.length === 1 ? "" : "s"}`
+          : `${candidates.length} part map${candidates.length === 1 ? "" : "s"} updated`
+        : language === "es"
+          ? `Se conserva la versión local de ${candidates.length} pieza${candidates.length === 1 ? "" : "s"}`
+          : `Kept the local version for ${candidates.length} part${candidates.length === 1 ? "" : "s"}`,
+    );
+  };
+
   const performOpenSavedProject = async (id: string) => {
     const state = appRef.current;
     if (!state || running || projectBusy) return;
@@ -8046,6 +8487,7 @@ export default function Home() {
     projectCreatedAtRef.current = createdAt;
     projectRevisionRef.current = 0;
     savedProjectRevisionRef.current = null;
+    projectMapBaselinesRef.current = {};
     projectNameRef.current = name;
     suppressProjectNameDirtyRef.current = true;
     setProjectName(name);
@@ -8448,14 +8890,9 @@ export default function Home() {
         axis: connector.axis.clone(),
       }));
       instance.mesh.userData.connectorReach = connectorMapReach(instance.connectors);
-      instance.colliders = approximateCollisionPrimitives(
-        instance.mesh,
-        instance.name,
-        instance.connectors,
-      );
-      instance.gearColliders = instance.gear
-        ? approximateGearCollisionPrimitives(instance.colliders)
-        : [];
+      // Connector edits must not discard a reviewed collision map. Colliders
+      // are maintained by the collision-map editor and may be authored
+      // independently from the connector topology.
     }
     state.connections = state.connections.filter(
       (connection) =>
@@ -8464,14 +8901,15 @@ export default function Home() {
     rebalanceAllSmartDefaults(state);
     try {
       localStorage.setItem(
-        `sim-connectors-v4:${piece.part}`,
+        `sim-connectors-v4:${correctionStorageKeyFor(piece)}`,
         JSON.stringify(connectorData({ ...piece, connectors: normalized })),
       );
       localStorage.setItem(
-        `sim-connectors-revision:${piece.part}`,
+        `sim-connectors-revision:${correctionStorageKeyFor(piece)}`,
         CORRECTION_MAP_REVISION,
       );
     } catch {}
+    acknowledgeManualMapEdit(correctionStorageKeyFor(piece), ["connectors"]);
     state.debug.connectors = true;
     setDebugViews((current) => ({ ...current, connectors: true }));
     state.refreshDebug();
@@ -8694,15 +9132,18 @@ export default function Home() {
     try {
       localStorage.setItem(
         layer === "gear"
-          ? `sim-gear-colliders-v1:${piece.part}`
-          : `sim-colliders-v1:${piece.part}`,
+          ? `sim-gear-colliders-v1:${correctionStorageKeyFor(piece)}`
+          : `sim-colliders-v1:${correctionStorageKeyFor(piece)}`,
         JSON.stringify(colliderData(normalized)),
       );
       localStorage.setItem(
-        `sim-colliders-revision:${piece.part}`,
-        collisionMapRevision(piece.part),
+        `sim-colliders-revision:${correctionStorageKeyFor(piece)}`,
+        collisionMapRevision(correctionStorageKeyFor(piece)),
       );
     } catch {}
+    acknowledgeManualMapEdit(correctionStorageKeyFor(piece), [
+      layer === "gear" ? "gearColliders" : "colliders",
+    ]);
     state.debug.colliders = true;
     setDebugViews((current) => ({ ...current, colliders: true }));
     state.refreshDebug();
@@ -8745,13 +9186,15 @@ export default function Home() {
       .forEach((instance) => {
         instance.specialGear = enabled;
       });
-    if (enabled)
-      localStorage.setItem(`sim-special-gear-v1:${selected.part}`, "true");
-    else localStorage.removeItem(`sim-special-gear-v1:${selected.part}`);
     localStorage.setItem(
-      `sim-colliders-revision:${selected.part}`,
-      collisionMapRevision(selected.part),
+      `sim-special-gear-v1:${correctionStorageKeyFor(selected)}`,
+      JSON.stringify(enabled),
     );
+    localStorage.setItem(
+      `sim-colliders-revision:${correctionStorageKeyFor(selected)}`,
+      collisionMapRevision(correctionStorageKeyFor(selected)),
+    );
+    acknowledgeManualMapEdit(correctionStorageKeyFor(selected), ["specialGear"]);
     setColliderRevision((value) => value + 1);
   };
 
@@ -8908,7 +9351,7 @@ export default function Home() {
           .forEach((instance) => {
             instance.specialGear = true;
           });
-        localStorage.setItem(`sim-special-gear-v1:${selected.part}`, "true");
+        localStorage.setItem(`sim-special-gear-v1:${correctionStorageKeyFor(selected)}`, "true");
       }
       commitCollisionMap(
         selected,
@@ -9293,6 +9736,14 @@ export default function Home() {
           >
             ▣ {t.projectsButton}
           </button>
+          <button
+            className={`ghost map-update-trigger ${mapUpdates.length ? "pending" : ""}`}
+            onClick={() => setMapUpdatesOpen(true)}
+            title={t.mapUpdates}
+          >
+            ↻ {t.mapUpdatesButton}
+            <b>{mapUpdates.length}</b>
+          </button>
           <input
             ref={projectFileRef}
             type="file"
@@ -9359,6 +9810,122 @@ export default function Home() {
           </button>
         </div>
       </header>
+      {mapUpdatesOpen && (
+        <div className="project-backdrop map-update-backdrop" role="presentation">
+          <section
+            className="project-dialog map-update-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="map-updates-title"
+          >
+            <div className="project-dialog-head">
+              <div>
+                <small>SIM STUDIO · CACHE</small>
+                <h2 id="map-updates-title">{t.mapUpdates}</h2>
+              </div>
+              <button
+                className="project-close"
+                onClick={() => setMapUpdatesOpen(false)}
+                aria-label={t.close}
+              >
+                ×
+              </button>
+            </div>
+            <p className="map-update-help">{t.mapUpdatesHelp}</p>
+            <small className="map-update-light">⚡ {t.mapUpdatesLight}</small>
+            <div className="map-update-list">
+              {mapUpdates.length ? (
+                mapUpdates.map((candidate) => (
+                  <article key={candidate.key} className="map-update-card">
+                    <div className="map-update-part">
+                      {candidate.thumb ? (
+                        <img src={candidate.thumb} alt="" />
+                      ) : (
+                        <span className="map-update-part-icon">⚙</span>
+                      )}
+                      <div>
+                        <b>{candidate.part}</b>
+                        <span>{candidate.name}</span>
+                        <small>
+                          {candidate.layers.map(mapLayerLabel).join(" · ")}
+                          {candidate.sources.includes("project")
+                            ? language === "es"
+                              ? " · proyecto cargado"
+                              : " · loaded project"
+                            : ""}
+                        </small>
+                      </div>
+                    </div>
+                    <div className="map-update-comparison">
+                      <div>
+                        <span>{t.localVersion}</span>
+                        <b>
+                          {candidate.layers
+                            .filter((layer) => layer !== "specialGear")
+                            .map(
+                              (layer) =>
+                                `${mapLayerLabel(layer)}: ${candidate.localCounts[layer]}`,
+                            )
+                            .join(" · ") ||
+                            (candidate.localCounts.specialGear
+                              ? t.enabled
+                              : t.disabled)}
+                        </b>
+                      </div>
+                      <i>→</i>
+                      <div>
+                        <span>{t.preloadedVersion}</span>
+                        <b>
+                          {candidate.layers
+                            .filter((layer) => layer !== "specialGear")
+                            .map(
+                              (layer) =>
+                                `${mapLayerLabel(layer)}: ${candidate.preloadedCounts[layer]}`,
+                            )
+                            .join(" · ") ||
+                            (candidate.preloadedCounts.specialGear
+                              ? t.enabled
+                              : t.disabled)}
+                        </b>
+                      </div>
+                    </div>
+                    <div className="map-update-actions">
+                      <button
+                        className="ghost"
+                        disabled={running}
+                        onClick={() => void resolveMapUpdates([candidate], false)}
+                      >
+                        {t.keepLocalMap}
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={running}
+                        onClick={() => void resolveMapUpdates([candidate], true)}
+                      >
+                        ↻ {t.updateMap}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="empty-projects">✓ {t.noMapUpdates}</p>
+              )}
+            </div>
+            <div className="map-update-footer">
+              <button className="ghost" onClick={() => setMapUpdatesOpen(false)}>
+                {t.close}
+              </button>
+              <button
+                className="primary"
+                disabled={!mapUpdates.length || running}
+                onClick={() => void resolveMapUpdates(mapUpdates, true)}
+              >
+                ↻ {t.updateAllMaps}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {projectMenuOpen && (
         <div className="project-backdrop" role="presentation">
           <section

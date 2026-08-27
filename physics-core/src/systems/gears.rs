@@ -239,6 +239,26 @@ fn solve_ideal_gear_velocity(
         solve_differential_impulse(gear, world);
         return;
     }
+    let perpendicular = {
+        let (Some(body_a), Some(body_b)) = (
+            world.bodies.get(gear.body_a),
+            world.bodies.get(gear.body_b),
+        ) else {
+            return;
+        };
+        let axis_a = body_a.position().rotation * gear.local_axis_a;
+        let axis_b = body_b.position().rotation * gear.local_axis_b;
+        axis_a.dot(axis_b).abs() < 0.2
+    };
+    if perpendicular {
+        // A bevel mesh must push at the pitch point. Applying only axial
+        // torque can spin the satellite, but it cannot push its pivot around
+        // the differential axis. That makes transmission non-reciprocal: a
+        // moving carrier drives an output, while a driven output is cancelled
+        // when the opposite side is fixed.
+        solve_bevel_contact_impulse(gear, world);
+        return;
+    }
     let (axis_a, axis_b, speed_a, speed_b, inv_a, inv_b, fixed_a, fixed_b) = {
         let (Some(body_a), Some(body_b)) = (
             world.bodies.get(gear.body_a),
@@ -297,6 +317,113 @@ fn solve_ideal_gear_velocity(
     }
 }
 
+fn point_impulse_denominator(
+    body: &RigidBody,
+    point: Vector,
+    direction: Vector,
+) -> Real {
+    if body.is_fixed() {
+        return 0.0;
+    }
+
+    let mass_properties = body.mass_properties();
+    let linear = direction.dot(direction * mass_properties.effective_inv_mass);
+    let radius = point - mass_properties.world_com;
+    let angular_jacobian = radius.cross(direction);
+    let angular = angular_jacobian.dot(
+        mass_properties.effective_world_inv_inertia * angular_jacobian,
+    );
+    (linear + angular).max(0.0)
+}
+
+/// Enforces equal tangential velocity at a bevel gear's common pitch point.
+/// The equal-and-opposite point impulses conserve momentum and, crucially for
+/// a differential, provide the linear reaction that moves a satellite pivot
+/// and therefore its carrier.
+fn solve_bevel_contact_impulse(gear: &GearRuntime, world: &mut PhysicsWorld) {
+    let (contact, tangent) = {
+        let (Some(body_a), Some(body_b)) = (
+            world.bodies.get(gear.body_a),
+            world.bodies.get(gear.body_b),
+        ) else {
+            return;
+        };
+        let position_a = *body_a.position();
+        let position_b = *body_b.position();
+        let axis_a = (position_a.rotation * gear.local_axis_a).normalize();
+        let axis_b = (position_b.rotation * gear.local_axis_b).normalize();
+        let center_a = position_a.transform_point(gear.local_center_a);
+        let center_b = position_b.transform_point(gear.local_center_b);
+        let center_delta = center_b - center_a;
+        let radial_a_raw = center_delta - axis_a * center_delta.dot(axis_a);
+        let radial_b_raw = -center_delta - axis_b * (-center_delta).dot(axis_b);
+        if radial_a_raw.length_squared() <= GEOMETRY_EPSILON
+            || radial_b_raw.length_squared() <= GEOMETRY_EPSILON
+        {
+            return;
+        }
+        let radial_a = radial_a_raw.normalize();
+        let radial_b = radial_b_raw.normalize();
+        let tangent_a_raw = axis_a.cross(radial_a);
+        let tangent_b_raw = axis_b.cross(radial_b);
+        if tangent_a_raw.length_squared() <= GEOMETRY_EPSILON
+            || tangent_b_raw.length_squared() <= GEOMETRY_EPSILON
+        {
+            return;
+        }
+        let tangent_a = tangent_a_raw.normalize();
+        let mut tangent_b = tangent_b_raw.normalize();
+        if tangent_a.dot(tangent_b) < 0.0 {
+            tangent_b = -tangent_b;
+        }
+        let tangent_sum = tangent_a + tangent_b;
+        let tangent = if tangent_sum.length_squared() > GEOMETRY_EPSILON {
+            tangent_sum.normalize()
+        } else {
+            tangent_a
+        };
+
+        // For intersecting 90-degree pitch cones, each pitch radius is the
+        // projection of the centre delta on the other gear's axle.
+        let radius_a = center_delta.dot(axis_b).abs();
+        let radius_b = center_delta.dot(axis_a).abs();
+        if radius_a <= GEOMETRY_EPSILON || radius_b <= GEOMETRY_EPSILON {
+            return;
+        }
+        let contact_a = center_a + radial_a * radius_a;
+        let contact_b = center_b + radial_b * radius_b;
+        ((contact_a + contact_b) * 0.5, tangent)
+    };
+
+    let (relative_speed, denominator, fixed_a, fixed_b) = {
+        let (Some(body_a), Some(body_b)) = (
+            world.bodies.get(gear.body_a),
+            world.bodies.get(gear.body_b),
+        ) else {
+            return;
+        };
+        (
+            (body_a.velocity_at_point(contact) - body_b.velocity_at_point(contact))
+                .dot(tangent),
+            point_impulse_denominator(body_a, contact, tangent)
+                + point_impulse_denominator(body_b, contact, tangent),
+            body_a.is_fixed(),
+            body_b.is_fixed(),
+        )
+    };
+    if relative_speed.abs() <= VELOCITY_EPSILON || denominator <= GEOMETRY_EPSILON {
+        return;
+    }
+
+    let impulse = tangent * (-relative_speed / denominator);
+    if !fixed_a {
+        world.bodies[gear.body_a].apply_impulse_at_point(impulse, contact, true);
+    }
+    if !fixed_b {
+        world.bodies[gear.body_b].apply_impulse_at_point(-impulse, contact, true);
+    }
+}
+
 /// Axial tooth speed measured against the moving line between both gear
 /// centres.  Using only `angvel · axis` is correct for two stationary axles,
 /// but misses the essential planetary case: a fork/carrier can orbit one gear
@@ -305,8 +432,9 @@ fn solve_ideal_gear_velocity(
 /// The radial line is measured in this gear's rotating body frame. Its signed
 /// angular rate is subtracted from the body's axial rate, so translating a
 /// meshed gear tangentially produces the exact spin required for rolling
-/// contact. The solver still applies torque impulses only; axle joints receive
-/// the reaction without the destabilising linear impulses of tooth colliders.
+/// contact. Parallel meshes still use torque impulses only; bevel meshes use
+/// the pitch-point reaction above so differential carriers receive force in
+/// both directions.
 fn mesh_speed_in_body_frame(
     axis: Vector,
     center_delta: Vector,

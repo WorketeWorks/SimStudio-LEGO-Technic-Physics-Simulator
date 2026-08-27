@@ -275,6 +275,105 @@ test("a carried bevel gear transmits motion across perpendicular axes", () => {
   engine.free();
 });
 
+test("a bevel differential routes a driven side through its free carrier", () => {
+  const body = (id, fixed, position) => ({
+    id,
+    fixed,
+    position,
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 8,
+    ccd: false,
+    colliders: [
+      {
+        ownerId: 450 + id,
+        center: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        friction: 0,
+        density: 1,
+        collisionGroup: 1,
+        collisionMask: 0,
+        shape: { kind: "box", halfExtents: [0.2, 0.2, 0.2] },
+      },
+    ],
+  });
+  const joint = (id, bodyA, bodyB, anchor, axis) => ({
+    id,
+    bodyA,
+    bodyB,
+    mode: "rotation",
+    worldAnchorA: anchor,
+    worldAnchorB: anchor,
+    worldAxisA: axis,
+    worldAxisB: axis,
+    travel: 0,
+    motorSpeed: 0,
+    motorForce: 0,
+    passiveMotorForce: 0,
+    dynamicAxle: false,
+  });
+  const gear = (id, bodyA, bodyB, centerA, centerB) => ({
+    id,
+    nodeA: bodyA,
+    nodeB: bodyB,
+    bodyA,
+    bodyB,
+    axisA: [0, 0, 1],
+    axisB: [1, 0, 0],
+    centerA,
+    centerB,
+    referenceA: [1, 0, 0],
+    referenceB: [0, 0, 1],
+    teethA: 12,
+    teethB: 12,
+    signB: -1,
+    phaseLock: false,
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [
+      body(1, true, [0, 0, -1]),
+      body(2, false, [0, 0, 1]),
+      body(3, false, [0, 0, 0]),
+      body(4, false, [1, 0, 0]),
+      body(5, true, [0, 0, 0]),
+    ],
+    joints: [
+      joint("output-axle", 5, 2, [0, 0, 1], [0, 0, 1]),
+      joint("carrier-axle", 5, 3, [0, 0, 0], [0, 0, 1]),
+      joint("satellite-axle", 3, 4, [1, 0, 0], [1, 0, 0]),
+    ],
+    gears: [
+      gear("left:satellite", 1, 4, [0, 0, -1], [1, 0, 0]),
+      gear("right:satellite", 2, 4, [0, 0, 1], [1, 0, 0]),
+    ],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+
+  let transforms;
+  for (let frame = 0; frame < 12; frame++)
+    transforms = engine.step(1 / 60, [
+      { kind: "setAngularVelocity", body: 2, velocity: [0, 0, 6] },
+    ]);
+  const stride = engine.transform_stride();
+  const output = transforms[stride + 13];
+  const carrier = transforms[stride * 2 + 13];
+  assert.ok(Math.abs(output) > 1, `the driven output must not be cancelled: ${output}`);
+  assert.ok(
+    Math.abs(carrier) > 0.5,
+    `the blocked opposite side must drive the carrier: ${carrier}`,
+  );
+  assert.ok(
+    Math.abs(output - 2 * carrier) < 0.2,
+    `a blocked side requires output = 2 * carrier: ${output}, ${carrier}`,
+  );
+  engine.free();
+});
+
 test("rubber loops pull through elastic contacts without rigid joints", () => {
   const node = (id, position) => ({
     id, fixed: false, position, rotation: [0, 0, 0, 1], mass: 0.012,
