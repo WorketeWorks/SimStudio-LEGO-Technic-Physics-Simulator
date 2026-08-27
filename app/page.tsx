@@ -3212,11 +3212,9 @@ export default function Home() {
               component(centreCatalog),
               position.clone(),
               baseRotation,
-            ),
-            assembly = [firstEnd, secondEnd, centre].filter(
-              (piece): piece is Piece => Boolean(piece),
             );
-          if (assembly.length !== 3) return null;
+          if (!firstEnd || !secondEnd || !centre) return null;
+          const assembly: Piece[] = [firstEnd, secondEnd, centre];
           if (!rotation) {
             const bounds = new THREE.Box3();
             assembly.forEach((piece) => bounds.expandByObject(piece.mesh));
@@ -3230,6 +3228,11 @@ export default function Home() {
             piece.mesh.visible = true;
             verifyPieceConnections(piece, false);
           });
+          // The drop handler normally snaps the returned piece once more.
+          // A compound Cardan has already connected all three components;
+          // snapping one yoke again can choose the other arm of the cross and
+          // rotate it 90 degrees, leaving both hinge axes parallel.
+          firstEnd.mesh.userData.skipNextPlacementConnect = true;
           return firstEnd;
         } finally {
           state.bulkLoading = wasBulkLoading;
@@ -6707,8 +6710,13 @@ export default function Home() {
             ),
           ).then((piece) => {
             if (!piece) return;
-            connect(piece);
-            verifyPieceConnections(piece);
+            const skipPlacementConnect =
+              piece.mesh.userData.skipNextPlacementConnect === true;
+            delete piece.mesh.userData.skipNextPlacementConnect;
+            if (!skipPlacementConnect) {
+              connect(piece);
+              verifyPieceConnections(piece);
+            }
             scheduleRecoverySave();
           });
           if (

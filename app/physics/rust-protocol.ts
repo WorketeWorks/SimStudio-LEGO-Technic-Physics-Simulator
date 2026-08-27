@@ -59,6 +59,8 @@ export type RustJointConfig = {
   motorForce: number;
   passiveMotorForce: number;
   dynamicAxle: boolean;
+  /** Symmetric angular travel for a revolute joint, in radians. */
+  angularLimit?: number;
 };
 
 export type RustGearConfig = {

@@ -122,6 +122,8 @@ pub struct JointConfig {
     pub motor_force: f32,
     pub passive_motor_force: f32,
     pub dynamic_axle: bool,
+    #[serde(default)]
+    pub angular_limit: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

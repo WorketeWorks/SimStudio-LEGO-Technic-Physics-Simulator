@@ -41,13 +41,31 @@ pub fn create_joint(
 
     let mut data = match config.mode {
         JointMode::Rotation | JointMode::Motor => {
-            let mut data = GenericJointBuilder::new(JointAxesMask::LOCKED_REVOLUTE_AXES)
-                .local_axis1(axis_a)
-                .local_axis2(axis_b)
-                .local_anchor1(anchor_a)
-                .local_anchor2(anchor_b)
-                .contacts_enabled(true)
-                .build();
+            let builder = GenericJointBuilder::new(JointAxesMask::LOCKED_REVOLUTE_AXES)
+                .contacts_enabled(true);
+            // A limited hinge needs the same complete world-space reference
+            // frame on both bodies. Supplying only each local axis lets Rapier
+            // choose unrelated tangent axes, so its measured zero angle can be
+            // offset even though the Cardan is initially assembled correctly.
+            let mut data = if config.angular_limit.is_some() {
+                let world_frame = Rotation::from_rotation_arc(Vector::X, world_axis_a);
+                let frame_a = Pose::from_parts(
+                    anchor_a,
+                    rigid_a.rotation().inverse() * world_frame,
+                );
+                let frame_b = Pose::from_parts(
+                    anchor_b,
+                    rigid_b.rotation().inverse() * world_frame,
+                );
+                builder.local_frame1(frame_a).local_frame2(frame_b).build()
+            } else {
+                builder
+                    .local_axis1(axis_a)
+                    .local_axis2(axis_b)
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b)
+                    .build()
+            };
             let force = if config.mode == JointMode::Motor {
                 config.motor_force
             } else {
@@ -110,6 +128,13 @@ pub fn create_joint(
                 .data
         }
     };
+
+    if matches!(config.mode, JointMode::Rotation | JointMode::Motor) {
+        if let Some(limit) = config.angular_limit.filter(|limit| *limit > 0.0) {
+            let limit = limit.min(std::f32::consts::PI);
+            data.set_limits(JointAxis::AngX, [-limit, limit]);
+        }
+    }
 
     // Connected groups still need self-collision away from their joint. Beam
     // clearance is handled by their collider dimensions in the scene builder,
@@ -239,6 +264,7 @@ mod tests {
             motor_force: 0.0,
             passive_motor_force: 0.0,
             dynamic_axle: false,
+            angular_limit: None,
         };
 
         let runtime = create_joint(&config, &body_ids, &mut world).unwrap();

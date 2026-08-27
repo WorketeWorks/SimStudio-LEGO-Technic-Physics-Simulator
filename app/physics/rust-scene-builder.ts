@@ -160,6 +160,21 @@ export function buildRustJointConfig(
           frictionlessPinRefs.has(connection.b.part)
         ? physicsSettings.frictionlessPinRotation
         : 0;
+  const references = [
+      connection.a.part,
+      connection.a.modelPart,
+      connection.a.resolvedPart,
+      connection.b.part,
+      connection.b.modelPart,
+      connection.b.resolvedPart,
+    ]
+      .filter((reference): reference is string => Boolean(reference))
+      .map((reference) => reference.toLowerCase()),
+    cardanHinge =
+      connection.mode === "rotation" &&
+      connection.profile === "pin-round" &&
+      references.includes("62519") &&
+      references.includes("62520");
 
   return {
     id: connection.id,
@@ -175,6 +190,7 @@ export function buildRustJointConfig(
     motorForce: connection.motorForce,
     passiveMotorForce,
     dynamicAxle,
+    ...(cardanHinge ? { angularLimit: Math.PI / 4 } : {}),
   };
 }
 

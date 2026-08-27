@@ -952,13 +952,14 @@ test("a two-hinge Cardan transmits rotation between angled axle bearings", () =>
         collisionGroup: 1, collisionMask: 0,
         shape: { kind: "box", halfExtents: [0.1, 0.1, 0.1] } }],
     }),
-    joint = (id, bodyA, bodyB, axis, mode = "rotation") => ({
+    joint = (id, bodyA, bodyB, axis, mode = "rotation", angularLimit) => ({
       id, bodyA, bodyB, mode,
       worldAnchorA: [0, 2, 0], worldAnchorB: [0, 2, 0],
       worldAxisA: axis, worldAxisB: axis, travel: 0,
       motorSpeed: mode === "motor" ? 3 : 0,
       motorForce: mode === "motor" ? 500 : 0,
       passiveMotorForce: 0, dynamicAxle: false,
+      ...(angularLimit ? { angularLimit } : {}),
     });
   const engine = new PhysicsEngine({
     gravity: [0, 0, 0], settings,
@@ -966,8 +967,8 @@ test("a two-hinge Cardan transmits rotation between angled axle bearings", () =>
     joints: [
       joint("input-bearing", 1, 2, [0, 0, 1], "motor"),
       joint("output-bearing", 1, 3, outputAxis),
-      joint("cardan-yoke-a", 2, 4, [0, 1, 0]),
-      joint("cardan-yoke-b", 3, 4, [1, 0, 0]),
+      joint("cardan-yoke-a", 2, 4, [0, 1, 0], "rotation", Math.PI / 4),
+      joint("cardan-yoke-b", 3, 4, [1, 0, 0], "rotation", Math.PI / 4),
     ],
     gears: [], differentials: [], axialStops: [], rubberBands: [],
     excludedColliderPairs: [],
@@ -979,11 +980,48 @@ test("a two-hinge Cardan transmits rotation between angled axle bearings", () =>
     outputSpeed = transforms[outputOffset + 11] * outputAxis[0] +
       transforms[outputOffset + 12] * outputAxis[1] +
       transforms[outputOffset + 13] * outputAxis[2];
-  assert.ok(Math.abs(inputSpeed) > 1, `input motor did not turn: ${inputSpeed}`);
+  assert.ok(Math.abs(inputSpeed) > 1,
+    `input motor did not turn: ${inputSpeed}; output: ${outputSpeed}`);
   assert.ok(Math.abs(outputSpeed) > 0.5,
     `the angled Cardan output did not receive rotation: ${outputSpeed}`);
   assert.ok(Math.abs(Math.abs(outputSpeed / inputSpeed) - 1) < 0.35,
     `the Cardan ratio should remain near 1:1: ${inputSpeed} -> ${outputSpeed}`);
+  engine.free();
+});
+
+test("a revolute angular limit stops a Cardan hinge at its configured travel", () => {
+  const body = (id, fixed) => ({
+    id, fixed, position: [0, 0, 0], rotation: [0, 0, 0, 1], mass: 1,
+    linearDamping: 0, angularDamping: 0.02,
+    additionalSolverIterations: 8, ccd: false,
+    colliders: [{
+      ownerId: 700 + id, center: [0, 0, 0], rotation: [0, 0, 0, 1],
+      friction: 0, density: 1, collisionGroup: 1, collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.1, 0.1, 0.1] },
+    }],
+  });
+  const limit = Math.PI / 6;
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0], settings,
+    bodies: [body(1, true), body(2, false)],
+    joints: [{
+      id: "limited-hinge", bodyA: 1, bodyB: 2, mode: "motor",
+      worldAnchorA: [0, 0, 0], worldAnchorB: [0, 0, 0],
+      worldAxisA: [1, 0, 0], worldAxisB: [1, 0, 0],
+      travel: 0, motorSpeed: 5, motorForce: 500,
+      passiveMotorForce: 0, dynamicAxle: false, angularLimit: limit,
+    }],
+    gears: [], differentials: [], axialStops: [], rubberBands: [],
+    excludedColliderPairs: [],
+  });
+
+  let transforms;
+  for (let frame = 0; frame < 180; frame++) transforms = engine.step(1 / 60, []);
+  const stride = engine.transform_stride();
+  const x = transforms[stride + 4], w = transforms[stride + 7];
+  const angle = Math.abs(2 * Math.atan2(x, w));
+  assert.ok(angle > limit * 0.7, `hinge did not reach its stop: ${angle}`);
+  assert.ok(angle < limit + 0.08, `hinge exceeded its stop: ${angle}`);
   engine.free();
 });
 

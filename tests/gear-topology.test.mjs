@@ -58,7 +58,11 @@ vm.runInNewContext(
   `(function(exports,module,require){${sceneBuilderJs}\n})(module.exports,module,require);`,
   { module: sceneBuilderModule, require: sceneBuilderRequire },
 );
-const { buildRustDifferentialConfigs, buildRustGearConfigs } = sceneBuilderModule.exports;
+const {
+  buildRustDifferentialConfigs,
+  buildRustGearConfigs,
+  buildRustJointConfig,
+} = sceneBuilderModule.exports;
 const cylinder = (center, radius, ratio) => ({
   shape: "cylinder",
   center: new THREE.Vector3(...center),
@@ -107,6 +111,56 @@ const piece = (id, part, x, z, colliders, specialGear = false) => {
     gearColliders: [],
   };
 };
+
+test("only a 62519-to-62520 Cardan hinge receives its physical travel limit", () => {
+  const cardanPiece = (id, part) => {
+    const mesh = new THREE.Object3D();
+    mesh.updateMatrixWorld(true);
+    return {
+      id, part, name: part, mesh,
+      dynamicAxleConnections: false,
+      frictionPin: false,
+    };
+  };
+  const end = cardanPiece("end", "62520");
+  const center = cardanPiece("center", "62519");
+  const connector = (role) => ({
+    role,
+    kind: "round",
+    local: new THREE.Vector3(),
+    axis: new THREE.Vector3(0, 1, 0),
+  });
+  const connection = {
+    id: "cardan-hinge",
+    a: end,
+    b: center,
+    mode: "rotation",
+    profile: "pin-round",
+    point: new THREE.Vector3(),
+    axis: new THREE.Vector3(0, 1, 0),
+    socket: connector("socket"),
+    shaft: connector("shaft"),
+    travel: 0,
+    motorSpeed: 0,
+    motorForce: 0,
+  };
+  const bodyIds = new Map([[end, 1], [center, 2]]);
+  const config = buildRustJointConfig(connection, bodyIds, {
+    frictionlessPinRotation: 0,
+  });
+
+  assert.ok(config);
+  assert.ok(Math.abs(config.angularLimit - Math.PI / 4) < 1e-12);
+
+  const ordinaryEnd = cardanPiece("ordinary-end", "2780");
+  const ordinaryConfig = buildRustJointConfig(
+    { ...connection, id: "ordinary-pin", b: ordinaryEnd },
+    new Map([[end, 1], [ordinaryEnd, 2]]),
+    { frictionlessPinRotation: 0 },
+  );
+  assert.ok(ordinaryConfig);
+  assert.equal(ordinaryConfig.angularLimit, undefined);
+});
 
 test("6573 exposes independent 1.5 and 1.0 external gear zones", () => {
   const carrier = piece("carrier", "6573", 0, 0, [
