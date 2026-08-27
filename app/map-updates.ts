@@ -1,4 +1,5 @@
 import { preloadedConnectionMaps } from "./connection-maps";
+import preloadedCatalog from "./preloaded-catalog.json";
 import {
   preloadedCollisionMaps,
   preloadedGearCollisionMaps,
@@ -23,14 +24,20 @@ export {
 
 export const MAP_BASELINE_STORAGE_PREFIX = "sim-map-baseline-v1:";
 
+const packagedParts = preloadedCatalog.parts as Record<
+  string,
+  { connectors?: unknown }
+>;
+
 export const preloadedMapBundle = (part: string): PartMapBundle => {
-  const key = part.toLowerCase();
+  const key = part.toLowerCase(),
+    connectors = preloadedConnectionMaps[key] ?? packagedParts[key]?.connectors;
   return {
-    connectors: preloadedConnectionMaps[key],
+    connectors,
     colliders: preloadedCollisionMaps[key],
     gearColliders: preloadedGearCollisionMaps[key],
     specialGear:
-      preloadedConnectionMaps[key] ||
+      connectors ||
       preloadedCollisionMaps[key] ||
       preloadedGearCollisionMaps[key] ||
       preloadedSpecialGearParts.has(key)
