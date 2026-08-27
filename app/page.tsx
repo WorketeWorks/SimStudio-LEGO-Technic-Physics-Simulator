@@ -4688,12 +4688,15 @@ export default function Home() {
         if (!best || distance < best.distance - 1.0e-5)
           best = { piece, point: point.clone(), distance };
       };
+      const meshBatchedPieces = new Set(
+        state.renderBatchItems.flatMap((batch) => batch.pieces),
+      );
       const visualHits = ray.intersectObjects(
         [
           ...state.pieces
             .filter(
               (piece) =>
-                !piece.renderBatched &&
+                !meshBatchedPieces.has(piece) &&
                 !state.rubberBands.some((band) => band.owner === piece),
             )
             .map((piece) => piece.mesh),
@@ -4710,8 +4713,26 @@ export default function Home() {
         );
         consider(piece, candidate.point, candidate.distance);
       }
+      // What the user can actually see under the pointer is authoritative.
+      // Collider envelopes can protrude beyond thin/concave LEGO geometry and
+      // must never steal a click from a visible triangle behind them. They are
+      // retained only as a fallback for parts without raycastable render data.
+      if (best) return best;
       const unitScale = new THREE.Vector3(1, 1, 1);
-      for (const piece of state.pieces) {
+      const colliderFallbackPieces = state.pieces.filter((piece) => {
+        if (meshBatchedPieces.has(piece)) return false;
+        let hasVisibleTriangles = false;
+        piece.mesh.traverse((object) => {
+          if (
+            object instanceof THREE.Mesh &&
+            object.visible &&
+            object.geometry.getAttribute("position")?.count > 0
+          )
+            hasVisibleTriangles = true;
+        });
+        return !hasVisibleTriangles;
+      });
+      for (const piece of colliderFallbackPieces) {
         if (state.rubberBands.some((band) => band.owner === piece)) continue;
         piece.mesh.updateMatrixWorld(true);
         for (const primitive of piece.colliders) {
