@@ -238,6 +238,12 @@ const modelText = (part) =>
     ...(connector.rotationOnly === undefined
       ? {}
       : { rotationOnly: connector.rotationOnly }),
+    ...(connector.connectionTarget === undefined
+      ? {}
+      : { connectionTarget: connector.connectionTarget }),
+    ...(connector.singleConnection === undefined
+      ? {}
+      : { singleConnection: connector.singleConnection }),
   }),
   serializeCollider = (collider) => ({
     shape: collider.shape,

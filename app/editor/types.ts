@@ -65,6 +65,9 @@ export type Piece = CatalogPart & {
   pin: boolean;
   frictionPin: boolean;
   dynamicAxleConnections: boolean;
+  /** Components that move/select together in the editor but remain separate physics bodies. */
+  editorAssemblyId?: string;
+  editorAssemblyDetached?: boolean;
   rotationPivotLocal?: THREE.Vector3;
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;
@@ -90,6 +93,8 @@ export type EditorPieceSnapshot = {
   fixed: boolean;
   exactCollider: boolean;
   dynamicAxleConnections: boolean;
+  editorAssemblyId?: string;
+  editorAssemblyDetached?: boolean;
   rotationPivotLocal?: THREE.Vector3;
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;
@@ -348,6 +353,8 @@ export type AppState = {
   createPhysicsJoint?: (connection: Connection) => RustJointProxy | undefined;
   dynamicConnectionFrame: number;
   manualConnect?: ManualConnectDraft;
+  beginAimRotation?: (piece: Piece) => void;
+  cancelAimRotation?: () => void;
   snapshot?: {
     piece: Piece;
     position: THREE.Vector3;
@@ -405,9 +412,7 @@ export type AppState = {
   gpuTimerSupported: boolean;
   gpuRenderer: string;
   gpuVendor: string;
-  setViewportRendererPreference: (
-    preference: ViewportRendererPreference,
-  ) => void;
+  setViewportRendererPreference: (preference: ViewportRendererPreference) => void;
   setAdaptiveRendering: (enabled: boolean) => void;
   pendingPlacement?: {
     pieces: Piece[];

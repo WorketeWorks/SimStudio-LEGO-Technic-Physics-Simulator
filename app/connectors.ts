@@ -9,6 +9,13 @@ export type MeshConnector = {
   length?: number;
   /** Axle stud that snaps at one point and permits rotation but no travel. */
   rotationOnly?: boolean;
+  /** Optional allow-list entry. Connector ids are one-based, as shown in the editor. */
+  connectionTarget?: {
+    partId: string;
+    connectorId?: number;
+  };
+  /** Prevents a shaft/pivot from accepting more than one connection. Sockets are always exclusive. */
+  singleConnection?: boolean;
 };
 type Loop = {
   axisIndex: number;

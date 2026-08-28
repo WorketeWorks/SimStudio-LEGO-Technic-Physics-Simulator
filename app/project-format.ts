@@ -22,6 +22,11 @@ export type SavedConnector = {
   diameter: number;
   length?: number;
   rotationOnly?: boolean;
+  connectionTarget?: {
+    partId: string;
+    connectorId?: number;
+  };
+  singleConnection?: boolean;
 };
 
 export type SavedCollisionPrimitive = {
@@ -46,6 +51,8 @@ export type SavedPiece = {
   /** Use the rendered triangle surface instead of the compound proxy map. */
   exactCollider?: boolean;
   dynamicAxleConnections: boolean;
+  editorAssemblyId?: string;
+  editorAssemblyDetached?: boolean;
   rotationPivotLocal?: [number, number, number];
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;
@@ -239,6 +246,20 @@ const sanitizeProjectDocument = (
                 ? undefined
                 : positiveNumber(connector.length, 0.5, 0.01),
             rotationOnly: connector.rotationOnly === true || undefined,
+            connectionTarget:
+              connector.connectionTarget &&
+              typeof connector.connectionTarget.partId === "string"
+                ? {
+                    partId: connector.connectionTarget.partId.trim(),
+                    connectorId:
+                      typeof connector.connectionTarget.connectorId === "number" &&
+                      Number.isInteger(connector.connectionTarget.connectorId) &&
+                      connector.connectionTarget.connectorId > 0
+                        ? connector.connectionTarget.connectorId
+                        : undefined,
+                  }
+                : undefined,
+            singleConnection: connector.singleConnection === true || undefined,
           } satisfies SavedConnector;
         }),
         sanitizeCollider = (
@@ -292,6 +313,11 @@ const sanitizeProjectDocument = (
         fixed: piece.fixed === true,
         exactCollider: piece.exactCollider === true,
         dynamicAxleConnections: piece.dynamicAxleConnections === true,
+        editorAssemblyId:
+          typeof piece.editorAssemblyId === "string" && piece.editorAssemblyId
+            ? piece.editorAssemblyId
+            : undefined,
+        editorAssemblyDetached: piece.editorAssemblyDetached === true || undefined,
         rotationPivotLocal: optionalTuple3(piece.rotationPivotLocal),
         rotationPivotKey:
           typeof piece.rotationPivotKey === "string"

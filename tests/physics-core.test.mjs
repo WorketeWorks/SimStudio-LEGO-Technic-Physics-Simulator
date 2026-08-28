@@ -967,8 +967,8 @@ test("a two-hinge Cardan transmits rotation between angled axle bearings", () =>
     joints: [
       joint("input-bearing", 1, 2, [0, 0, 1], "motor"),
       joint("output-bearing", 1, 3, outputAxis),
-      joint("cardan-yoke-a", 2, 4, [0, 1, 0], "rotation", Math.PI / 4),
-      joint("cardan-yoke-b", 3, 4, [1, 0, 0], "rotation", Math.PI / 4),
+      joint("cardan-yoke-a", 2, 4, [0, 1, 0]),
+      joint("cardan-yoke-b", 3, 4, [1, 0, 0]),
     ],
     gears: [], differentials: [], axialStops: [], rubberBands: [],
     excludedColliderPairs: [],

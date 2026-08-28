@@ -26,6 +26,16 @@ import {
   type CollisionPrimitive,
   type MeshConnector,
 } from "./connectors";
+import {
+  automaticConnectorMatchIsBetter,
+  connectorAcceptsAdditionalConnection,
+  connectorPoliciesCompatible,
+} from "./connector-policy";
+import {
+  editorAssemblyMembers,
+  restoreLegacyCardanEditorAssemblies,
+} from "./editor-assembly";
+import { forceDragTarget } from "./editor/force-drag";
 import { paletteParts, paletteRequestAliases } from "./palette";
 import { preloadedConnectionMaps } from "./connection-maps";
 import {
@@ -71,7 +81,14 @@ import {
   type MapUpdateLayer,
   type PartMapBundle,
 } from "./map-updates";
-import { disposeRubberBand, drawRubberBand, makeRubberBandLine, makeRubberBandMarkers, makeRubberBandVisual, rubberBandLength } from "./physics/rubber-band";
+import {
+  disposeRubberBand,
+  drawRubberBand,
+  makeRubberBandLine,
+  makeRubberBandMarkers,
+  makeRubberBandVisual,
+  rubberBandLength,
+} from "./physics/rubber-band";
 import { createStudioGrid, GRID_RECENTER_STEP, GRID_SIZE } from "./renderer/studio-grid";
 import { configureDistanceScaledOutlineMaterial } from "./renderer/outline-material";
 import {
@@ -213,9 +230,7 @@ const legacyMapBaseline = (
   const result: MapFingerprintSnapshot = {};
   if (storage.getItem(`sim-connectors-revision:${part}`) === CORRECTION_MAP_REVISION)
     result.connectors = current.connectors;
-  if (
-    storage.getItem(`sim-colliders-revision:${part}`) === collisionMapRevision(part)
-  ) {
+  if (storage.getItem(`sim-colliders-revision:${part}`) === collisionMapRevision(part)) {
     result.colliders = current.colliders;
     result.gearColliders = current.gearColliders;
     result.specialGear = current.specialGear;
@@ -228,6 +243,9 @@ const runtimeConnectorFromStored = (value: unknown): MeshConnector => {
   return {
     ...connector,
     role: connector.role ?? "socket",
+    connectionTarget: connector.connectionTarget
+      ? { ...connector.connectionTarget }
+      : undefined,
     local: new THREE.Vector3().fromArray(connector.local),
     axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
   };
@@ -238,9 +256,7 @@ const runtimeColliderFromStored = (value: unknown): CollisionPrimitive => {
   return {
     ...collider,
     center: new THREE.Vector3().fromArray(collider.center),
-    size: collider.size
-      ? new THREE.Vector3().fromArray(collider.size)
-      : undefined,
+    size: collider.size ? new THREE.Vector3().fromArray(collider.size) : undefined,
     rotation: new THREE.Quaternion().fromArray(collider.rotation),
   };
 };
@@ -258,6 +274,8 @@ const packagedParts = preloadedCatalog.parts as Record<
       diameter: number;
       length?: number;
       rotationOnly?: boolean;
+      connectionTarget?: { partId: string; connectorId?: number };
+      singleConnection?: boolean;
     }[];
     colliders: {
       shape: "box" | "cylinder";
@@ -283,7 +301,8 @@ const packagedParts = preloadedCatalog.parts as Record<
 >;
 const correctionStorageKeyFor = (p: CatalogPart) =>
   correctionPartKeys(p).find(
-    (key) => preloadedConnectionMaps[key] || preloadedCollisionMaps[key] || packagedParts[key],
+    (key) =>
+      preloadedConnectionMaps[key] || preloadedCollisionMaps[key] || packagedParts[key],
   ) ?? p.part.toLowerCase();
 // Palette tabs are deliberately presentation-only; part data lives in
 // palette.ts and imported catalog entries live in the runtime state.
@@ -304,7 +323,10 @@ const categories = [
 const kindFor = (category: string, name = ""): PieceKind =>
   category === "motors" || /motor/i.test(name)
     ? "motor"
-    : category === "gears" || category === "wheels" || category === "specials" || /gear|wheel|tyre|tire|rubber/i.test(name)
+    : category === "gears" ||
+        category === "wheels" ||
+        category === "specials" ||
+        /gear|wheel|tyre|tire|rubber/i.test(name)
       ? "wheel"
       : "beam";
 
@@ -333,11 +355,33 @@ const belongsToDefaultPalette = (part: CatalogPart) =>
     .filter(Boolean)
     .some((value) => paletteReferenceSet.has(value!.toLowerCase()));
 
-const nonPhysicalGearParts = new Set(["6539", "18947", "35186", "35188", "3584", "4158", "4159", "7445", "7446"]);
-const correctionPartKeys = (p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">) =>
-  [...new Set([p.part, p.modelPart, p.resolvedPart].filter(Boolean).map((value) => value!.toLowerCase()))];
-const correctionMapFor = <T,>(maps: Record<string, T[]>, p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">) =>
-  correctionPartKeys(p).map((key) => maps[key]).find(Boolean);
+const nonPhysicalGearParts = new Set([
+  "6539",
+  "18947",
+  "35186",
+  "35188",
+  "3584",
+  "4158",
+  "4159",
+  "7445",
+  "7446",
+]);
+const correctionPartKeys = (
+  p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">,
+) => [
+  ...new Set(
+    [p.part, p.modelPart, p.resolvedPart]
+      .filter(Boolean)
+      .map((value) => value!.toLowerCase()),
+  ),
+];
+const correctionMapFor = <T,>(
+  maps: Record<string, T[]>,
+  p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">,
+) =>
+  correctionPartKeys(p)
+    .map((key) => maps[key])
+    .find(Boolean);
 const isGearPart = (p: CatalogPart) =>
   correctionPartKeys(p).some((key) => nonPhysicalGearParts.has(key))
     ? false
@@ -351,16 +395,15 @@ const gearAxisForPiece = (piece: Piece) => {
   );
   const localAxis = cylinder
     ? new THREE.Vector3(0, 1, 0).applyQuaternion(cylinder.rotation)
-    : piece.connectors.find((connector) => connector.kind === "axle")?.axis.clone() ??
-      new THREE.Vector3(0, 1, 0);
+    : (piece.connectors.find((connector) => connector.kind === "axle")?.axis.clone() ??
+      new THREE.Vector3(0, 1, 0));
   return localAxis.transformDirection(piece.mesh.matrixWorld).normalize();
 };
 
 const initialViewportRendererPreference = (): ViewportRendererPreference => {
   if (typeof window === "undefined") return "auto";
   const queryPreference = new URLSearchParams(window.location.search).get("renderer");
-  if (queryPreference === "webgpu" || queryPreference === "webgl")
-    return queryPreference;
+  if (queryPreference === "webgpu" || queryPreference === "webgl") return queryPreference;
   const stored = localStorage.getItem("sim-studio:viewport-renderer");
   return stored === "webgpu" || stored === "webgl" ? stored : "auto";
 };
@@ -694,8 +737,7 @@ const allowedModes = (profile: ConnectionProfile): JointMode[] =>
       : ["rotation", "linear", "rotation-linear", "motor"];
 
 const allowedModesForConnection = (connection: Connection): JointMode[] =>
-  isRotationOnlyConnector(connection.socket) ||
-  isRotationOnlyConnector(connection.shaft)
+  isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
     ? ["rotation"]
     : allowedModes(connection.profile);
 
@@ -723,8 +765,8 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
       connection.mode =
         isRotationOnlyConnector(connection.socket) ||
         isRotationOnlyConnector(connection.shaft)
-        ? "rotation"
-        : defaultMode(connection.profile);
+          ? "rotation"
+          : defaultMode(connection.profile);
       connection.userConfigured = false;
       state.connectionModes.delete(connection.id);
     }
@@ -847,13 +889,12 @@ export default function Home() {
   });
   const [lastLog, setLastLog] = useState("");
   const [gpuPrototypeBusy, setGpuPrototypeBusy] = useState(false);
-  const [gpuPrototypeResult, setGpuPrototypeResult] =
-    useState<GpuPrototypeResult | null>(null);
+  const [gpuPrototypeResult, setGpuPrototypeResult] = useState<GpuPrototypeResult | null>(
+    null,
+  );
   const [gpuPrototypeError, setGpuPrototypeError] = useState("");
   const [gpuPreviewRunning, setGpuPreviewRunning] = useState(false);
-  const [viewportRenderer, setViewportRenderer] = useState<"WebGPU" | "WebGL">(
-    "WebGL",
-  );
+  const [viewportRenderer, setViewportRenderer] = useState<"WebGPU" | "WebGL">("WebGL");
   const [rendererPreference, setRendererPreference] =
     useState<ViewportRendererPreference>("auto");
   const rendererPreferenceRef = useRef(rendererPreference);
@@ -945,10 +986,7 @@ export default function Home() {
     });
     if (openAutomatically) setMapUpdatesOpen(true);
   };
-  const acknowledgeManualMapEdit = (
-    key: string,
-    layers: MapUpdateLayer[],
-  ) => {
+  const acknowledgeManualMapEdit = (key: string, layers: MapUpdateLayer[]) => {
     const current = preloadedMapFingerprint(key),
       storedBaseline =
         readStoredMapBaseline(localStorage, key) ??
@@ -970,12 +1008,8 @@ export default function Home() {
         current,
         fingerprintMapBundle(actualBundle),
       ),
-      editedDifferences = layers.filter((layer) =>
-        browserDifferences.includes(layer),
-      ),
-      catalog = paletteParts.find(
-        (part) => correctionStorageKeyFor(part) === key,
-      );
+      editedDifferences = layers.filter((layer) => browserDifferences.includes(layer)),
+      catalog = paletteParts.find((part) => correctionStorageKeyFor(part) === key);
     setMapUpdates((currentUpdates) => {
       let found = false;
       const remaining = currentUpdates.flatMap((candidate) => {
@@ -1052,7 +1086,7 @@ export default function Home() {
           "pin-round": "Orange ↔ blue",
           "axle-cross": "Purple ↔ green",
           "axle-round": "Purple ↔ blue",
-      };
+        };
 
   useEffect(() => {
     try {
@@ -1065,7 +1099,8 @@ export default function Home() {
           "sim-gear-colliders-v1:",
           "sim-special-gear-v1:",
         ].find((candidate) => storageKey?.startsWith(candidate));
-        if (prefix && storageKey) parts.add(storageKey.slice(prefix.length).toLowerCase());
+        if (prefix && storageKey)
+          parts.add(storageKey.slice(prefix.length).toLowerCase());
       }
       const updates: MapUpdateCandidate[] = [];
       let openAutomatically = false;
@@ -1133,12 +1168,10 @@ export default function Home() {
   useEffect(() => {
     if (!adaptiveRenderingInitializedRef.current) {
       adaptiveRenderingInitializedRef.current = true;
-      const initialAdaptive = localStorage.getItem(
-        "sim-studio:adaptive-rendering",
-      ) !== "0";
+      const initialAdaptive =
+        localStorage.getItem("sim-studio:adaptive-rendering") !== "0";
       adaptiveRenderingRef.current = initialAdaptive;
-      if (initialAdaptive !== adaptiveRendering)
-        setAdaptiveRendering(initialAdaptive);
+      if (initialAdaptive !== adaptiveRendering) setAdaptiveRendering(initialAdaptive);
       return;
     }
     adaptiveRenderingRef.current = adaptiveRendering;
@@ -1669,6 +1702,9 @@ export default function Home() {
     const cloneConnectors = (connectors: MeshConnector[]) =>
       connectors.map((connector) => ({
         ...connector,
+        connectionTarget: connector.connectionTarget
+          ? { ...connector.connectionTarget }
+          : undefined,
         local: connector.local.clone(),
         axis: connector.axis.clone(),
       }));
@@ -1703,6 +1739,8 @@ export default function Home() {
               diameter: number;
               length?: number;
               rotationOnly?: boolean;
+              connectionTarget?: { partId: string; connectorId?: number };
+              singleConnection?: boolean;
             }[]
           ).map((connector) => ({
             ...connector,
@@ -1712,8 +1750,7 @@ export default function Home() {
           }));
         }
       } catch {}
-      if (!connectors)
-        connectors = straightAxleConnectors(p.name);
+      if (!connectors) connectors = straightAxleConnectors(p.name);
       if (!connectors && preloadedConnections)
         connectors = preloadedConnections.map((connector) => ({
           ...connector,
@@ -1728,7 +1765,8 @@ export default function Home() {
         }));
       if (!connectors)
         connectors =
-          connectorCache.get(correctionStorageKey) && cloneConnectors(connectorCache.get(correctionStorageKey)!);
+          connectorCache.get(correctionStorageKey) &&
+          cloneConnectors(connectorCache.get(correctionStorageKey)!);
       if (!connectors) {
         if (isPinPart(p)) {
           const shafts = /^Technic Axle Pin/i.test(p.name)
@@ -1881,7 +1919,9 @@ export default function Home() {
       let gearColliders: CollisionPrimitive[] = [];
       if (isGearPart(p)) {
         try {
-          const saved = localStorage.getItem(`sim-gear-colliders-v1:${correctionStorageKey}`);
+          const saved = localStorage.getItem(
+            `sim-gear-colliders-v1:${correctionStorageKey}`,
+          );
           if (saved) {
             const rows = JSON.parse(saved) as {
               shape: "box" | "cylinder";
@@ -2147,8 +2187,12 @@ export default function Home() {
           (object as THREE.BoxHelper).update();
         } else if (data.debugKind === "gear-direction-lock" && piece) {
           piece.mesh.updateMatrixWorld(true);
-          const axis = gearAxisForPiece(piece).multiplyScalar(piece.gearDirectionLock ?? 1);
-          object.position.copy(piece.mesh.getWorldPosition(new THREE.Vector3())).addScaledVector(axis, 0.35);
+          const axis = gearAxisForPiece(piece).multiplyScalar(
+            piece.gearDirectionLock ?? 1,
+          );
+          object.position
+            .copy(piece.mesh.getWorldPosition(new THREE.Vector3()))
+            .addScaledVector(axis, 0.35);
           (object as THREE.ArrowHelper).setDirection(axis);
         } else if (data.debugKind === "connector-point" && piece)
           object.position.copy(
@@ -2208,13 +2252,13 @@ export default function Home() {
                 ? 96
                 : kind === "connector-point"
                   ? 90
-              : kind === "connector-axis" || kind === "joint-axis"
-                ? 80
-                : kind === "forced-joint-link" || kind === "joint-link"
-                  ? 75
-                  : kind === "connector-volume"
-                    ? 70
-                    : 60;
+                  : kind === "connector-axis" || kind === "joint-axis"
+                    ? 80
+                    : kind === "forced-joint-link" || kind === "joint-link"
+                      ? 75
+                      : kind === "connector-volume"
+                        ? 70
+                        : 60;
         rootObject.traverse((object) => {
           object.renderOrder = order;
           object.frustumCulled = false;
@@ -2239,7 +2283,8 @@ export default function Home() {
 
     const refreshDebug = () => {
       disposeDebug();
-      for (const selected of state.selectedPieces ?? (state.selected ? new Set([state.selected]) : new Set())) {
+      for (const selected of state.selectedPieces ??
+        (state.selected ? new Set([state.selected]) : new Set())) {
         selected.mesh.updateMatrixWorld(true);
         const outline = new THREE.BoxHelper(
           selected.mesh,
@@ -2260,7 +2305,9 @@ export default function Home() {
           );
           const arrow = new THREE.ArrowHelper(
             axis,
-            selected.mesh.getWorldPosition(new THREE.Vector3()).addScaledVector(axis, 0.35),
+            selected.mesh
+              .getWorldPosition(new THREE.Vector3())
+              .addScaledVector(axis, 0.35),
             0.55,
             0xff304f,
             0.18,
@@ -2280,7 +2327,10 @@ export default function Home() {
             const rootInverse = piece.mesh.matrixWorld.clone().invert(),
               exactHelper = new THREE.Group();
             piece.mesh.traverse((object) => {
-              if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh)
+              if (
+                !(object instanceof THREE.Mesh) ||
+                object instanceof THREE.InstancedMesh
+              )
                 return;
               const wireframe = new THREE.LineSegments(
                 new THREE.WireframeGeometry(object.geometry),
@@ -2349,7 +2399,14 @@ export default function Home() {
             if (
               manual &&
               ((piece === manual.piece && !selectedNode) ||
-                (piece !== manual.piece && !pairProfile(manual.connector, connector)))
+                (piece !== manual.piece &&
+                  (!pairProfile(manual.connector, connector) ||
+                    !connectorPoliciesCompatible(
+                      manual.piece,
+                      manual.connector,
+                      piece,
+                      connector,
+                    ))))
             )
               continue;
             const color = selectedNode
@@ -2756,12 +2813,12 @@ export default function Home() {
       batchPieces
         .filter((piece) => !state.rubberBands.some((band) => band.owner === piece))
         .forEach((piece) => {
-        piece.mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh) child.castShadow = false;
-        });
-        const key = modelRenderKey(piece),
-          group = groups.get(key) ?? [];
-        group.push(piece);
+          piece.mesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) child.castShadow = false;
+          });
+          const key = modelRenderKey(piece),
+            group = groups.get(key) ?? [];
+          group.push(piece);
           groups.set(key, group);
         });
       groups.forEach((pieces) => {
@@ -2815,16 +2872,8 @@ export default function Home() {
             ranges.forEach(({ start, count, material }) => {
               if (!material || count <= 0) return;
 
-              const geometry = cloneGeometryRange(
-                  child.geometry,
-                  start,
-                  count,
-                ),
-                instance = new THREE.InstancedMesh(
-                  geometry,
-                  material,
-                  pieces.length,
-                );
+              const geometry = cloneGeometryRange(child.geometry, start, count),
+                instance = new THREE.InstancedMesh(geometry, material, pieces.length);
 
               instance.name = `${template.part} × ${pieces.length}`;
               instance.castShadow = false;
@@ -2885,9 +2934,11 @@ export default function Home() {
             child.geometry.hasAttribute("control1") &&
             child.geometry.hasAttribute("direction");
           const conditional = Boolean(
-            (material as THREE.ShaderMaterial & {
-              isLDrawConditionalLineMaterial?: boolean;
-            }).isLDrawConditionalLineMaterial || hasConditionalAttributes,
+            (
+              material as THREE.ShaderMaterial & {
+                isLDrawConditionalLineMaterial?: boolean;
+              }
+            ).isLDrawConditionalLineMaterial || hasConditionalAttributes,
           );
           const key = [
             material.type,
@@ -2919,13 +2970,9 @@ export default function Home() {
               .applyMatrix4(childLocal);
             group.positions.push(linePoint.x, linePoint.y, linePoint.z);
             if (!conditional || !control0 || !control1 || !direction) return;
-            linePoint
-              .fromBufferAttribute(control0, vertexIndex)
-              .applyMatrix4(childLocal);
+            linePoint.fromBufferAttribute(control0, vertexIndex).applyMatrix4(childLocal);
             group.control0.push(linePoint.x, linePoint.y, linePoint.z);
-            linePoint
-              .fromBufferAttribute(control1, vertexIndex)
-              .applyMatrix4(childLocal);
+            linePoint.fromBufferAttribute(control1, vertexIndex).applyMatrix4(childLocal);
             group.control1.push(linePoint.x, linePoint.y, linePoint.z);
             linePoint
               .fromBufferAttribute(sourcePosition, vertexIndex)
@@ -2948,46 +2995,46 @@ export default function Home() {
         });
         lineGroups.forEach(
           ({ material, positions, control0, control1, directions, conditional }) => {
-          if (!positions.length) return;
-          const geometry = new THREE.InstancedBufferGeometry(),
-            positionAttribute = new THREE.BufferAttribute(
-              new Float32Array(positions),
-              3,
-            ),
-            matrixAttribute = new THREE.InstancedBufferAttribute(
-              new Float32Array(pieces.length * 16),
-              16,
-            ),
-            sourceMaterial = material as THREE.LineBasicMaterial & {
-              uniforms?: {
-                diffuse?: { value?: unknown };
-                opacity?: { value?: unknown };
-              };
-            },
-            uniformColor = sourceMaterial.uniforms?.diffuse?.value,
-            outlineColor =
-              sourceMaterial.color instanceof THREE.Color
-                ? sourceMaterial.color.clone()
-                : uniformColor instanceof THREE.Color
-                  ? uniformColor.clone()
-                  : new THREE.Color(darkTheme ? 0x9aa4ad : 0x20262b),
-            uniformOpacity = sourceMaterial.uniforms?.opacity?.value,
-            outlineOpacity = Number.isFinite(sourceMaterial.opacity)
-              ? sourceMaterial.opacity
-              : typeof uniformOpacity === "number" && Number.isFinite(uniformOpacity)
-                ? uniformOpacity
-                : 1,
-            batchMaterial = conditional
-              ? (material.clone() as THREE.ShaderMaterial)
-              : new THREE.ShaderMaterial({
-                  uniforms: THREE.UniformsUtils.merge([
-                    THREE.UniformsLib.fog,
-                    {
-                      diffuse: { value: outlineColor },
-                      opacity: { value: outlineOpacity },
-                    },
-                  ]),
-                  vertexShader: `
+            if (!positions.length) return;
+            const geometry = new THREE.InstancedBufferGeometry(),
+              positionAttribute = new THREE.BufferAttribute(
+                new Float32Array(positions),
+                3,
+              ),
+              matrixAttribute = new THREE.InstancedBufferAttribute(
+                new Float32Array(pieces.length * 16),
+                16,
+              ),
+              sourceMaterial = material as THREE.LineBasicMaterial & {
+                uniforms?: {
+                  diffuse?: { value?: unknown };
+                  opacity?: { value?: unknown };
+                };
+              },
+              uniformColor = sourceMaterial.uniforms?.diffuse?.value,
+              outlineColor =
+                sourceMaterial.color instanceof THREE.Color
+                  ? sourceMaterial.color.clone()
+                  : uniformColor instanceof THREE.Color
+                    ? uniformColor.clone()
+                    : new THREE.Color(darkTheme ? 0x9aa4ad : 0x20262b),
+              uniformOpacity = sourceMaterial.uniforms?.opacity?.value,
+              outlineOpacity = Number.isFinite(sourceMaterial.opacity)
+                ? sourceMaterial.opacity
+                : typeof uniformOpacity === "number" && Number.isFinite(uniformOpacity)
+                  ? uniformOpacity
+                  : 1,
+              batchMaterial = conditional
+                ? (material.clone() as THREE.ShaderMaterial)
+                : new THREE.ShaderMaterial({
+                    uniforms: THREE.UniformsUtils.merge([
+                      THREE.UniformsLib.fog,
+                      {
+                        diffuse: { value: outlineColor },
+                        opacity: { value: outlineOpacity },
+                      },
+                    ]),
+                    vertexShader: `
                     attribute mat4 instanceMatrix;
                     #include <fog_pars_vertex>
                     void main() {
@@ -2996,7 +3043,7 @@ export default function Home() {
                       #include <fog_vertex>
                     }
                   `,
-                  fragmentShader: `
+                    fragmentShader: `
                     uniform vec3 diffuse;
                     uniform float opacity;
                     #include <fog_pars_fragment>
@@ -3005,49 +3052,49 @@ export default function Home() {
                       #include <fog_fragment>
                     }
                   `,
-                  fog: true,
-                  transparent: sourceMaterial.transparent,
-                  depthTest: sourceMaterial.depthTest,
-                  depthWrite: sourceMaterial.depthWrite,
-                  opacity: outlineOpacity,
-                  blending: sourceMaterial.blending,
-                });
-          // Conditional LDraw shaders contain the fog chunks and uniforms, but
-          // ShaderMaterial does not enable the fog define automatically.
-          batchMaterial.fog = true;
-          configureDistanceScaledOutlineMaterial(batchMaterial);
-          if (conditional) {
-            geometry.setAttribute(
-              "control0",
-              new THREE.BufferAttribute(new Float32Array(control0), 3),
-            );
-            geometry.setAttribute(
-              "control1",
-              new THREE.BufferAttribute(new Float32Array(control1), 3),
-            );
-            geometry.setAttribute(
-              "direction",
-              new THREE.BufferAttribute(new Float32Array(directions), 3),
-            );
-            batchMaterial.vertexShader = `attribute mat4 instanceMatrix;\n${batchMaterial.vertexShader.replaceAll(
-              "modelViewMatrix * vec4(",
-              "modelViewMatrix * instanceMatrix * vec4(",
-            )}`;
-          }
-          matrixAttribute.setUsage(THREE.DynamicDrawUsage);
-          geometry.setAttribute("position", positionAttribute);
-          geometry.setAttribute("instanceMatrix", matrixAttribute);
-          geometry.instanceCount = pieces.length;
-          const line = new THREE.LineSegments(geometry, batchMaterial);
-          line.name = `${template.part} outlines × ${pieces.length}`;
-          line.frustumCulled = false;
-          line.raycast = () => undefined;
-          line.userData.ownedBatchGeometry = true;
-          line.userData.ownedBatchMaterial = true;
-          root.add(line);
-          state.renderLineBatchItems.push({ line, pieces, matrixAttribute });
-          outlineBatchCount++;
-          createdLineBatches++;
+                    fog: true,
+                    transparent: sourceMaterial.transparent,
+                    depthTest: sourceMaterial.depthTest,
+                    depthWrite: sourceMaterial.depthWrite,
+                    opacity: outlineOpacity,
+                    blending: sourceMaterial.blending,
+                  });
+            // Conditional LDraw shaders contain the fog chunks and uniforms, but
+            // ShaderMaterial does not enable the fog define automatically.
+            batchMaterial.fog = true;
+            configureDistanceScaledOutlineMaterial(batchMaterial);
+            if (conditional) {
+              geometry.setAttribute(
+                "control0",
+                new THREE.BufferAttribute(new Float32Array(control0), 3),
+              );
+              geometry.setAttribute(
+                "control1",
+                new THREE.BufferAttribute(new Float32Array(control1), 3),
+              );
+              geometry.setAttribute(
+                "direction",
+                new THREE.BufferAttribute(new Float32Array(directions), 3),
+              );
+              batchMaterial.vertexShader = `attribute mat4 instanceMatrix;\n${batchMaterial.vertexShader.replaceAll(
+                "modelViewMatrix * vec4(",
+                "modelViewMatrix * instanceMatrix * vec4(",
+              )}`;
+            }
+            matrixAttribute.setUsage(THREE.DynamicDrawUsage);
+            geometry.setAttribute("position", positionAttribute);
+            geometry.setAttribute("instanceMatrix", matrixAttribute);
+            geometry.instanceCount = pieces.length;
+            const line = new THREE.LineSegments(geometry, batchMaterial);
+            line.name = `${template.part} outlines × ${pieces.length}`;
+            line.frustumCulled = false;
+            line.raycast = () => undefined;
+            line.userData.ownedBatchGeometry = true;
+            line.userData.ownedBatchMaterial = true;
+            root.add(line);
+            state.renderLineBatchItems.push({ line, pieces, matrixAttribute });
+            outlineBatchCount++;
+            createdLineBatches++;
           },
         );
         if (!createdBatches && !createdLineBatches) return;
@@ -3056,27 +3103,20 @@ export default function Home() {
           piece.mesh.traverse((child) => {
             // Solo ocultamos las caras originales si realmente
             // hemos creado un batch de caras.
-            if (
-              child instanceof THREE.Mesh &&
-              createdBatches > 0
-            ) {
+            if (child instanceof THREE.Mesh && createdBatches > 0) {
               child.visible = false;
               hiddenOriginalMeshes++;
             }
 
             // Las líneas sí pueden agruparse incluso para
             // una única pieza.
-            if (
-              child instanceof THREE.LineSegments &&
-              createdLineBatches > 0
-            ) {
+            if (child instanceof THREE.LineSegments && createdLineBatches > 0) {
               child.visible = false;
               hiddenOriginalLines++;
             }
           });
 
-          piece.renderBatched =
-            createdBatches > 0 || createdLineBatches > 0;
+          piece.renderBatched = createdBatches > 0 || createdLineBatches > 0;
         });
       });
       state.renderBatchStats = {
@@ -3183,14 +3223,9 @@ export default function Home() {
         if (!endCatalog || !centreCatalog) return null;
         const wasBulkLoading = state.bulkLoading,
           baseRotation = rotation?.clone() ?? new THREE.Quaternion(),
-          flippedEndRotation = baseRotation.clone().multiply(
-            new THREE.Quaternion(
-              Math.SQRT1_2,
-              Math.SQRT1_2,
-              0,
-              0,
-            ),
-          ),
+          flippedEndRotation = baseRotation
+            .clone()
+            .multiply(new THREE.Quaternion(Math.SQRT1_2, Math.SQRT1_2, 0, 0)),
           component = (catalog: CatalogPart): CatalogPart => ({
             ...catalog,
             color: p.color,
@@ -3214,7 +3249,12 @@ export default function Home() {
               baseRotation,
             );
           if (!firstEnd || !secondEnd || !centre) return null;
-          const assembly: Piece[] = [firstEnd, secondEnd, centre];
+          const assembly: Piece[] = [firstEnd, secondEnd, centre],
+            editorAssemblyId = `cardan-${firstEnd.id}`;
+          assembly.forEach((piece) => {
+            piece.editorAssemblyId = editorAssemblyId;
+            piece.editorAssemblyDetached = undefined;
+          });
           if (!rotation) {
             const bounds = new THREE.Box3();
             assembly.forEach((piece) => bounds.expandByObject(piece.mesh));
@@ -3264,7 +3304,10 @@ export default function Home() {
         wrapper.position.copy(position);
         if (rotation) wrapper.quaternion.copy(rotation);
         wrapper.updateMatrixWorld(true);
-        const { connectors, colliders, gearColliders, specialGear } = analyzePart(wrapper, p),
+        const { connectors, colliders, gearColliders, specialGear } = analyzePart(
+            wrapper,
+            p,
+          ),
           piece: Piece = {
             ...p,
             id: Date.now() + Math.random(),
@@ -3415,8 +3458,7 @@ export default function Home() {
         return;
       }
       const initializationVersion = ++gpuInitializationVersion;
-      if (gpuViewportCanvas.parentElement !== host)
-        host.appendChild(gpuViewportCanvas);
+      if (gpuViewportCanvas.parentElement !== host) host.appendChild(gpuViewportCanvas);
       void GpuSceneRenderer.create(gpuViewportCanvas)
         .then((gpuRendererInstance) => {
           if (
@@ -3448,9 +3490,7 @@ export default function Home() {
             fallBackToWebGl(error);
         });
     };
-    const applyRendererPreference = (
-      preference: ViewportRendererPreference,
-    ) => {
+    const applyRendererPreference = (preference: ViewportRendererPreference) => {
       activeRendererPreference = preference;
       if (preference === "webgl") {
         gpuInitializationVersion++;
@@ -3476,6 +3516,46 @@ export default function Home() {
           .normalize(),
       };
     };
+
+    const connectorOccupied = (
+      piece: Piece,
+      connector: MeshConnector,
+      ignoredPiece?: Piece,
+    ) => {
+      const samePhysicalSite = (candidate: MeshConnector) =>
+        candidate === connector ||
+        (candidate.role === connector.role &&
+          candidate.local.distanceToSquared(connector.local) <= 0.0009 &&
+          Math.abs(candidate.axis.dot(connector.axis)) >= 0.995);
+      return state.connections.some(
+        (connection) =>
+          connection.a !== ignoredPiece &&
+          connection.b !== ignoredPiece &&
+          ((connection.a === piece && samePhysicalSite(connection.socket)) ||
+            (connection.b === piece && samePhysicalSite(connection.shaft))),
+      );
+    };
+
+    const connectorAvailable = (
+      piece: Piece,
+      connector: MeshConnector,
+      ignoredPiece?: Piece,
+    ) =>
+      connectorAcceptsAdditionalConnection(
+        connector,
+        connectorOccupied(piece, connector, ignoredPiece),
+      );
+
+    const connectorPairAvailable = (
+      aPiece: Piece,
+      a: MeshConnector,
+      bPiece: Piece,
+      b: MeshConnector,
+      ignoredPiece?: Piece,
+    ) =>
+      connectorPoliciesCompatible(aPiece, a, bPiece, b) &&
+      connectorAvailable(aPiece, a, ignoredPiece) &&
+      connectorAvailable(bPiece, b, ignoredPiece);
 
     const nearestAxleSnapWorld = (
       host: Piece,
@@ -3534,6 +3614,7 @@ export default function Home() {
       const profile = connectorProfile(shaft, socket);
       if (
         !profile ||
+        !connectorPairAvailable(host, socket, rod, shaft) ||
         state.connections.some(
           (connection) =>
             connection.a === host &&
@@ -3608,8 +3689,30 @@ export default function Home() {
       targetConnector: MeshConnector,
       targetAnchorLocal: THREE.Vector3,
     ) => {
+      const sourceGroup = editorAssemblyMembers(state.pieces, sourcePiece),
+        sourceGroupSet = new Set(sourceGroup),
+        sourceConnectorInternallyOccupied = state.connections.some(
+          (connection) =>
+            sourceGroupSet.has(connection.a) &&
+            sourceGroupSet.has(connection.b) &&
+            ((connection.a === sourcePiece && connection.socket === sourceConnector) ||
+              (connection.b === sourcePiece && connection.shaft === sourceConnector)),
+        );
       const profile = pairProfile(sourceConnector, targetConnector);
-      if (!profile) return false;
+      if (
+        sourceConnectorInternallyOccupied ||
+        !profile ||
+        !connectorPairAvailable(
+          sourcePiece,
+          sourceConnector,
+          targetPiece,
+          targetConnector,
+          sourcePiece,
+        )
+      )
+        return false;
+      sourcePiece.mesh.updateMatrix();
+      const sourceMatrixBefore = sourcePiece.mesh.matrix.clone();
       const sourceWorld = worldConnector(sourcePiece, sourceConnector),
         targetConnectorWorld = worldConnector(targetPiece, targetConnector),
         targetWorld = {
@@ -3654,9 +3757,32 @@ export default function Home() {
         sourceTarget.sub(sourcePiece.mesh.localToWorld(sourceAnchorLocal.clone())),
       );
       sourcePiece.mesh.updateMatrixWorld(true);
+      sourcePiece.mesh.updateMatrix();
+      const groupTransform = sourcePiece.mesh.matrix
+        .clone()
+        .multiply(sourceMatrixBefore.clone().invert());
+      sourceGroup.forEach((member) => {
+        if (member === sourcePiece) return;
+        member.mesh.updateMatrix();
+        groupTransform
+          .clone()
+          .multiply(member.mesh.matrix)
+          .decompose(member.mesh.position, member.mesh.quaternion, member.mesh.scale);
+        member.mesh.updateMatrixWorld(true);
+      });
+      // The three Cardan bodies remain separate for physics, but manual
+      // placement treats them as one rigid editorial assembly. Keep their
+      // internal joints and move their cached world frames with the group.
+      state.connections.forEach((connection) => {
+        if (!sourceGroupSet.has(connection.a) || !sourceGroupSet.has(connection.b))
+          return;
+        connection.point.applyMatrix4(groupTransform);
+        connection.axis.transformDirection(groupTransform).normalize();
+      });
       state.renderBatchesDirty = true;
       state.connections = state.connections.filter(
-        (connection) => connection.a !== sourcePiece && connection.b !== sourcePiece,
+        (connection) =>
+          sourceGroupSet.has(connection.a) === sourceGroupSet.has(connection.b),
       );
       rebalanceAllSmartDefaults(state);
       const socketPiece = sourceConnector.role === "socket" ? sourcePiece : targetPiece,
@@ -3678,6 +3804,12 @@ export default function Home() {
     ) => {
       if (
         !pairProfile(sourceConnector, targetConnector) ||
+        !connectorPairAvailable(
+          sourcePiece,
+          sourceConnector,
+          targetPiece,
+          targetConnector,
+        ) ||
         !forceConnectorAxesCompatible(
           sourcePiece,
           sourceConnector,
@@ -3803,11 +3935,22 @@ export default function Home() {
       ) => {
         const candidates = new Set<IndexedShaft>();
         nearbyShafts(grid, candidateSocket.point, candidates);
-        let best: { candidate: IndexedShaft; score: number } | undefined;
+        let best:
+          | { candidate: IndexedShaft; score: number; orientationError: number }
+          | undefined;
         candidates.forEach((candidate) => {
           const { rod, shaft, point, axis } = candidate,
             profile = connectorProfile(shaft, candidateSocket.socket);
           if (!profile || rod === candidateSocket.host) return;
+          if (
+            !connectorPairAvailable(
+              candidateSocket.host,
+              candidateSocket.socket,
+              rod,
+              shaft,
+            )
+          )
+            return;
           if (Math.abs(candidateSocket.axis.dot(axis)) < 0.965) return;
           let score: number;
           if (shaft.kind !== "axle") {
@@ -3842,7 +3985,9 @@ export default function Home() {
               return;
             score = radial + Math.abs(along) * 0.0001;
           }
-          if (!best || score < best.score) best = { candidate, score };
+          const orientationError = 1 - Math.abs(candidateSocket.axis.dot(axis));
+          if (automaticConnectorMatchIsBetter(score, orientationError, best))
+            best = { candidate, score, orientationError };
         });
         if (!best) return;
         addConnection(
@@ -3940,7 +4085,11 @@ export default function Home() {
         shaftPiece: Piece,
         shaft: MeshConnector,
       ) => {
-        if (!connectorProfile(shaft, socket)) return;
+        if (
+          !connectorProfile(shaft, socket) ||
+          !connectorPairAvailable(socketPiece, socket, shaftPiece, shaft)
+        )
+          return;
         const socketWorld = worldConnector(socketPiece, socket),
           shaftWorld = worldConnector(shaftPiece, shaft);
         if (Math.abs(socketWorld.axis.dot(shaftWorld.axis)) < 0.965) return;
@@ -4038,8 +4187,7 @@ export default function Home() {
         ),
         changedGearPairs = new Set(pendingGearContactChanges.keys()),
         detectedGearLinks = state.gearLinks.filter(
-          (link) =>
-            !changedGearPairs.has(contactPairKey(link.a.value, link.b.value)),
+          (link) => !changedGearPairs.has(contactPairKey(link.a.value, link.b.value)),
         ),
         excludedGearPairs = differentialCarrierGearExclusions(
           state.pieces,
@@ -4067,18 +4215,18 @@ export default function Home() {
         const sameOrder = previous.a.value === link.a.value;
         link.axisA.copy(sameOrder ? previous.axisA : previous.axisB);
         link.axisB.copy(sameOrder ? previous.axisB : previous.axisA);
-        link.localCenterA = (sameOrder
-          ? previous.localCenterA
-          : previous.localCenterB)?.clone();
-        link.localCenterB = (sameOrder
-          ? previous.localCenterB
-          : previous.localCenterA)?.clone();
-        link.localAxisA = (sameOrder
-          ? previous.localAxisA
-          : previous.localAxisB)?.clone();
-        link.localAxisB = (sameOrder
-          ? previous.localAxisB
-          : previous.localAxisA)?.clone();
+        link.localCenterA = (
+          sameOrder ? previous.localCenterA : previous.localCenterB
+        )?.clone();
+        link.localCenterB = (
+          sameOrder ? previous.localCenterB : previous.localCenterA
+        )?.clone();
+        link.localAxisA = (
+          sameOrder ? previous.localAxisA : previous.localAxisB
+        )?.clone();
+        link.localAxisB = (
+          sameOrder ? previous.localAxisB : previous.localAxisA
+        )?.clone();
         link.signB = previous.signB;
         link.perpendicular = previous.perpendicular;
         link.ratio = link.ratioOverride
@@ -4088,9 +4236,7 @@ export default function Home() {
       const gearTopologyChanged =
         changedGearPairs.size > 0 &&
         (previousGearLinks !== detectedGearLinks.length ||
-          detectedGearLinks.some(
-            (link) => !previousLinksByKey.has(gearLinkKey(link)),
-          ));
+          detectedGearLinks.some((link) => !previousLinksByKey.has(gearLinkKey(link))));
       state.gearLinks = detectedGearLinks;
       if (state.world && gearTopologyChanged) {
         const bodyIds = new Map(
@@ -4099,11 +4245,7 @@ export default function Home() {
           ),
         );
         state.world.replaceGears(
-          buildRustGearConfigs(
-            state.gearLinks,
-            bodyIds,
-            state.connections,
-          ),
+          buildRustGearConfigs(state.gearLinks, bodyIds, state.connections),
         );
       }
       const activeGearKeys = new Set(state.gearLinks.map(gearLinkKey));
@@ -4177,7 +4319,10 @@ export default function Home() {
         );
         if (!stillConnected) {
           const key = contactPairKey(a, b);
-          if (state.dynamicNoContactPairs.delete(key) && !state.contactExclusions.has(key))
+          if (
+            state.dynamicNoContactPairs.delete(key) &&
+            !state.contactExclusions.has(key)
+          )
             state.world!.setExcludedColliderPair(a.id, b.id, false);
         }
       });
@@ -4307,8 +4452,10 @@ export default function Home() {
               (candidate.mesh.userData.connectorReach as number | undefined) ??
               connectorMapReach(candidate.connectors),
             maximumReach = pieceReach + candidateReach + captureMargin;
-          return piece.mesh.position.distanceToSquared(candidate.mesh.position) <=
-            maximumReach * maximumReach;
+          return (
+            piece.mesh.position.distanceToSquared(candidate.mesh.position) <=
+            maximumReach * maximumReach
+          );
         });
       if (isRod(piece)) {
         type Match = {
@@ -4316,6 +4463,7 @@ export default function Home() {
           socket: MeshConnector;
           shaft: MeshConnector;
           score: number;
+          orientationError: number;
         };
         let best: Match | undefined;
         for (const host of nearbyPieces)
@@ -4325,10 +4473,15 @@ export default function Home() {
             for (const shaft of piece.connectors.filter(
               (connector) => connector.role === "shaft",
             )) {
-              if (!connectorProfile(shaft, socket)) continue;
+              if (
+                !connectorProfile(shaft, socket) ||
+                !connectorPairAvailable(host, socket, piece, shaft, piece)
+              )
+                continue;
               const socketWorld = worldConnector(host, socket),
                 shaftWorld = worldConnector(piece, shaft),
-                axis = shaftWorld.axis;
+                axis = shaftWorld.axis,
+                orientationError = 1 - Math.abs(socketWorld.axis.dot(axis));
               let score: number;
               if (shaft.kind !== "axle") {
                 const delta = shaftWorld.point.clone().sub(socketWorld.point),
@@ -4346,8 +4499,11 @@ export default function Home() {
                   radial = delta.clone().addScaledVector(axis, -along).length();
                 score = radial + Math.max(0, Math.abs(along) - (shaft.length ?? 0.5) / 2);
               }
-              if (score < captureMargin && (!best || score < best.score))
-                best = { host, socket, shaft, score };
+              if (
+                score < captureMargin &&
+                automaticConnectorMatchIsBetter(score, orientationError, best)
+              )
+                best = { host, socket, shaft, score, orientationError };
             }
         if (best) {
           let targetAxis = worldConnector(best.host, best.socket).axis,
@@ -4384,6 +4540,7 @@ export default function Home() {
         socket: MeshConnector;
         shaft: MeshConnector;
         score: number;
+        orientationError: number;
       };
       let best: HostMatch | undefined;
       for (const rod of nearbyPieces.filter(isRod))
@@ -4393,10 +4550,15 @@ export default function Home() {
           for (const shaft of rod.connectors.filter(
             (connector) => connector.role === "shaft",
           )) {
-            if (!connectorProfile(shaft, socket)) continue;
+            if (
+              !connectorProfile(shaft, socket) ||
+              !connectorPairAvailable(piece, socket, rod, shaft, piece)
+            )
+              continue;
             const socketWorld = worldConnector(piece, socket),
               shaftWorld = worldConnector(rod, shaft),
-              axis = shaftWorld.axis;
+              axis = shaftWorld.axis,
+              orientationError = 1 - Math.abs(socketWorld.axis.dot(axis));
             let score: number;
             if (shaft.kind !== "axle") {
               const delta = shaftWorld.point.clone().sub(socketWorld.point),
@@ -4414,8 +4576,11 @@ export default function Home() {
                 radial = delta.clone().addScaledVector(axis, -along).length();
               score = radial + Math.max(0, Math.abs(along) - (shaft.length ?? 0.5) / 2);
             }
-            if (score < captureMargin && (!best || score < best.score))
-              best = { rod, socket, shaft, score };
+            if (
+              score < captureMargin &&
+              automaticConnectorMatchIsBetter(score, orientationError, best)
+            )
+              best = { rod, socket, shaft, score, orientationError };
           }
       if (!best) return;
       let targetAxis = worldConnector(best.rod, best.shaft).axis,
@@ -4459,6 +4624,7 @@ export default function Home() {
       moving: Piece | undefined,
       movingGroup: Piece[] = [],
       movingStartPositions = new Map<Piece, THREE.Vector3>(),
+      movingInternalConnectionPoints = new Map<Connection, THREE.Vector3>(),
       movingPrepared = false,
       altCandidate: Piece | undefined,
       previous = { x: 0, y: 0 },
@@ -4469,8 +4635,26 @@ export default function Home() {
       movingLinearAxis: THREE.Vector3 | undefined,
       movedAxially = false,
       rubberGuideDrag:
-        | { band: RubberBand; index?: number; origin: THREE.Vector3; guides?: THREE.Vector3[]; plane: THREE.Plane }
+        | {
+            band: RubberBand;
+            index?: number;
+            origin: THREE.Vector3;
+            guides?: THREE.Vector3[];
+            plane: THREE.Plane;
+          }
         | undefined;
+    let aimRotation:
+      | {
+          piece: Piece;
+          members: Piece[];
+          pivot: THREE.Vector3;
+          direction: THREE.Vector3;
+          previewDirection: THREE.Vector3;
+          plane: THREE.Plane;
+          arrow: THREE.ArrowHelper;
+          label: HTMLDivElement;
+        }
+      | undefined;
     const gearMotorHeldKeys = new Set<string>();
     let pivotRotate:
       | {
@@ -4518,7 +4702,9 @@ export default function Home() {
       if (!active) return undefined;
       if (active.rubberNodeId !== undefined) {
         const position = state.world?.bodies.get(active.rubberNodeId)?.translation();
-        return position ? new THREE.Vector3(position.x, position.y, position.z) : undefined;
+        return position
+          ? new THREE.Vector3(position.x, position.y, position.z)
+          : undefined;
       }
       return active.piece?.mesh.localToWorld(active.anchor.clone());
     };
@@ -4631,7 +4817,17 @@ export default function Home() {
             if (other === pivotSupport && targetConnector === pivotTargetConnector)
               continue;
             const profile = pairProfile(sourceConnector, targetConnector);
-            if (!profile) continue;
+            if (
+              !profile ||
+              !connectorPairAvailable(
+                draft.piece,
+                sourceConnector,
+                other,
+                targetConnector,
+                draft.piece,
+              )
+            )
+              continue;
             const targetAnchors =
               targetConnector.role === "shaft" && targetConnector.kind === "axle"
                 ? axleSnapPoints(targetConnector).map((point) => point.local)
@@ -4749,6 +4945,12 @@ export default function Home() {
     };
 
     const pickPiece = () => {
+      // In WebGPU mode the hidden WebGL instance matrices are intentionally
+      // not uploaded every frame. Raycasting still uses those WebGL batches,
+      // so synchronize them on demand before a click; otherwise force-drag
+      // selection tests the pieces at an older simulation position.
+      if (state.running && gpuSceneRenderer && state.renderBatchItems.length)
+        state.updateRenderBatches();
       let best: { piece: Piece; point: THREE.Vector3; distance: number } | undefined;
       const consider = (
         piece: Piece | undefined,
@@ -4771,7 +4973,7 @@ export default function Home() {
                 !state.rubberBands.some((band) => band.owner === piece),
             )
             .map((piece) => piece.mesh),
-          ...state.rubberBands.flatMap((band) => band.visual ? [band.visual] : []),
+          ...state.rubberBands.flatMap((band) => (band.visual ? [band.visual] : [])),
           ...(state.renderBatchRoot ? [state.renderBatchRoot] : []),
         ],
         true,
@@ -4908,6 +5110,134 @@ export default function Home() {
       return [...found];
     };
 
+    const cancelAimRotation = (notify = true) => {
+      if (!aimRotation) return;
+      scene.remove(aimRotation.arrow);
+      aimRotation.arrow.line.geometry.dispose();
+      aimRotation.arrow.cone.geometry.dispose();
+      (aimRotation.arrow.line.material as THREE.Material).dispose();
+      (aimRotation.arrow.cone.material as THREE.Material).dispose();
+      aimRotation.label.remove();
+      aimRotation = undefined;
+      if (notify)
+        setMessage(language === "es" ? "Orientación cancelada" : "Orientation cancelled");
+    };
+
+    const beginAimRotation = (piece: Piece) => {
+      if (state.running) return;
+      cancelAimRotation(false);
+      const members = editorAssemblyMembers(state.pieces, piece),
+        bounds = members.reduce(
+          (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
+          new THREE.Box3(),
+        ),
+        pivot = bounds.isEmpty()
+          ? piece.mesh.getWorldPosition(new THREE.Vector3())
+          : bounds.getCenter(new THREE.Vector3()),
+        candidates = members.flatMap((member) => {
+          member.mesh.updateMatrixWorld(true);
+          return member.connectors.map((connector) => ({
+            point: member.mesh.localToWorld(connector.local.clone()),
+            preferred: connector.role === "socket" && connector.kind === "axle" ? 1 : 0,
+          }));
+        });
+      candidates.sort(
+        (left, right) =>
+          right.preferred - left.preferred ||
+          right.point.distanceToSquared(pivot) - left.point.distanceToSquared(pivot),
+      );
+      const direction = (candidates[0]?.point ?? piece.mesh.position).clone().sub(pivot);
+      if (direction.lengthSq() < 1.0e-6)
+        direction.set(1, 0, 0).applyQuaternion(piece.mesh.quaternion);
+      direction.normalize();
+      const radius = bounds.isEmpty()
+          ? 2
+          : Math.max(2, bounds.getBoundingSphere(new THREE.Sphere()).radius * 1.35),
+        arrow = new THREE.ArrowHelper(direction, pivot, radius, 0xffd51f, 0.35, 0.2),
+        label = document.createElement("div");
+      arrow.renderOrder = 1000;
+      arrow.traverse((object) => {
+        const material = (object as THREE.Mesh).material as THREE.Material | undefined;
+        if (material) {
+          material.depthTest = false;
+          material.depthWrite = false;
+        }
+      });
+      label.className = "manual-connect-label";
+      label.textContent =
+        language === "es"
+          ? "ORIENTAR · clic para aplicar · Esc cancelar"
+          : "AIM · click to apply · Esc to cancel";
+      host.appendChild(label);
+      scene.add(arrow);
+      aimRotation = {
+        piece,
+        members,
+        pivot,
+        direction,
+        previewDirection: direction.clone(),
+        plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
+          camera.getWorldDirection(new THREE.Vector3()),
+          pivot,
+        ),
+        arrow,
+        label,
+      };
+      setMessage(
+        language === "es"
+          ? "Mueve el cursor para apuntar la junta y haz clic"
+          : "Move the cursor to aim the joint, then click",
+      );
+    };
+
+    const commitAimRotation = () => {
+      const draft = aimRotation;
+      if (!draft) return;
+      const rotation = new THREE.Quaternion().setFromUnitVectors(
+          draft.direction,
+          draft.previewDirection,
+        ),
+        memberSet = new Set(draft.members),
+        affected = new Set<Piece>();
+      if (rotation.angleTo(new THREE.Quaternion()) > 1.0e-5) {
+        state.recordHistory();
+        draft.members.forEach((member) => {
+          member.mesh.position
+            .sub(draft.pivot)
+            .applyQuaternion(rotation)
+            .add(draft.pivot);
+          member.mesh.quaternion.premultiply(rotation).normalize();
+          member.mesh.updateMatrixWorld(true);
+        });
+        state.connections.forEach((connection) => {
+          const aInside = memberSet.has(connection.a),
+            bInside = memberSet.has(connection.b);
+          if (aInside !== bInside) affected.add(aInside ? connection.b : connection.a);
+          else if (aInside) {
+            connection.point.sub(draft.pivot).applyQuaternion(rotation).add(draft.pivot);
+            connection.axis.applyQuaternion(rotation).normalize();
+          }
+        });
+        state.connections = state.connections.filter(
+          (connection) => memberSet.has(connection.a) === memberSet.has(connection.b),
+        );
+        affected.forEach((member) => rebalanceSmartDefaults(state, member));
+        if (draft.members.some((member) => member.renderBatched))
+          state.rebuildRenderBatches();
+        else state.renderBatchesDirty = true;
+        setConnectionRevision((value) => value + 1);
+        refreshDebug();
+        scheduleRecoverySave();
+      }
+      const part = draft.piece.part;
+      cancelAimRotation(false);
+      setMessage(
+        language === "es"
+          ? `${part} orientada desde el visor`
+          : `${part} aimed from the viewport`,
+      );
+    };
+
     const clampMotion = (piece: Piece, linearLimit: number, angularLimit: number) => {
       if (!piece.body || piece.physicsIslandFixed) return;
       const v = piece.body.linvel(),
@@ -4924,10 +5254,8 @@ export default function Home() {
       }
     };
 
-
     // Gear and differential constraints live in physics-core/src/systems/gears.rs.
     // The editor only detects topology and sends a numeric graph to Rust.
-
 
     const makeLock = () => {
       const lock = new THREE.Group(),
@@ -4979,8 +5307,7 @@ export default function Home() {
             (candidate) => candidate.fixed,
           );
         });
-      if (piece.body)
-        piece.body.setFixed(Boolean(piece.physicsIslandFixed));
+      if (piece.body) piece.body.setFixed(Boolean(piece.physicsIslandFixed));
       setMessage(
         piece.fixed ? `${piece.part} fijada al espacio` : `${piece.part} liberada`,
       );
@@ -5015,6 +5342,8 @@ export default function Home() {
         fixed: piece.fixed,
         exactCollider: piece.exactCollider,
         dynamicAxleConnections: piece.dynamicAxleConnections,
+        editorAssemblyId: piece.editorAssemblyId,
+        editorAssemblyDetached: piece.editorAssemblyDetached,
         rotationPivotLocal: piece.rotationPivotLocal?.clone(),
         rotationPivotKey: piece.rotationPivotKey,
         gearDirectionLock: piece.gearDirectionLock,
@@ -5056,6 +5385,8 @@ export default function Home() {
               fixed: boolean;
               exactCollider: boolean;
               dynamicAxleConnections: boolean;
+              editorAssemblyId?: string;
+              editorAssemblyDetached?: boolean;
               rotationPivotLocal?: THREE.Vector3;
               rotationPivotKey?: string;
               gearDirectionLock?: -1 | 0 | 1;
@@ -5087,6 +5418,8 @@ export default function Home() {
           piece.fixed = item.fixed;
           piece.exactCollider = item.exactCollider;
           piece.dynamicAxleConnections = item.dynamicAxleConnections;
+          piece.editorAssemblyId = item.editorAssemblyId;
+          piece.editorAssemblyDetached = item.editorAssemblyDetached;
           piece.rotationPivotLocal = item.rotationPivotLocal?.clone();
           piece.rotationPivotKey = item.rotationPivotKey;
           piece.gearDirectionLock = item.gearDirectionLock;
@@ -5118,8 +5451,9 @@ export default function Home() {
             ? snapshot.selected
             : undefined;
         state.selectedPieces = new Set(
-          (snapshot.selectedPieces ?? (state.selected ? [state.selected] : []))
-            .filter((piece) => restoredPieces.has(piece)),
+          (snapshot.selectedPieces ?? (state.selected ? [state.selected] : [])).filter(
+            (piece) => restoredPieces.has(piece),
+          ),
         );
         if (state.selected && !state.selectedPieces.has(state.selected))
           state.selectedPieces.add(state.selected);
@@ -5210,6 +5544,10 @@ export default function Home() {
         diameter: connector.diameter,
         length: connector.length,
         rotationOnly: connector.rotationOnly,
+        connectionTarget: connector.connectionTarget
+          ? { ...connector.connectionTarget }
+          : undefined,
+        singleConnection: connector.singleConnection,
       }),
       saveCollider = (collider: CollisionPrimitive): SavedCollisionPrimitive => ({
         shape: collider.shape,
@@ -5283,6 +5621,8 @@ export default function Home() {
             fixed: piece.fixed,
             exactCollider: piece.exactCollider,
             dynamicAxleConnections: piece.dynamicAxleConnections,
+            editorAssemblyId: piece.editorAssemblyId,
+            editorAssemblyDetached: piece.editorAssemblyDetached,
             rotationPivotLocal: piece.rotationPivotLocal
               ? tuple3(piece.rotationPivotLocal)
               : undefined,
@@ -5343,18 +5683,21 @@ export default function Home() {
                   perpendicular: link.perpendicular,
                   ratioOverride: link.ratioOverride,
                 },
-          ];
+              ];
         }),
-        rubberBands = state.rubberBands.map((band) => ({
-          id: band.id,
-          pieceId: band.owner ? pieceIds.get(band.owner) : undefined,
-          guides: band.guides.map(tuple3),
-          radius: band.radius,
-          restLength: band.restLength,
-          stiffness: band.stiffness,
-          damping: band.damping,
-          color: band.color,
-        } satisfies SavedRubberBand)),
+        rubberBands = state.rubberBands.map(
+          (band) =>
+            ({
+              id: band.id,
+              pieceId: band.owner ? pieceIds.get(band.owner) : undefined,
+              guides: band.guides.map(tuple3),
+              radius: band.radius,
+              restLength: band.restLength,
+              stiffness: band.stiffness,
+              damping: band.damping,
+              color: band.color,
+            }) satisfies SavedRubberBand,
+        ),
         importedCatalog = [
           ...new Map(
             state.pieces
@@ -5488,6 +5831,8 @@ export default function Home() {
           piece.fixed = saved.fixed;
           piece.exactCollider = saved.exactCollider ?? false;
           piece.dynamicAxleConnections = saved.dynamicAxleConnections;
+          piece.editorAssemblyId = saved.editorAssemblyId;
+          piece.editorAssemblyDetached = saved.editorAssemblyDetached;
           piece.rotationPivotLocal = saved.rotationPivotLocal
             ? new THREE.Vector3().fromArray(saved.rotationPivotLocal)
             : undefined;
@@ -5586,6 +5931,7 @@ export default function Home() {
           });
           return [connection];
         });
+        restoreLegacyCardanEditorAssemblies(state.pieces, state.connections);
         state.gearLinks = document.gearLinks.flatMap((saved) => {
           const a = piecesById.get(saved.a),
             b = piecesById.get(saved.b);
@@ -5615,7 +5961,7 @@ export default function Home() {
                   perpendicular: saved.perpendicular,
                   ratioOverride: saved.ratioOverride,
                 },
-          ];
+              ];
         });
         // Rubber-band simulation is temporarily disabled. Keep legacy project
         // data ignored so the catalog piece remains the single visible and
@@ -5679,8 +6025,9 @@ export default function Home() {
       clipboard = {
         anchor,
         connections: state.connections
-          .filter((connection) =>
-            pieces.includes(connection.a) && pieces.includes(connection.b),
+          .filter(
+            (connection) =>
+              pieces.includes(connection.a) && pieces.includes(connection.b),
           )
           .map(cloneConnection),
         items: pieces.map((piece) => ({
@@ -5696,6 +6043,8 @@ export default function Home() {
           fixed: piece.fixed,
           exactCollider: piece.exactCollider,
           dynamicAxleConnections: piece.dynamicAxleConnections,
+          editorAssemblyId: piece.editorAssemblyId,
+          editorAssemblyDetached: piece.editorAssemblyDetached,
           rotationPivotLocal: piece.rotationPivotLocal?.clone(),
           rotationPivotKey: piece.rotationPivotKey,
           gearDirectionLock: piece.gearDirectionLock,
@@ -5721,7 +6070,8 @@ export default function Home() {
       recordHistory();
       pasteIndex++;
       const offset = new THREE.Vector3(0.4 * pasteIndex, 0, 0.4 * pasteIndex),
-        pasted: Piece[] = [];
+        pasted: Piece[] = [],
+        pastedAssemblyIds = new Map<string, string>();
       for (const item of clipboard.items) {
         const piece = await addPart(
           { ...item.catalog },
@@ -5737,6 +6087,15 @@ export default function Home() {
         piece.fixed = item.fixed;
         piece.exactCollider = item.exactCollider;
         piece.dynamicAxleConnections = item.dynamicAxleConnections;
+        piece.editorAssemblyId = item.editorAssemblyId
+          ? (pastedAssemblyIds.get(item.editorAssemblyId) ??
+            (() => {
+              const id = `assembly-${piece.id}`;
+              pastedAssemblyIds.set(item.editorAssemblyId!, id);
+              return id;
+            })())
+          : undefined;
+        piece.editorAssemblyDetached = item.editorAssemblyDetached;
         piece.rotationPivotLocal = item.rotationPivotLocal?.clone();
         piece.rotationPivotKey = item.rotationPivotKey;
         piece.gearDirectionLock = item.gearDirectionLock;
@@ -5791,6 +6150,8 @@ export default function Home() {
       createProjectDocument,
       restoreProjectDocument,
       scheduleRecoverySave,
+      beginAimRotation,
+      cancelAimRotation: () => cancelAimRotation(),
     });
     const flushRecovery = () => {
       if (document.visibilityState === "hidden") scheduleRecoverySave(true);
@@ -5827,6 +6188,12 @@ export default function Home() {
       previous = orbitStart = { x: e.clientX, y: e.clientY };
       moved = false;
       cast(e);
+      if (aimRotation) {
+        e.preventDefault();
+        if (e.button === 0) commitAimRotation();
+        else if (e.button === 2) cancelAimRotation();
+        return;
+      }
       if (e.button === 1) {
         e.preventDefault();
         const now = performance.now(),
@@ -5893,13 +6260,14 @@ export default function Home() {
       orbit = e.button === 2 || e.altKey;
       altCandidate = e.altKey && e.button === 0 ? hitPiece : undefined;
       if (orbit) return;
-      const selectedBand = state.rubberBands.find((band) => band.owner === state.selected);
+      const selectedBand = state.rubberBands.find(
+        (band) => band.owner === state.selected,
+      );
       if (!state.running && e.button === 0 && selectedBand) {
         const bounds = canvas.getBoundingClientRect();
-        const center = selectedBand.guides.reduce(
-          (sum, guide) => sum.add(guide),
-          new THREE.Vector3(),
-        ).multiplyScalar(1 / selectedBand.guides.length);
+        const center = selectedBand.guides
+          .reduce((sum, guide) => sum.add(guide), new THREE.Vector3())
+          .multiplyScalar(1 / selectedBand.guides.length);
         const centerScreen = center.clone().project(camera);
         const centerDistance = Math.hypot(
           bounds.left + ((centerScreen.x + 1) * bounds.width) / 2 - e.clientX,
@@ -5918,16 +6286,15 @@ export default function Home() {
           };
           return;
         }
-        const closest = selectedBand.guides.reduce<{ index: number; distance: number } | undefined>(
-          (best, guide, index) => {
-            const point = guide.clone().project(camera);
-            const x = bounds.left + ((point.x + 1) * bounds.width) / 2;
-            const y = bounds.top + ((1 - point.y) * bounds.height) / 2;
-            const distance = Math.hypot(x - e.clientX, y - e.clientY);
-            return !best || distance < best.distance ? { index, distance } : best;
-          },
-          undefined,
-        );
+        const closest = selectedBand.guides.reduce<
+          { index: number; distance: number } | undefined
+        >((best, guide, index) => {
+          const point = guide.clone().project(camera);
+          const x = bounds.left + ((point.x + 1) * bounds.width) / 2;
+          const y = bounds.top + ((1 - point.y) * bounds.height) / 2;
+          const distance = Math.hypot(x - e.clientX, y - e.clientY);
+          return !best || distance < best.distance ? { index, distance } : best;
+        }, undefined);
         if (closest && closest.distance <= 15) {
           const guide = selectedBand.guides[closest.index];
           state.recordHistory();
@@ -6060,7 +6427,9 @@ export default function Home() {
             const current = state.world?.bodies.get(closest)?.translation();
             return !current ||
               new THREE.Vector3(point.x, point.y, point.z).distanceToSquared(hit!.point) <
-                new THREE.Vector3(current.x, current.y, current.z).distanceToSquared(hit!.point)
+                new THREE.Vector3(current.x, current.y, current.z).distanceToSquared(
+                  hit!.point,
+                )
               ? id
               : closest;
           },
@@ -6141,21 +6510,26 @@ export default function Home() {
           refreshSelectionOutlines();
           return;
         }
-        // Shift-click toggles membership in the editor's multi-selection.
+        // An editorial assembly selects and moves as one object without
+        // merging its independent physics bodies or joints.
+        const clickedGroup = editorAssemblyMembers(state.pieces, hitPiece),
+          completeGroupSelected = clickedGroup.every((piece) =>
+            state.selectedPieces.has(piece),
+          );
+        // Shift-click toggles a complete assembly in the multi-selection.
         // Ctrl/Cmd remains reserved for the existing manual-connect gesture.
         if (e.shiftKey) {
-          if (state.selectedPieces.has(hitPiece)) {
-            if (state.selectedPieces.size > 1) {
-              state.selectedPieces.delete(hitPiece);
-              state.selected = [...state.selectedPieces].at(-1);
-              setSelectedId(state.selected?.id ?? null);
-              return;
-            }
-          } else state.selectedPieces.add(hitPiece);
-        // Preserve an existing multi-selection when the user starts dragging
-        // one of its members; otherwise every group drag collapses to one.
-        } else if (!state.selectedPieces.has(hitPiece)) {
-          state.selectedPieces = new Set([hitPiece]);
+          if (completeGroupSelected && state.selectedPieces.size > clickedGroup.length) {
+            clickedGroup.forEach((piece) => state.selectedPieces.delete(piece));
+            state.selected = [...state.selectedPieces].at(-1);
+            setSelectedId(state.selected?.id ?? null);
+            return;
+          }
+          clickedGroup.forEach((piece) => state.selectedPieces.add(piece));
+          // Preserve an existing multi-selection when the user starts dragging
+          // one of its members; otherwise select its complete editorial group.
+        } else if (!completeGroupSelected) {
+          state.selectedPieces = new Set(clickedGroup);
         }
         moving = hitPiece;
         movingGroup = [...state.selectedPieces];
@@ -6165,6 +6539,14 @@ export default function Home() {
         }
         movingStartPositions = new Map(
           movingGroup.map((piece) => [piece, piece.mesh.position.clone()]),
+        );
+        const movingSet = new Set(movingGroup);
+        movingInternalConnectionPoints = new Map(
+          state.connections
+            .filter(
+              (connection) => movingSet.has(connection.a) && movingSet.has(connection.b),
+            )
+            .map((connection) => [connection, connection.point.clone()]),
         );
         movedAxially = false;
         movingPrepared = false;
@@ -6208,6 +6590,22 @@ export default function Home() {
     };
 
     const move = (e: PointerEvent) => {
+      if (aimRotation) {
+        cast(e);
+        const target = ray.ray.intersectPlane(aimRotation.plane, new THREE.Vector3());
+        if (target) {
+          const direction = target.sub(aimRotation.pivot);
+          if (direction.lengthSq() > 1.0e-5) {
+            direction.normalize();
+            aimRotation.previewDirection.copy(direction);
+            aimRotation.arrow.setDirection(direction);
+          }
+        }
+        const hostBounds = host.getBoundingClientRect();
+        aimRotation.label.style.left = `${e.clientX - hostBounds.left + 14}px`;
+        aimRotation.label.style.top = `${e.clientY - hostBounds.top + 14}px`;
+        return;
+      }
       if (rubberGuideDrag) {
         cast(e);
         const point = ray.ray.intersectPlane(rubberGuideDrag.plane, new THREE.Vector3());
@@ -6304,9 +6702,9 @@ export default function Home() {
       if (spring) {
         const canvasBounds = canvas.getBoundingClientRect(),
           cursorScreen = {
-          x: e.clientX - canvasBounds.left,
-          y: e.clientY - canvasBounds.top,
-        };
+            x: e.clientX - canvasBounds.left,
+            y: e.clientY - canvasBounds.top,
+          };
         if (
           !spring.dragged &&
           Math.hypot(
@@ -6330,9 +6728,8 @@ export default function Home() {
         const anchor = springAnchor();
         if (!anchor) return;
         spring.cursorScreen = cursorScreen;
-        spring.target.copy(
-          ray.ray.at(camera.position.distanceTo(anchor), new THREE.Vector3()),
-        );
+        const planeTarget = forceDragTarget(ray.ray, spring.plane);
+        if (planeTarget) spring.target.copy(planeTarget);
         updateSpring();
         return;
       }
@@ -6388,23 +6785,23 @@ export default function Home() {
           movingPrepared = true;
           moved = true;
           const movingSet = new Set(movingGroup);
-          const affectedPieces = new Set<Piece>(movingGroup);
+          const affectedPieces = new Set<Piece>();
           state.connections.forEach((connection) => {
-            if (movingSet.has(connection.a)) affectedPieces.add(connection.b);
-            if (movingSet.has(connection.b)) affectedPieces.add(connection.a);
+            const aInside = movingSet.has(connection.a),
+              bInside = movingSet.has(connection.b);
+            if (aInside !== bInside)
+              affectedPieces.add(aInside ? connection.b : connection.a);
           });
           state.connections = state.connections.filter(
-            (connection) =>
-              !movingSet.has(connection.a) && !movingSet.has(connection.b),
+            (connection) => movingSet.has(connection.a) === movingSet.has(connection.b),
           );
           affectedPieces.forEach((piece) => rebalanceSmartDefaults(state, piece));
           setConnectionRevision((value) => value + 1);
         } else moved = true;
-        // Shift's axial/vertical drag mode is intentionally single-selection
-        // only. With a group selected it would conflict with preserving the
-        // relative offsets of the other pieces.
-        const shiftActive = movingGroup.length <= 1 && (e.shiftKey || shiftHeld);
-        if (shiftActive && movingLinearAxis) {
+        // The selected piece defines the axial/vertical guide; groupDelta
+        // below applies the same movement to the complete editorial assembly.
+        const shiftActive = e.shiftKey || shiftHeld;
+        if (shiftActive && movingLinearAxis && movingGroup.length === 1) {
           movedAxially = true;
           const bounds = canvas.getBoundingClientRect(),
             project = (point: THREE.Vector3) => {
@@ -6467,6 +6864,9 @@ export default function Home() {
           const start = movingStartPositions.get(piece);
           if (start) piece.mesh.position.copy(start).add(groupDelta);
         }
+        movingInternalConnectionPoints.forEach((point, connection) => {
+          connection.point.copy(point).add(groupDelta);
+        });
         previous = { x: e.clientX, y: e.clientY };
         state.renderBatchesDirty = true;
       }
@@ -6509,7 +6909,9 @@ export default function Home() {
         const draft = state.manualConnect;
         cast(e);
         const canvasBounds = canvas.getBoundingClientRect(),
-          maximumScreenDistance = 42;
+          maximumScreenDistance = 42,
+          draftMembers = editorAssemblyMembers(state.pieces, draft.piece),
+          draftMemberSet = new Set(draftMembers);
         let best:
           | {
               piece: Piece;
@@ -6521,10 +6923,20 @@ export default function Home() {
           | undefined;
         let rejectedByOrientation = false;
         for (const piece of state.pieces) {
-          if (piece === draft.piece) continue;
+          if (draftMemberSet.has(piece)) continue;
           piece.mesh.updateMatrixWorld(true);
           for (const connector of piece.connectors) {
-            if (!pairProfile(draft.connector, connector)) continue;
+            if (
+              !pairProfile(draft.connector, connector) ||
+              !connectorPairAvailable(
+                draft.piece,
+                draft.connector,
+                piece,
+                connector,
+                draft.piece,
+              )
+            )
+              continue;
             const anchors =
               connector.role === "shaft" && connector.kind === "axle"
                 ? axleSnapPoints(connector)
@@ -6600,7 +7012,8 @@ export default function Home() {
           ...current,
           connectors: draft.connectorsWereVisible,
         }));
-        if (connected && draft.piece.renderBatched) state.rebuildRenderBatches();
+        if (connected && draftMembers.some((member) => member.renderBatched))
+          state.rebuildRenderBatches();
         setConnectionRevision((value) => value + 1);
         setMessage(
           connected && best
@@ -6619,7 +7032,10 @@ export default function Home() {
         );
         refreshDebug();
         if (connected && !draft.forced) {
-          const connections = verifyPieceConnections(draft.piece);
+          const connections = state.connections.filter(
+            (connection) =>
+              draftMemberSet.has(connection.a) || draftMemberSet.has(connection.b),
+          ).length;
           setMessage(
             `Connect manual: ${draft.piece.part} ↔ ${best!.piece.part} · ${connections} uniones verificadas`,
           );
@@ -6665,12 +7081,15 @@ export default function Home() {
         // A single moved piece first snaps to the best nearby compatible
         // connector; the strict verifier then records every connection at the
         // resulting pose. Multi-selection keeps its relative layout intact.
-        if (movingGroup.length === 1 && !movedAxially) connect(moving);
-        for (const piece of movingGroup) verifyPieceConnections(piece, false);
+        if (movingGroup.length === 1) {
+          if (!movedAxially) connect(moving);
+          verifyPieceConnections(moving, false);
+        }
       }
       moving = undefined;
       movingGroup = [];
       movingStartPositions.clear();
+      movingInternalConnectionPoints.clear();
       movingPrepared = false;
       movingLinearAxis = undefined;
       movedAxially = false;
@@ -6783,6 +7202,11 @@ export default function Home() {
       }
       const target = e.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable=true]")) return;
+      if (e.code === "Escape" && aimRotation) {
+        e.preventDefault();
+        cancelAimRotation();
+        return;
+      }
       if (e.code === "KeyR") {
         rotationPivotHeld = true;
         e.preventDefault();
@@ -6822,7 +7246,9 @@ export default function Home() {
       }
       if (state.running || !state.selected) return;
       const piece = state.selected,
-        selectedPieces = [...(state.selectedPieces.size ? state.selectedPieces : new Set([piece]))],
+        selectedPieces = [
+          ...(state.selectedPieces.size ? state.selectedPieces : new Set([piece])),
+        ],
         code = e.code;
       if (code === "Delete") {
         e.preventDefault();
@@ -6995,7 +7421,7 @@ export default function Home() {
       if (frameStarted - fpsWindowStarted >= 500) {
         const fps = (fpsFrames * 1000) / (frameStarted - fpsWindowStarted),
           counter = fpsRef.current;
-          const webGpuQualityActive = !!gpuSceneRenderer,
+        const webGpuQualityActive = !!gpuSceneRenderer,
           // WebGPU keeps native quality while it can sustain 30 FPS. Once it
           // drops below that floor, reduce the scale; above it, restore 100%.
           lowerFpsThreshold = webGpuQualityActive ? 30 : 15,
@@ -7110,7 +7536,9 @@ export default function Home() {
             const axis = gearAxisForPiece(piece);
             if (piece.gearMotor && gearMotorHeldKeys.has(piece.gearMotor.key)) {
               const angular = piece.body.angvel(),
-                currentSpeed = new THREE.Vector3(angular.x, angular.y, angular.z).dot(axis),
+                currentSpeed = new THREE.Vector3(angular.x, angular.y, angular.z).dot(
+                  axis,
+                ),
                 error = piece.gearMotor.speed - currentSpeed,
                 impulse = THREE.MathUtils.clamp(
                   error * piece.body.mass(),
@@ -7165,10 +7593,7 @@ export default function Home() {
               // Rapier limits candidates to collider pairs. The local two-item
               // test then answers whether their green engagement envelopes
               // actually overlap; no unrelated gear is inspected.
-              const links = detectGearLinks(
-                [left, right],
-                state.rigidIslandByPiece,
-              );
+              const links = detectGearLinks([left, right], state.rigidIslandByPiece);
               const key = contactPairKey(left, right);
               if (links.length && !currentGearContacts.has(key))
                 currentGearContacts.set(key, {
@@ -7195,10 +7620,7 @@ export default function Home() {
             const scannedLinks = detectGearLinks(
               state.pieces.filter((piece) => piece.gear),
               state.rigidIslandByPiece,
-              differentialCarrierGearExclusions(
-                state.pieces,
-                state.connections,
-              ),
+              differentialCarrierGearExclusions(state.pieces, state.connections),
             );
             scannedLinks.forEach((link) => {
               const key = gearLinkKey(link),
@@ -7280,8 +7702,7 @@ export default function Home() {
           state.dynamicConnectionFrame++;
           if (
             pendingGearContactChanges.size > 0 ||
-            (state.dynamicConnectionFrame % 8 === 0 &&
-              dynamicMechanismsNeedScan())
+            (state.dynamicConnectionFrame % 8 === 0 && dynamicMechanismsNeedScan())
           )
             updateDynamicMechanisms();
           syncMs = performance.now() - phaseStarted;
@@ -7321,11 +7742,13 @@ export default function Home() {
                   if (!body) return [];
                   const position = body.translation(),
                     velocity = body.linvel();
-                  return [{
-                    id,
-                    position: [position.x, position.y, position.z],
-                    linearVelocity: [velocity.x, velocity.y, velocity.z],
-                  }];
+                  return [
+                    {
+                      id,
+                      position: [position.x, position.y, position.z],
+                      linearVelocity: [velocity.x, velocity.y, velocity.z],
+                    },
+                  ];
                 });
                 const routeLength = rubberBandLength(
                   nodes.map((node) => new THREE.Vector3().fromArray(node.position)),
@@ -7454,7 +7877,7 @@ export default function Home() {
         ...debugRoot.children.filter(
           (object) => object.userData.debugKind !== "selection-outline",
         ),
-        ...state.rubberBands.flatMap((band) => band.visual ? [band.visual] : []),
+        ...state.rubberBands.flatMap((band) => (band.visual ? [band.visual] : [])),
       ];
       state.pieces.forEach((piece) => {
         if (piece.lockSprite?.visible) gpuExtras.push(piece.lockSprite);
@@ -7533,6 +7956,7 @@ export default function Home() {
     frame = requestAnimationFrame(animate);
     return () => {
       gpuInitializationCancelled = true;
+      cancelAimRotation(false);
       cancelAnimationFrame(frame);
       if (renderBatchRebuildFrame) cancelAnimationFrame(renderBatchRebuildFrame);
       pendingGpuTimers.forEach(({ query }) => gl.deleteQuery(query));
@@ -7543,8 +7967,7 @@ export default function Home() {
       window.removeEventListener("blur", clearModifiers);
       gpuSceneRenderer?.dispose();
       gpuSceneRenderer = null;
-      if (gpuViewportCanvas.parentElement === host)
-        host.removeChild(gpuViewportCanvas);
+      if (gpuViewportCanvas.parentElement === host) host.removeChild(gpuViewportCanvas);
       renderer.dispose();
       document.removeEventListener("visibilitychange", flushRecovery);
       host.removeChild(canvas);
@@ -7667,10 +8090,27 @@ export default function Home() {
       p = s?.selected;
     if (!s || !p || running) return;
     s.recordHistory();
-    const radians = THREE.MathUtils.degToRad(rotationAngle * dir);
+    p.mesh.updateMatrix();
+    const members = editorAssemblyMembers(s.pieces, p),
+      before = p.mesh.matrix.clone(),
+      radians = THREE.MathUtils.degToRad(rotationAngle * dir);
     rotatePieceAroundPivotWithGlobalSnap(p, axis, radians, s.rotationSnapStep);
-    const disconnected = removeMisalignedForcedConnections(s, p);
-    if (p.renderBatched) s.rebuildRenderBatches();
+    p.mesh.updateMatrix();
+    const transform = p.mesh.matrix.clone().multiply(before.invert());
+    members.forEach((member) => {
+      if (member === p) return;
+      member.mesh.updateMatrix();
+      transform
+        .clone()
+        .multiply(member.mesh.matrix)
+        .decompose(member.mesh.position, member.mesh.quaternion, member.mesh.scale);
+      member.mesh.updateMatrixWorld(true);
+    });
+    const disconnected = members.reduce(
+      (total, member) => total + removeMisalignedForcedConnections(s, member),
+      0,
+    );
+    if (members.some((member) => member.renderBatched)) s.rebuildRenderBatches();
     else s.renderBatchesDirty = true;
     s.refreshDebug();
     if (disconnected) setConnectionRevision((value) => value + 1);
@@ -7688,8 +8128,12 @@ export default function Home() {
       p = s?.selected;
     if (!s || !p || running) return;
     s.recordHistory();
-    p.mesh.position[axis] += amount;
-    if (p.renderBatched) s.rebuildRenderBatches();
+    const members = editorAssemblyMembers(s.pieces, p);
+    members.forEach((member) => {
+      member.mesh.position[axis] += amount;
+      member.mesh.updateMatrixWorld(true);
+    });
+    if (members.some((member) => member.renderBatched)) s.rebuildRenderBatches();
     else s.renderBatchesDirty = true;
     s.refreshDebug();
     setSelectedId(p.id);
@@ -7934,8 +8378,7 @@ export default function Home() {
         const fixedConnectionCount = s.connections.filter(
           (connection) => connection.mode === "fixed",
         ).length;
-        s.simLog.events[0] =
-          `Inicio con ${s.pieces.length} piezas agrupadas en ${built.rigidIslands.length} cuerpos rígidos y ${s.connections.length} uniones`;
+        s.simLog.events[0] = `Inicio con ${s.pieces.length} piezas agrupadas en ${built.rigidIslands.length} cuerpos rígidos y ${s.connections.length} uniones`;
         s.simLog.events.push(
           `Modo estructural ${structuralMode}; rigidez ${structuralStiffness}%`,
           `Rust Rapier SIMD: ${built.scene.settings.solverIterations} iteraciones × ${built.scene.settings.internalPgsIterations} PGS interno`,
@@ -8462,9 +8905,8 @@ export default function Home() {
     const state = appRef.current,
       affectedKeys = new Set(candidates.map((candidate) => candidate.key)),
       hasRuntimeInstances =
-        state?.pieces.some((piece) =>
-          affectedKeys.has(correctionStorageKeyFor(piece)),
-        ) ?? false;
+        state?.pieces.some((piece) => affectedKeys.has(correctionStorageKeyFor(piece))) ??
+        false;
     let connectorsChanged = false,
       runtimeChanged = false;
     if (usePreloaded && state && hasRuntimeInstances) state.recordHistory();
@@ -8486,8 +8928,7 @@ export default function Home() {
           if (candidate.layers.includes("specialGear"))
             localStorage.removeItem(`sim-special-gear-v1:${candidate.key}`);
         }
-        if (hasBrowserCopy)
-          writeStoredMapBaseline(localStorage, candidate.key, current);
+        if (hasBrowserCopy) writeStoredMapBaseline(localStorage, candidate.key, current);
       } catch {}
       projectMapBaselinesRef.current[candidate.key] = current;
 
@@ -8510,10 +8951,7 @@ export default function Home() {
           Array.isArray(bundle.gearColliders)
         )
           piece.gearColliders = bundle.gearColliders.map(runtimeColliderFromStored);
-        if (
-          candidate.layers.includes("specialGear") &&
-          bundle.specialGear !== undefined
-        )
+        if (candidate.layers.includes("specialGear") && bundle.specialGear !== undefined)
           piece.specialGear = bundle.specialGear;
       }
     }
@@ -8531,7 +8969,10 @@ export default function Home() {
       setConnectorRevision((value) => value + 1);
       setColliderRevision((value) => value + 1);
       setConnectionRevision((value) => value + 1);
-    } else if (state && candidates.some((candidate) => candidate.sources.includes("project"))) {
+    } else if (
+      state &&
+      candidates.some((candidate) => candidate.sources.includes("project"))
+    ) {
       state.scheduleRecoverySave();
     }
 
@@ -8803,6 +9244,10 @@ export default function Home() {
   };
 
   const selected = appRef.current?.selected;
+  const selectedEditorAssembly =
+    selected && appRef.current
+      ? editorAssemblyMembers(appRef.current.pieces, selected)
+      : [];
   const selectedRubberBand = selected
     ? appRef.current?.rubberBands.find((band) => band.owner === selected)
     : undefined;
@@ -8890,6 +9335,29 @@ export default function Home() {
       return next;
     });
 
+  const separateSelectedEditorAssembly = () => {
+    const state = appRef.current,
+      piece = state?.selected;
+    if (!state || !piece || running) return;
+    const members = editorAssemblyMembers(state.pieces, piece);
+    if (members.length < 2) return;
+    state.recordHistory();
+    members.forEach((member) => {
+      member.editorAssemblyId = undefined;
+      member.editorAssemblyDetached = true;
+    });
+    state.selectedPieces = new Set([piece]);
+    state.selected = piece;
+    state.refreshDebug();
+    state.scheduleRecoverySave();
+    setConnectionRevision((revision) => revision + 1);
+    setMessage(
+      language === "es"
+        ? `Conjunto separado: ${members.length} piezas independientes`
+        : `Assembly separated: ${members.length} independent parts`,
+    );
+  };
+
   const setConnectionMode = (id: string, mode: JointMode) => {
     const state = appRef.current,
       connection = state?.connections.find((item) => item.id === id);
@@ -8964,6 +9432,10 @@ export default function Home() {
       diameter: connector.diameter,
       length: connector.length,
       rotationOnly: connector.rotationOnly,
+      connectionTarget: connector.connectionTarget
+        ? { ...connector.connectionTarget }
+        : undefined,
+      singleConnection: connector.singleConnection,
     }));
 
   const commitConnectorMap = (
@@ -9042,6 +9514,29 @@ export default function Home() {
     );
   };
 
+  const updateConnectorPolicy = (
+    index: number,
+    update: (connector: MeshConnector) => void,
+  ) => {
+    if (!selected || running) return;
+    const next = selected.connectors.map((connector) => ({
+        ...connector,
+        local: connector.local.clone(),
+        axis: connector.axis.clone(),
+        connectionTarget: connector.connectionTarget
+          ? { ...connector.connectionTarget }
+          : undefined,
+      })),
+      connector = next[index];
+    if (!connector) return;
+    update(connector);
+    commitConnectorMap(
+      selected,
+      next,
+      `Mapa ${selected.part}: reglas del conector ${index + 1} actualizadas`,
+    );
+  };
+
   const addConnector = () => {
     if (!selected || running) return;
     const next = selected.connectors.map((connector) => ({
@@ -9117,7 +9612,11 @@ export default function Home() {
       ...source,
       local: source.local.clone(),
       axis: source.axis.clone(),
+      connectionTarget: source.connectionTarget
+        ? { ...source.connectionTarget }
+        : undefined,
     });
+
     commitConnectorMap(
       selected,
       next,
@@ -9160,6 +9659,8 @@ export default function Home() {
           diameter?: number;
           length?: number;
           rotationOnly?: boolean;
+          connectionTarget?: { partId?: string; connectorId?: number };
+          singleConnection?: boolean;
         }) => {
           if (
             !Array.isArray(row.local) ||
@@ -9176,6 +9677,19 @@ export default function Home() {
             diameter: row.diameter ?? 0.24,
             length: row.length,
             rotationOnly: row.rotationOnly === true || undefined,
+            connectionTarget:
+              row.connectionTarget && typeof row.connectionTarget.partId === "string"
+                ? {
+                    partId: row.connectionTarget.partId.trim(),
+                    connectorId:
+                      typeof row.connectionTarget.connectorId === "number" &&
+                      Number.isInteger(row.connectionTarget.connectorId) &&
+                      row.connectionTarget.connectorId > 0
+                        ? row.connectionTarget.connectorId
+                        : undefined,
+                  }
+                : undefined,
+            singleConnection: row.singleConnection === true || undefined,
           };
         },
       );
@@ -9427,9 +9941,7 @@ export default function Home() {
           : new THREE.Quaternion(),
       gearCollision: row.gearCollision === true || row.gearColision === true,
       gearRatio:
-        Number.isFinite(row.gearRatio) && row.gearRatio! > 0
-          ? row.gearRatio
-          : undefined,
+        Number.isFinite(row.gearRatio) && row.gearRatio! > 0 ? row.gearRatio : undefined,
     };
   };
 
@@ -9450,7 +9962,10 @@ export default function Home() {
           .forEach((instance) => {
             instance.specialGear = true;
           });
-        localStorage.setItem(`sim-special-gear-v1:${correctionStorageKeyFor(selected)}`, "true");
+        localStorage.setItem(
+          `sim-special-gear-v1:${correctionStorageKeyFor(selected)}`,
+          "true",
+        );
       }
       commitCollisionMap(
         selected,
@@ -9966,9 +10481,7 @@ export default function Home() {
                                 `${mapLayerLabel(layer)}: ${candidate.localCounts[layer]}`,
                             )
                             .join(" · ") ||
-                            (candidate.localCounts.specialGear
-                              ? t.enabled
-                              : t.disabled)}
+                            (candidate.localCounts.specialGear ? t.enabled : t.disabled)}
                         </b>
                       </div>
                       <i>→</i>
@@ -10532,9 +11045,7 @@ export default function Home() {
           <span>{t.properties}</span>
         </div>
         <div className="renderer-setting">
-          <label>
-            {language === "es" ? "Motor gráfico" : "Graphics renderer"}
-          </label>
+          <label>{language === "es" ? "Motor gráfico" : "Graphics renderer"}</label>
           <div
             className="renderer-mode"
             role="group"
@@ -10572,9 +11083,7 @@ export default function Home() {
           <div
             className="renderer-mode renderer-quality"
             role="group"
-            aria-label={
-              language === "es" ? "Escalado de calidad" : "Quality scaling"
-            }
+            aria-label={language === "es" ? "Escalado de calidad" : "Quality scaling"}
           >
             <button
               type="button"
@@ -10611,7 +11120,8 @@ export default function Home() {
                 <div>
                   <b>{piece.part}</b>
                   <span>
-                    {motorKeyLabel(piece.gearMotor!.key)} · {piece.gearMotor!.speed} rad/s · {piece.gearMotor!.force} N·m
+                    {motorKeyLabel(piece.gearMotor!.key)} · {piece.gearMotor!.speed} rad/s
+                    · {piece.gearMotor!.force} N·m
                   </span>
                 </div>
                 <button
@@ -10777,15 +11287,25 @@ export default function Home() {
                 </p>
                 <div className="data-row">
                   <span>{language === "es" ? "Longitud nominal" : "Nominal length"}</span>
-                  <b>{selectedRubberBand.restLength.toFixed(2)} u · {selected.part}</b>
+                  <b>
+                    {selectedRubberBand.restLength.toFixed(2)} u · {selected.part}
+                  </b>
                 </div>
                 <div className="data-row">
                   <span>{language === "es" ? "Recorrido actual" : "Current route"}</span>
                   <b>{selectedRubberRouteLength.toFixed(2)} u</b>
                 </div>
                 <div className="data-row">
-                  <span>{language === "es" ? "Tensión estimada" : "Estimated tension"}</span>
-                  <b>{Math.max(0, 4 * (selectedRubberRouteLength / selectedRubberBand.restLength - 1)).toFixed(1)} N</b>
+                  <span>
+                    {language === "es" ? "Tensión estimada" : "Estimated tension"}
+                  </span>
+                  <b>
+                    {Math.max(
+                      0,
+                      4 * (selectedRubberRouteLength / selectedRubberBand.restLength - 1),
+                    ).toFixed(1)}{" "}
+                    N
+                  </b>
                 </div>
                 <div className="map-actions rubber-map-actions">
                   <button
@@ -10805,9 +11325,13 @@ export default function Home() {
                   </button>
                 </div>
                 {selectedRubberBand.guides.map((guide, index) => (
-                  <details className="connector-row rubber-node-row" key={`${selectedRubberBand.id}:${index}`}>
+                  <details
+                    className="connector-row rubber-node-row"
+                    key={`${selectedRubberBand.id}:${index}`}
+                  >
                     <summary>
-                      <b>#{index + 1}</b> {language === "es" ? "Nodo de recorrido" : "Route node"}
+                      <b>#{index + 1}</b>{" "}
+                      {language === "es" ? "Nodo de recorrido" : "Route node"}
                       <span className="connector-row-actions">
                         <button
                           aria-label={language === "es" ? "Eliminar nodo" : "Delete node"}
@@ -10852,129 +11376,155 @@ export default function Home() {
                 ))}
               </div>
             )}
-            {!selectedRubberBand && <>
-            <label>{t.color}</label>
-            <div className="piece-color-control">
-              <i
-                style={{
-                  background: colorHex[selected.color] ?? colorHex[71],
-                }}
-              />
-              <select
-                aria-label={t.color}
-                value={selected.color}
-                disabled={running}
-                onChange={(event) => void changeSelectedColor(+event.target.value)}
-              >
-                {!ldrawColorOptions.includes(selected.color) && (
-                  <option value={selected.color}>LDraw {selected.color}</option>
-                )}
-                {ldrawColorOptions.map((color) => (
-                  <option value={color} key={color}>
-                    {color} · {ldrawColorNames[color]?.[language] ?? `LDraw ${color}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-            </>}
-            {!selectedRubberBand && <label className="property-check exact-collider-check">
-              <input
-                type="checkbox"
-                checked={selected.exactCollider}
-                disabled={running}
-                onChange={(event) => {
-                  const state = appRef.current;
-                  if (!state) return;
-                  state.recordHistory();
-                  selected.exactCollider = event.target.checked;
-                  // Rebuild the diagnostics immediately so the visual mesh
-                  // always matches the collider selected for simulation.
-                  state.refreshDebug();
-                  setConnectorRevision((value) => value + 1);
-                  state.scheduleRecoverySave();
-                  setMessage(
-                    event.target.checked
-                      ? language === "es"
-                        ? "Colisión exacta activada para esta pieza (mayor coste físico)"
-                        : "Exact collision enabled for this part (higher physics cost)"
-                      : language === "es"
-                        ? "La pieza vuelve a usar su colisión compuesta simplificada"
-                        : "The part now uses its simplified compound collision",
-                  );
-                }}
-              />
-              <span>
-                {language === "es"
-                  ? "Usar la malla del modelo como colisión"
-                  : "Use the model mesh as collision"}
-                <small>
+            {!selectedRubberBand && (
+              <>
+                <label>{t.color}</label>
+                <div className="piece-color-control">
+                  <i
+                    style={{
+                      background: colorHex[selected.color] ?? colorHex[71],
+                    }}
+                  />
+                  <select
+                    aria-label={t.color}
+                    value={selected.color}
+                    disabled={running}
+                    onChange={(event) => void changeSelectedColor(+event.target.value)}
+                  >
+                    {!ldrawColorOptions.includes(selected.color) && (
+                      <option value={selected.color}>LDraw {selected.color}</option>
+                    )}
+                    {ldrawColorOptions.map((color) => (
+                      <option value={color} key={color}>
+                        {color} · {ldrawColorNames[color]?.[language] ?? `LDraw ${color}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            {!selectedRubberBand && (
+              <label className="property-check exact-collider-check">
+                <input
+                  type="checkbox"
+                  checked={selected.exactCollider}
+                  disabled={running}
+                  onChange={(event) => {
+                    const state = appRef.current;
+                    if (!state) return;
+                    state.recordHistory();
+                    selected.exactCollider = event.target.checked;
+                    // Rebuild the diagnostics immediately so the visual mesh
+                    // always matches the collider selected for simulation.
+                    state.refreshDebug();
+                    setConnectorRevision((value) => value + 1);
+                    state.scheduleRecoverySave();
+                    setMessage(
+                      event.target.checked
+                        ? language === "es"
+                          ? "Colisión exacta activada para esta pieza (mayor coste físico)"
+                          : "Exact collision enabled for this part (higher physics cost)"
+                        : language === "es"
+                          ? "La pieza vuelve a usar su colisión compuesta simplificada"
+                          : "The part now uses its simplified compound collision",
+                    );
+                  }}
+                />
+                <span>
                   {language === "es"
-                    ? "Más precisa, pero consume más recursos"
-                    : "More accurate, but more expensive"}
-                </small>
-              </span>
-            </label>}
-            {!selectedRubberBand && <>
-            <label>{t.move}</label>
-            <div className="control-grid">
-              <button onClick={() => nudge("x", -(gridStep || 0.25))}>X−</button>
-              <button onClick={() => nudge("y", gridStep || 0.25)}>Y+</button>
-              <button onClick={() => nudge("z", -(gridStep || 0.25))}>Z−</button>
-              <button onClick={() => nudge("x", gridStep || 0.25)}>X+</button>
-              <button onClick={() => nudge("y", -(gridStep || 0.25))}>Y−</button>
-              <button onClick={() => nudge("z", gridStep || 0.25)}>Z+</button>
-            </div>
-            <label>{t.rotationPivot}</label>
-            <select
-              className="pivot-select"
-              value={selectedPivotValue}
-              disabled={running}
-              onChange={(event) => {
-                const state = appRef.current;
-                if (!state) return;
-                state.recordHistory();
-                const option = selectedPivotOptions.find(
-                  (candidate) => candidate.key === event.target.value,
-                );
-                selected.rotationPivotKey = option?.key ?? "center";
-                selected.rotationPivotLocal = option?.local.clone();
-                state.refreshDebug();
-                setConnectorRevision((value) => value + 1);
-              }}
-            >
-              <option value="center">{t.pieceCenter}</option>
-              {selectedPivotOptions.map((option) => (
-                <option value={option.key} key={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <div className="angle-head">
-              <label>{t.rotateAny}</label>
-              <input
-                type="number"
-                min=".1"
-                max="360"
-                step=".1"
-                value={rotationAngle}
-                disabled={running}
-                onChange={(event) =>
-                  setRotationAngle(
-                    Math.max(0.1, Math.min(360, +event.target.value || 0.1)),
-                  )
-                }
-              />
-              <span>°</span>
-            </div>
-            <div className="control-grid rotate">
-              <button onClick={() => rotate("x")}>↻ X</button>
-              <button onClick={() => rotate("y")}>↻ Y</button>
-              <button onClick={() => rotate("z")}>↻ Z</button>
-              <button onClick={() => rotate("x", -1)}>↺ X</button>
-              <button onClick={() => rotate("y", -1)}>↺ Y</button>
-              <button onClick={() => rotate("z", -1)}>↺ Z</button>
-            </div>
-            </>}
+                    ? "Usar la malla del modelo como colisión"
+                    : "Use the model mesh as collision"}
+                  <small>
+                    {language === "es"
+                      ? "Más precisa, pero consume más recursos"
+                      : "More accurate, but more expensive"}
+                  </small>
+                </span>
+              </label>
+            )}
+            {!selectedRubberBand && (
+              <>
+                <button
+                  type="button"
+                  className="map-toggle aim-assembly"
+                  disabled={running}
+                  onClick={() => appRef.current?.beginAimRotation?.(selected)}
+                >
+                  {language === "es" ? "Orientar desde el visor" : "Aim from viewport"}
+                </button>
+                {selectedEditorAssembly.length > 1 && (
+                  <button
+                    type="button"
+                    className="map-toggle separate-assembly"
+                    disabled={running}
+                    onClick={separateSelectedEditorAssembly}
+                  >
+                    {language === "es"
+                      ? `Separar conjunto (${selectedEditorAssembly.length} piezas)`
+                      : `Separate assembly (${selectedEditorAssembly.length} parts)`}
+                  </button>
+                )}
+                <label>{t.move}</label>
+                <div className="control-grid">
+                  <button onClick={() => nudge("x", -(gridStep || 0.25))}>X−</button>
+                  <button onClick={() => nudge("y", gridStep || 0.25)}>Y+</button>
+                  <button onClick={() => nudge("z", -(gridStep || 0.25))}>Z−</button>
+                  <button onClick={() => nudge("x", gridStep || 0.25)}>X+</button>
+                  <button onClick={() => nudge("y", -(gridStep || 0.25))}>Y−</button>
+                  <button onClick={() => nudge("z", gridStep || 0.25)}>Z+</button>
+                </div>
+                <label>{t.rotationPivot}</label>
+                <select
+                  className="pivot-select"
+                  value={selectedPivotValue}
+                  disabled={running}
+                  onChange={(event) => {
+                    const state = appRef.current;
+                    if (!state) return;
+                    state.recordHistory();
+                    const option = selectedPivotOptions.find(
+                      (candidate) => candidate.key === event.target.value,
+                    );
+                    selected.rotationPivotKey = option?.key ?? "center";
+                    selected.rotationPivotLocal = option?.local.clone();
+                    state.refreshDebug();
+                    setConnectorRevision((value) => value + 1);
+                  }}
+                >
+                  <option value="center">{t.pieceCenter}</option>
+                  {selectedPivotOptions.map((option) => (
+                    <option value={option.key} key={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="angle-head">
+                  <label>{t.rotateAny}</label>
+                  <input
+                    type="number"
+                    min=".1"
+                    max="360"
+                    step=".1"
+                    value={rotationAngle}
+                    disabled={running}
+                    onChange={(event) =>
+                      setRotationAngle(
+                        Math.max(0.1, Math.min(360, +event.target.value || 0.1)),
+                      )
+                    }
+                  />
+                  <span>°</span>
+                </div>
+                <div className="control-grid rotate">
+                  <button onClick={() => rotate("x")}>↻ X</button>
+                  <button onClick={() => rotate("y")}>↻ Y</button>
+                  <button onClick={() => rotate("z")}>↻ Z</button>
+                  <button onClick={() => rotate("x", -1)}>↺ X</button>
+                  <button onClick={() => rotate("y", -1)}>↺ Y</button>
+                  <button onClick={() => rotate("z", -1)}>↺ Z</button>
+                </div>
+              </>
+            )}
             {(isAxlePart(selected) ||
               selected.connectors.some(
                 (connector) => connector.role === "shaft" && connector.kind === "axle",
@@ -11018,7 +11568,9 @@ export default function Home() {
                   <b>{selectedGearSpec.pitchRadius.toFixed(3)} studs</b>
                 </div>
                 <label className="property-check">
-                  <span>{language === "es" ? "Restricción de giro" : "Rotation restriction"}</span>
+                  <span>
+                    {language === "es" ? "Restricción de giro" : "Rotation restriction"}
+                  </span>
                   <select
                     value={selected.gearDirectionLock ?? 0}
                     disabled={running}
@@ -11031,12 +11583,20 @@ export default function Home() {
                     }}
                   >
                     <option value={0}>{language === "es" ? "Libre" : "Free"}</option>
-                    <option value={1}>{language === "es" ? "Solo sentido horario" : "Clockwise only"}</option>
-                    <option value={-1}>{language === "es" ? "Solo sentido antihorario" : "Counter-clockwise only"}</option>
+                    <option value={1}>
+                      {language === "es" ? "Solo sentido horario" : "Clockwise only"}
+                    </option>
+                    <option value={-1}>
+                      {language === "es"
+                        ? "Solo sentido antihorario"
+                        : "Counter-clockwise only"}
+                    </option>
                   </select>
                 </label>
                 <div className="connection-editor gear-motor-editor">
-                  <label>{language === "es" ? "Motor del engranaje" : "Gear motor"}</label>
+                  <label>
+                    {language === "es" ? "Motor del engranaje" : "Gear motor"}
+                  </label>
                   {!selected.gearMotor ? (
                     <button
                       type="button"
@@ -11047,70 +11607,78 @@ export default function Home() {
                         setConnectionRevision((revision) => revision + 1);
                       }}
                     >
-                      {language === "es" ? "Añadir motor a este engranaje" : "Add motor to this gear"}
+                      {language === "es"
+                        ? "Añadir motor a este engranaje"
+                        : "Add motor to this gear"}
                     </button>
-                  ) : <>
-                  <div className="data-row">
-                    <span>{language === "es" ? "Tecla" : "Key"}</span>
-                    <input
-                      value={motorKeyLabel(selected.gearMotor.key)}
-                      disabled={running}
-                      onChange={(event) => {
-                        selected.gearMotor = {
-                          key: normalizeMotorKey(event.target.value),
-                          speed: selected.gearMotor!.speed,
-                          force: selected.gearMotor!.force,
-                        };
-                        setConnectionRevision((revision) => revision + 1);
-                      }}
-                    />
-                  </div>
-                  <div className="data-row">
-                    <span>{language === "es" ? "Velocidad" : "Speed"}</span>
-                    <input
-                      type="number"
-                      value={selected.gearMotor.speed}
-                      disabled={running}
-                      onChange={(event) => {
-                        selected.gearMotor = {
-                          key: selected.gearMotor!.key,
-                          speed: Number(event.target.value) || 0,
-                          force: selected.gearMotor!.force,
-                        };
-                        setConnectionRevision((revision) => revision + 1);
-                      }}
-                    />
-                  </div>
-                  <div className="data-row">
-                    <span>{language === "es" ? "Fuerza" : "Force"}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={selected.gearMotor.force}
-                      disabled={running}
-                      onChange={(event) => {
-                        selected.gearMotor = {
-                          key: selected.gearMotor!.key,
-                          speed: selected.gearMotor!.speed,
-                          force: Math.max(0, Number(event.target.value) || 0),
-                        };
-                        setConnectionRevision((revision) => revision + 1);
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={running}
-                    onClick={() => {
-                      appRef.current?.recordHistory();
-                      selected.gearMotor = undefined;
-                      setConnectionRevision((revision) => revision + 1);
-                    }}
-                  >
-                    {language === "es" ? "Quitar motor" : "Remove motor"}
-                  </button>
-                  </>}
-                  <small>{language === "es" ? "Mantén la tecla durante la simulación para accionar este engranaje." : "Hold the key during simulation to drive this gear."}</small>
+                  ) : (
+                    <>
+                      <div className="data-row">
+                        <span>{language === "es" ? "Tecla" : "Key"}</span>
+                        <input
+                          value={motorKeyLabel(selected.gearMotor.key)}
+                          disabled={running}
+                          onChange={(event) => {
+                            selected.gearMotor = {
+                              key: normalizeMotorKey(event.target.value),
+                              speed: selected.gearMotor!.speed,
+                              force: selected.gearMotor!.force,
+                            };
+                            setConnectionRevision((revision) => revision + 1);
+                          }}
+                        />
+                      </div>
+                      <div className="data-row">
+                        <span>{language === "es" ? "Velocidad" : "Speed"}</span>
+                        <input
+                          type="number"
+                          value={selected.gearMotor.speed}
+                          disabled={running}
+                          onChange={(event) => {
+                            selected.gearMotor = {
+                              key: selected.gearMotor!.key,
+                              speed: Number(event.target.value) || 0,
+                              force: selected.gearMotor!.force,
+                            };
+                            setConnectionRevision((revision) => revision + 1);
+                          }}
+                        />
+                      </div>
+                      <div className="data-row">
+                        <span>{language === "es" ? "Fuerza" : "Force"}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={selected.gearMotor.force}
+                          disabled={running}
+                          onChange={(event) => {
+                            selected.gearMotor = {
+                              key: selected.gearMotor!.key,
+                              speed: selected.gearMotor!.speed,
+                              force: Math.max(0, Number(event.target.value) || 0),
+                            };
+                            setConnectionRevision((revision) => revision + 1);
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={running}
+                        onClick={() => {
+                          appRef.current?.recordHistory();
+                          selected.gearMotor = undefined;
+                          setConnectionRevision((revision) => revision + 1);
+                        }}
+                      >
+                        {language === "es" ? "Quitar motor" : "Remove motor"}
+                      </button>
+                    </>
+                  )}
+                  <small>
+                    {language === "es"
+                      ? "Mantén la tecla durante la simulación para accionar este engranaje."
+                      : "Hold the key during simulation to drive this gear."}
+                  </small>
                 </div>
                 {selectedGearLinks.length ? (
                   selectedGearLinks.map((link) => {
@@ -11372,6 +11940,74 @@ export default function Home() {
                         />
                       </label>
                     </div>
+                    <label className="property-check">
+                      <input
+                        type="checkbox"
+                        checked={connector.connectionTarget !== undefined}
+                        onChange={(event) =>
+                          updateConnectorPolicy(index, (next) => {
+                            next.connectionTarget = event.target.checked
+                              ? { partId: "" }
+                              : undefined;
+                          })
+                        }
+                      />
+                      {language === "es"
+                        ? "Restringir a una pieza/conector"
+                        : "Restrict to a part/connector"}
+                    </label>
+                    {connector.connectionTarget && (
+                      <div className="measure-fields connector-target-fields">
+                        <label>
+                          {language === "es" ? "ID de pieza" : "Part ID"}
+                          <input
+                            value={connector.connectionTarget.partId}
+                            placeholder="62519"
+                            onChange={(event) =>
+                              updateConnectorPolicy(index, (next) => {
+                                next.connectionTarget = {
+                                  ...next.connectionTarget!,
+                                  partId: event.target.value,
+                                };
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          {language === "es"
+                            ? "Conector # (0 = cualquiera)"
+                            : "Connector # (0 = any)"}
+                          <DeferredNumberInput
+                            min={0}
+                            step={1}
+                            value={connector.connectionTarget.connectorId ?? 0}
+                            onCommit={(nextValue) =>
+                              updateConnectorPolicy(index, (next) => {
+                                const connectorId = Math.max(0, Math.round(nextValue));
+                                next.connectionTarget = {
+                                  ...next.connectionTarget!,
+                                  connectorId: connectorId || undefined,
+                                };
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                    )}
+                    <label className="property-check">
+                      <input
+                        type="checkbox"
+                        checked={connector.singleConnection === true}
+                        onChange={(event) =>
+                          updateConnectorPolicy(index, (next) => {
+                            next.singleConnection = event.target.checked || undefined;
+                          })
+                        }
+                      />
+                      {language === "es"
+                        ? "Permitir solo una conexión"
+                        : "Allow only one connection"}
+                    </label>
                   </details>
                 ))}
               </div>
@@ -11747,11 +12383,15 @@ export default function Home() {
                 <b>{gpuPrototypeResult.instances}</b>
               </div>
               <div className="data-row">
-                <span>{language === "es" ? "Carga WASM → GPU" : "WASM → GPU upload"}</span>
+                <span>
+                  {language === "es" ? "Carga WASM → GPU" : "WASM → GPU upload"}
+                </span>
                 <b>{gpuPrototypeResult.uploadMs.toFixed(3)} ms</b>
               </div>
               <div className="data-row">
-                <span>{language === "es" ? "Envío por frame" : "Submission per frame"}</span>
+                <span>
+                  {language === "es" ? "Envío por frame" : "Submission per frame"}
+                </span>
                 <b>{gpuPrototypeResult.averageSubmitMs.toFixed(3)} ms</b>
               </div>
             </div>

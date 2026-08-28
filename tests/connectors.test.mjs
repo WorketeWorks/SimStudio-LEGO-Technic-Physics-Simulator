@@ -11,6 +11,16 @@ import {
 } from "../app/connectors.ts";
 import { preloadedConnectionMaps } from "../app/connection-maps.ts";
 import {
+  automaticConnectorMatchIsBetter,
+  connectorAcceptsAdditionalConnection,
+  connectorPoliciesCompatible,
+} from "../app/connector-policy.ts";
+import {
+  editorAssemblyMembers,
+  restoreLegacyCardanEditorAssemblies,
+} from "../app/editor-assembly.ts";
+import { forceDragTarget } from "../app/editor/force-drag.ts";
+import {
   preloadedCollisionMaps,
   preloadedGearCollisionMaps,
   preloadedSpecialGearParts,
@@ -257,9 +267,129 @@ test("the 61903 Cardan components expose two perpendicular free pivots", () => {
   assert.equal(end[0].kind, "axle");
   assert.deepEqual(end[0].local, [0, 0, -1]);
   assert.equal(end[1].kind, "round");
+  assert.deepEqual(end[1].axis, [1, 0, 0]);
   assert.equal(end[1].rotationOnly, true);
+  assert.ok(centre.every((connector) => connector.singleConnection === true));
+  assert.ok(centre.every((connector) =>
+    connector.connectionTarget?.partId === "62520" &&
+    connector.connectionTarget?.connectorId === 2
+  ));
+  assert.deepEqual(end[1].connectionTarget, { partId: "62519" });
   assert.equal(preloadedCollisionMaps["62519"].length, 2);
   assert.equal(preloadedCollisionMaps["62520"].length, 1);
+});
+
+test("connector target rules accept either free Cardan arm but reject other parts", () => {
+  const centreConnectors = preloadedConnectionMaps["62519"],
+    endConnectors = preloadedConnectionMaps["62520"],
+    centre = { part: "62519", connectors: centreConnectors },
+    end = { part: "62520", connectors: endConnectors },
+    other = { part: "2780", connectors: [endConnectors[1]] };
+
+  assert.equal(
+    connectorPoliciesCompatible(centre, centreConnectors[0], end, endConnectors[1]),
+    true,
+  );
+  assert.equal(
+    connectorPoliciesCompatible(centre, centreConnectors[1], end, endConnectors[1]),
+    true,
+  );
+  assert.equal(
+    connectorPoliciesCompatible(centre, centreConnectors[0], end, endConnectors[0]),
+    false,
+  );
+  assert.equal(
+    connectorPoliciesCompatible(centre, centreConnectors[0], other, other.connectors[0]),
+    false,
+  );
+});
+
+test("the two official Cardan end poses align with different centre pivots", () => {
+  const centre = preloadedConnectionMaps["62519"],
+    endAxis = new THREE.Vector3().fromArray(
+      preloadedConnectionMaps["62520"][1].axis,
+    ),
+    secondEndRotation = new THREE.Quaternion(
+      Math.SQRT1_2,
+      Math.SQRT1_2,
+      0,
+      0,
+    ),
+    firstAxis = endAxis.clone(),
+    secondAxis = endAxis.clone().applyQuaternion(secondEndRotation);
+  assert.ok(Math.abs(firstAxis.dot(new THREE.Vector3().fromArray(centre[0].axis))) > 0.999);
+  assert.ok(Math.abs(secondAxis.dot(new THREE.Vector3().fromArray(centre[1].axis))) > 0.999);
+  assert.ok(Math.abs(firstAxis.dot(secondAxis)) < 0.001);
+});
+
+test("autoconnect breaks coincident ties by axis orientation with 180 degrees equivalent", () => {
+  const alignedError = 1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(
+      new THREE.Vector3(-1, 0, 0),
+    )),
+    perpendicularError = 1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(
+      new THREE.Vector3(0, 1, 0),
+    ));
+  assert.equal(alignedError, 0);
+  assert.equal(
+    automaticConnectorMatchIsBetter(0.2, alignedError, {
+      score: 0.2,
+      orientationError: perpendicularError,
+    }),
+    true,
+  );
+  assert.equal(
+    automaticConnectorMatchIsBetter(0.21, alignedError, {
+      score: 0.2,
+      orientationError: perpendicularError,
+    }),
+    false,
+  );
+});
+
+test("holes and single-use Cardan pivots reject a second connection", () => {
+  const centre = preloadedConnectionMaps["62519"][0],
+    endSocket = preloadedConnectionMaps["62520"][1],
+    reusableShaft = { ...centre, singleConnection: undefined };
+  assert.equal(connectorAcceptsAdditionalConnection(centre, true), false);
+  assert.equal(connectorAcceptsAdditionalConnection(endSocket, true), false);
+  assert.equal(connectorAcceptsAdditionalConnection(reusableShaft, true), true);
+  assert.equal(connectorAcceptsAdditionalConnection(centre, false), true);
+});
+
+test("legacy Cardan components become one detachable editor assembly", () => {
+  const centre = { id: 1, part: "62519" },
+    endA = { id: 2, part: "62520" },
+    endB = { id: 3, part: "62520" },
+    pieces = [centre, endA, endB],
+    connections = [
+      { a: endA, b: centre, profile: "pin-round" },
+      { a: endB, b: centre, profile: "pin-round" },
+    ];
+  restoreLegacyCardanEditorAssemblies(pieces, connections);
+  assert.ok(centre.editorAssemblyId);
+  assert.equal(endA.editorAssemblyId, centre.editorAssemblyId);
+  assert.equal(endB.editorAssemblyId, centre.editorAssemblyId);
+  assert.deepEqual(editorAssemblyMembers(pieces, endA), pieces);
+
+  pieces.forEach((piece) => {
+    piece.editorAssemblyId = undefined;
+    piece.editorAssemblyDetached = true;
+  });
+  restoreLegacyCardanEditorAssemblies(pieces, connections);
+  assert.ok(pieces.every((piece) => piece.editorAssemblyId === undefined));
+});
+
+test("pointer force stays on the depth plane captured by the initial click", () => {
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -4),
+    target = forceDragTarget(
+      new THREE.Ray(
+        new THREE.Vector3(0, 0, 10),
+        new THREE.Vector3(0.3, 0.2, -1).normalize(),
+      ),
+      plane,
+    );
+  assert.ok(target);
+  assert.ok(Math.abs(target.z - 4) < 1e-12);
 });
 
 test("a shaft ignores the full rigid host islands but not adjacent mobile islands", () => {

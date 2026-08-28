@@ -6,6 +6,11 @@ export type StoredConnector = {
   diameter: number;
   length?: number;
   rotationOnly?: boolean;
+  connectionTarget?: {
+    partId: string;
+    connectorId?: number;
+  };
+  singleConnection?: boolean;
 };
 
 // Generated from the reviewed maps exported by Sim Studio's map editor.
@@ -18,7 +23,9 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "shaft",
       "diameter": 0.6,
       "length": 0.9,
-      "rotationOnly": true
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "62520", "connectorId": 2 },
+      "singleConnection": true
     },
     {
       "local": [0, 0, 0],
@@ -27,7 +34,9 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "role": "shaft",
       "diameter": 0.6,
       "length": 0.9,
-      "rotationOnly": true
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "62520", "connectorId": 2 },
+      "singleConnection": true
     }
   ],
   "62520": [
@@ -41,12 +50,13 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
     },
     {
       "local": [0, 0, 0],
-      "axis": [0, 1, 0],
+      "axis": [1, 0, 0],
       "kind": "round",
       "role": "socket",
       "diameter": 0.6,
       "length": 0.9,
-      "rotationOnly": true
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "62519" }
     }
   ],
   "44": [

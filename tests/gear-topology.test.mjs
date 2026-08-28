@@ -112,7 +112,7 @@ const piece = (id, part, x, z, colliders, specialGear = false) => {
   };
 };
 
-test("only a 62519-to-62520 Cardan hinge receives its physical travel limit", () => {
+test("a 62519-to-62520 Cardan hinge remains free through a complete turn", () => {
   const cardanPiece = (id, part) => {
     const mesh = new THREE.Object3D();
     mesh.updateMatrixWorld(true);
@@ -150,7 +150,7 @@ test("only a 62519-to-62520 Cardan hinge receives its physical travel limit", ()
   });
 
   assert.ok(config);
-  assert.ok(Math.abs(config.angularLimit - Math.PI / 4) < 1e-12);
+  assert.equal(config.angularLimit, undefined);
 
   const ordinaryEnd = cardanPiece("ordinary-end", "2780");
   const ordinaryConfig = buildRustJointConfig(
