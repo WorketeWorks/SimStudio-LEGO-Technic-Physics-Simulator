@@ -923,6 +923,10 @@ export default function Home() {
   const [theme, setTheme] = useState<"dark" | "light">("light");
   const [language, setLanguage] = useState<Language>("en");
   const [controlsHelpVisible, setControlsHelpVisible] = useState(true);
+  const [moveGizmoVisible, setMoveGizmoVisible] = useState(true);
+  const [rotateGizmoVisible, setRotateGizmoVisible] = useState(true);
+  const moveGizmoVisibleRef = useRef(true);
+  const rotateGizmoVisibleRef = useRef(true);
   const [inspectorWidth, setInspectorWidth] = useState(270);
   const [fogSettings, setFogSettings] = useState<FogSettings>({
     ...DEFAULT_FOG_SETTINGS,
@@ -1437,6 +1441,71 @@ export default function Home() {
     sun.position.set(8, 16, 10);
     sun.castShadow = true;
     scene.add(sun);
+    const gizmoColors = { x: 0xef3f46, y: 0x46c85b, z: 0x2f86ff },
+      transformGizmoRoot = new THREE.Group(),
+      gizmoMoveGroups = new Map<"x" | "y" | "z", THREE.Group>(),
+      gizmoRotateMeshes = new Map<"x" | "y" | "z", THREE.Mesh>();
+    transformGizmoRoot.name = "transform-gizmo";
+    transformGizmoRoot.userData.gpuOverlay = true;
+    transformGizmoRoot.scale.setScalar(0);
+    transformGizmoRoot.renderOrder = 1000;
+    const gizmoMaterial = (axis: "x" | "y" | "z") =>
+      new THREE.MeshBasicMaterial({
+        color: gizmoColors[axis],
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+    (["x", "y", "z"] as const).forEach((axis) => {
+      const moveGroup = new THREE.Group(),
+        shaft = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.025, 0.72, 10),
+          gizmoMaterial(axis),
+        ),
+        head = new THREE.Mesh(
+          new THREE.ConeGeometry(0.085, 0.24, 12),
+          gizmoMaterial(axis),
+        ),
+        ring = new THREE.Mesh(
+          new THREE.TorusGeometry(0.72, 0.018, 10, 72),
+          gizmoMaterial(axis),
+        );
+      shaft.position.y = 0.36;
+      head.position.y = 0.84;
+      moveGroup.add(shaft, head);
+      moveGroup.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        axis === "x"
+          ? new THREE.Vector3(1, 0, 0)
+          : axis === "y"
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(0, 0, 1),
+      );
+      moveGroup.userData.gizmo = `move-${axis}`;
+      moveGroup.traverse((object) => {
+        object.userData.gizmo = `move-${axis}`;
+        object.renderOrder = 1001;
+      });
+      if (axis === "x") ring.rotation.y = Math.PI / 2;
+      else if (axis === "y") ring.rotation.x = Math.PI / 2;
+      ring.userData.gizmo = `rotate-${axis}`;
+      ring.renderOrder = 1000;
+      transformGizmoRoot.add(ring, moveGroup);
+      gizmoMoveGroups.set(axis, moveGroup);
+      gizmoRotateMeshes.set(axis, ring);
+    });
+    const gizmoCenter = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 12, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0xf4f7f9,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    );
+    gizmoCenter.renderOrder = 1002;
+    transformGizmoRoot.add(gizmoCenter);
+    scene.add(transformGizmoRoot);
     const grid = createStudioGrid(darkTheme);
     scene.add(grid);
     const floor = new THREE.Mesh(
@@ -4655,6 +4724,27 @@ export default function Home() {
           label: HTMLDivElement;
         }
       | undefined;
+    let gizmoDrag:
+      | {
+          pointerId: number;
+          kind: "move" | "rotate";
+          axisName: "x" | "y" | "z";
+          axis: THREE.Vector3;
+          pivot: THREE.Vector3;
+          pivotScreen: THREE.Vector2;
+          worldLength: number;
+          screenAxis: THREE.Vector2;
+          startPointer: THREE.Vector2;
+          startPointerAngle: number;
+          members: Piece[];
+          startPositions: Map<Piece, THREE.Vector3>;
+          startQuaternions: Map<Piece, THREE.Quaternion>;
+          internalFrames: Map<Connection, { point: THREE.Vector3; axis: THREE.Vector3 }>;
+          cardan?: { centre: Piece; first: Piece; third: Piece };
+          prepared: boolean;
+          changed: boolean;
+        }
+      | undefined;
     const gearMotorHeldKeys = new Set<string>();
     let pivotRotate:
       | {
@@ -4697,6 +4787,178 @@ export default function Home() {
         -((e.clientY - r.top) / r.height) * 2 + 1,
       );
       ray.setFromCamera(pointer, camera);
+    };
+
+    const gizmoMembers = (piece: Piece) => {
+      const explicitlySelected = [...state.selectedPieces];
+      return explicitlySelected.length > 1 && explicitlySelected.includes(piece)
+        ? explicitlySelected
+        : editorAssemblyMembers(state.pieces, piece);
+    };
+
+    const cardanLayout = (members: Piece[]) => {
+      const centre = members.find((member) => member.part.toLowerCase() === "62519"),
+        ends = members.filter((member) => member.part.toLowerCase() === "62520");
+      if (members.length !== 3 || !centre || ends.length !== 2) return undefined;
+      const endForCentreConnector = (connectorIndex: number) => {
+        const connector = centre.connectors[connectorIndex],
+          connection = state.connections.find(
+            (candidate) =>
+              (candidate.a === centre &&
+                candidate.socket === connector &&
+                ends.includes(candidate.b)) ||
+              (candidate.b === centre &&
+                candidate.shaft === connector &&
+                ends.includes(candidate.a)),
+          );
+        return connection
+          ? connection.a === centre
+            ? connection.b
+            : connection.a
+          : undefined;
+      };
+      const first = endForCentreConnector(0) ?? ends[0],
+        third = endForCentreConnector(1) ?? ends.find((end) => end !== first);
+      return third ? { centre, first, third } : undefined;
+    };
+
+    const quaternionFromAxisPairs = (
+      localPrimary: THREE.Vector3,
+      localSecondary: THREE.Vector3,
+      worldPrimary: THREE.Vector3,
+      worldSecondary: THREE.Vector3,
+    ) => {
+      const orthonormalPair = (primary: THREE.Vector3, secondary: THREE.Vector3) => {
+          const first = primary.clone().normalize(),
+            second = secondary
+              .clone()
+              .addScaledVector(first, -secondary.dot(first))
+              .normalize(),
+            third = first.clone().cross(second).normalize();
+          return { first, second, third };
+        },
+        local = orthonormalPair(localPrimary, localSecondary),
+        world = orthonormalPair(worldPrimary, worldSecondary),
+        localBasis = new THREE.Matrix4().makeBasis(
+          local.first,
+          local.second,
+          local.third,
+        ),
+        worldBasis = new THREE.Matrix4().makeBasis(
+          world.first,
+          world.second,
+          world.third,
+        );
+      return new THREE.Quaternion()
+        .setFromRotationMatrix(worldBasis.multiply(localBasis.invert()))
+        .normalize();
+    };
+
+    const gizmoFrame = (piece: Piece, members: Piece[]) => {
+      const bounds = members.reduce(
+          (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
+          new THREE.Box3(),
+        ),
+        pivot = bounds.isEmpty()
+          ? piece.mesh.getWorldPosition(new THREE.Vector3())
+          : bounds.getCenter(new THREE.Vector3()),
+        worldQuaternion = piece.mesh.getWorldQuaternion(new THREE.Quaternion()),
+        localX = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuaternion),
+        localY = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQuaternion),
+        localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion),
+        cardan = cardanLayout(members);
+      if (cardan) {
+        const centralPivot = cardan.centre.mesh.getWorldPosition(new THREE.Vector3()),
+          firstOuterConnector = cardan.first.connectors.find(
+            (connector) => connector.role === "socket" && connector.kind === "axle",
+          ),
+          firstOuter = firstOuterConnector
+            ? cardan.first.mesh.localToWorld(firstOuterConnector.local.clone())
+            : cardan.first.mesh.getWorldPosition(new THREE.Vector3()),
+          y = centralPivot.clone().sub(firstOuter);
+        if (y.lengthSq() < 1.0e-5)
+          y.copy(new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion));
+        y.normalize();
+        const centreAxis = cardan.centre.connectors[0]?.axis
+          .clone()
+          .transformDirection(cardan.centre.mesh.matrixWorld)
+          .normalize();
+        let x = (centreAxis ?? localX).addScaledVector(y, -(centreAxis ?? localX).dot(y));
+        if (x.lengthSq() < 1.0e-5) x = localX.clone().addScaledVector(y, -localX.dot(y));
+        if (x.lengthSq() < 1.0e-5) x = localY.clone().addScaledVector(y, -localY.dot(y));
+        x.normalize();
+        return {
+          pivot: centralPivot,
+          axes: { x, y, z: x.clone().cross(y).normalize() },
+          cardan,
+        };
+      }
+      return { pivot, axes: { x: localX, y: localY, z: localZ } };
+    };
+
+    const projectGizmoPoint = (point: THREE.Vector3) => {
+      const projected = point.clone().project(camera),
+        bounds = renderer.domElement.getBoundingClientRect();
+      return {
+        point: new THREE.Vector2(
+          ((projected.x + 1) * bounds.width) / 2,
+          ((1 - projected.y) * bounds.height) / 2,
+        ),
+        visible: projected.z >= -1 && projected.z <= 1,
+      };
+    };
+
+    const updateTransformGizmo = () => {
+      const piece = state.selected;
+      if (!piece || state.running) {
+        transformGizmoRoot.scale.setScalar(0);
+        transformGizmoRoot.updateMatrixWorld(true);
+        return;
+      }
+      const members = gizmoMembers(piece),
+        { pivot, axes } = gizmoFrame(piece, members),
+        bounds = renderer.domElement.getBoundingClientRect(),
+        projectedPivot = projectGizmoPoint(pivot);
+      const visible =
+        projectedPivot.visible &&
+        (moveGizmoVisibleRef.current || rotateGizmoVisibleRef.current);
+      if (!visible) {
+        transformGizmoRoot.scale.setScalar(0);
+        transformGizmoRoot.updateMatrixWorld(true);
+        return;
+      }
+      const distance = camera.position.distanceTo(pivot),
+        worldPerPixel =
+          (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
+          Math.max(1, bounds.height),
+        scale = Math.max(0.35, worldPerPixel * 112),
+        basis = new THREE.Matrix4().makeBasis(axes.x, axes.y, axes.z);
+      transformGizmoRoot.position.copy(pivot);
+      transformGizmoRoot.quaternion.setFromRotationMatrix(basis);
+      transformGizmoRoot.scale.setScalar(scale);
+      gizmoMoveGroups.forEach((group) => {
+        group.scale.setScalar(moveGizmoVisibleRef.current ? 1 : 0);
+      });
+      gizmoRotateMeshes.forEach((ring) => {
+        ring.scale.setScalar(rotateGizmoVisibleRef.current ? 1 : 0);
+      });
+      gizmoCenter.scale.setScalar(
+        moveGizmoVisibleRef.current || rotateGizmoVisibleRef.current ? 1 : 0,
+      );
+      transformGizmoRoot.updateMatrixWorld(true);
+    };
+
+    const pickTransformGizmo = () => {
+      if (
+        !state.selected ||
+        state.running ||
+        (!moveGizmoVisibleRef.current && !rotateGizmoVisibleRef.current)
+      )
+        return undefined;
+      const hit = ray
+        .intersectObject(transformGizmoRoot, true)
+        .find((candidate) => candidate.object.userData.gizmo);
+      return hit?.object.userData.gizmo as string | undefined;
     };
     const springAnchor = (active = spring) => {
       if (!active) return undefined;
@@ -6188,6 +6450,11 @@ export default function Home() {
       previous = orbitStart = { x: e.clientX, y: e.clientY };
       moved = false;
       cast(e);
+      const gizmoHandle = pickTransformGizmo();
+      if (gizmoHandle && e.button === 0) {
+        beginGizmoDrag(e, gizmoHandle);
+        return;
+      }
       if (aimRotation) {
         e.preventDefault();
         if (e.button === 0) commitAimRotation();
@@ -6513,6 +6780,10 @@ export default function Home() {
         // An editorial assembly selects and moves as one object without
         // merging its independent physics bodies or joints.
         const clickedGroup = editorAssemblyMembers(state.pieces, hitPiece),
+          cardanCentre = clickedGroup.find(
+            (piece) => piece.part.toLowerCase() === "62519",
+          ),
+          canonicalSelection = cardanCentre ?? hitPiece,
           completeGroupSelected = clickedGroup.every((piece) =>
             state.selectedPieces.has(piece),
           );
@@ -6550,8 +6821,8 @@ export default function Home() {
         );
         movedAxially = false;
         movingPrepared = false;
-        state.selected = moving;
-        setSelectedId(moving.id);
+        state.selected = canonicalSelection;
+        setSelectedId(canonicalSelection.id);
         movingStartPosition.copy(moving.mesh.position);
         movingStartPointer.set(e.clientX, e.clientY);
         const linearGuide = state.connections.find(
@@ -6590,6 +6861,10 @@ export default function Home() {
     };
 
     const move = (e: PointerEvent) => {
+      if (gizmoDrag) {
+        moveGizmoDrag(e);
+        return;
+      }
       if (aimRotation) {
         cast(e);
         const target = ray.ray.intersectPlane(aimRotation.plane, new THREE.Vector3());
@@ -6798,10 +7073,10 @@ export default function Home() {
           affectedPieces.forEach((piece) => rebalanceSmartDefaults(state, piece));
           setConnectionRevision((value) => value + 1);
         } else moved = true;
-        // The selected piece defines the axial/vertical guide; groupDelta
-        // below applies the same movement to the complete editorial assembly.
+        // Shift is reserved for movement along a real linear/axle guide.
+        // Free vertical movement is handled by the transform gizmo.
         const shiftActive = e.shiftKey || shiftHeld;
-        if (shiftActive && movingLinearAxis && movingGroup.length === 1) {
+        if (shiftActive && movingLinearAxis) {
           movedAxially = true;
           const bounds = canvas.getBoundingClientRect(),
             project = (point: THREE.Vector3) => {
@@ -6829,14 +7104,7 @@ export default function Home() {
           moving.mesh.position
             .copy(movingStartPosition)
             .addScaledVector(movingLinearAxis, snappedDistance);
-        } else if (shiftActive)
-          moving.mesh.position.y = state.gridStep
-            ? Math.round(
-                (movingStartPosition.y - (e.clientY - movingStartPointer.y) * 0.0125) /
-                  state.gridStep,
-              ) * state.gridStep
-            : movingStartPosition.y - (e.clientY - movingStartPointer.y) * 0.0125;
-        else {
+        } else {
           cast(e);
           const ground =
             ray.intersectObject(floor)[0] ??
@@ -6873,6 +7141,10 @@ export default function Home() {
     };
 
     const up = (e: PointerEvent) => {
+      if (gizmoDrag) {
+        endGizmoDrag(e);
+        return;
+      }
       if (canvas.hasPointerCapture(e.pointerId))
         canvas.releasePointerCapture(e.pointerId);
       if (rubberGuideDrag) {
@@ -7339,6 +7611,262 @@ export default function Home() {
       shiftHeld = false;
       rotationPivotHeld = false;
       updateManualForceMode(false);
+    };
+
+    const beginGizmoDrag = (e: PointerEvent, value: string) => {
+      const piece = state.selected;
+      if (!piece || state.running) return;
+      const match = /^(move|rotate)-([xyz])$/.exec(value);
+      if (!match) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const members = gizmoMembers(piece),
+        { pivot, axes, cardan } = gizmoFrame(piece, members),
+        axisName = match[2] as "x" | "y" | "z",
+        axis = axes[axisName].clone(),
+        pivotScreen = projectGizmoPoint(pivot).point,
+        endpoint = projectGizmoPoint(pivot.clone().add(axis)).point,
+        screenAxis = endpoint.clone().sub(pivotScreen),
+        screenAxisLength = screenAxis.length(),
+        bounds = renderer.domElement.getBoundingClientRect(),
+        distance = camera.position.distanceTo(pivot),
+        worldPerPixel =
+          (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
+          Math.max(1, bounds.height),
+        worldLength = Math.max(0.35, worldPerPixel * 92),
+        startPointer = new THREE.Vector2(e.clientX - bounds.left, e.clientY - bounds.top),
+        memberSet = new Set(members);
+      gizmoDrag = {
+        pointerId: e.pointerId,
+        kind: match[1] as "move" | "rotate",
+        axisName,
+        axis,
+        pivot,
+        pivotScreen,
+        worldLength,
+        screenAxis:
+          screenAxisLength > 1.0e-4
+            ? screenAxis.multiplyScalar(1 / screenAxisLength)
+            : new THREE.Vector2(0, -1),
+        startPointer,
+        startPointerAngle: Math.atan2(
+          startPointer.y - pivotScreen.y,
+          startPointer.x - pivotScreen.x,
+        ),
+        members,
+        startPositions: new Map(
+          members.map((member) => [member, member.mesh.position.clone()]),
+        ),
+        startQuaternions: new Map(
+          members.map((member) => [member, member.mesh.quaternion.clone()]),
+        ),
+        internalFrames: new Map(
+          state.connections
+            .filter(
+              (connection) => memberSet.has(connection.a) && memberSet.has(connection.b),
+            )
+            .map((connection) => [
+              connection,
+              { point: connection.point.clone(), axis: connection.axis.clone() },
+            ]),
+        ),
+        cardan,
+        prepared: false,
+        changed: false,
+      };
+      renderer.domElement.setPointerCapture(e.pointerId);
+    };
+
+    const moveGizmoDrag = (e: PointerEvent) => {
+      const draft = gizmoDrag;
+      if (!draft || e.pointerId !== draft.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const bounds = renderer.domElement.getBoundingClientRect(),
+        current = new THREE.Vector2(e.clientX - bounds.left, e.clientY - bounds.top);
+      if (!draft.prepared) {
+        if (current.distanceTo(draft.startPointer) <= 3) return;
+        draft.prepared = true;
+        state.recordHistory();
+        const memberSet = new Set(draft.members),
+          articulatingCardan =
+            draft.kind === "rotate" &&
+            draft.axisName !== "y" &&
+            draft.cardan !== undefined,
+          affected = new Set<Piece>();
+        state.connections.forEach((connection) => {
+          const aInside = memberSet.has(connection.a),
+            bInside = memberSet.has(connection.b),
+            keepFirstAnchor =
+              articulatingCardan &&
+              (connection.a === draft.cardan!.first ||
+                connection.b === draft.cardan!.first);
+          if (aInside !== bInside && !keepFirstAnchor)
+            affected.add(aInside ? connection.b : connection.a);
+        });
+        state.connections = state.connections.filter(
+          (connection) =>
+            memberSet.has(connection.a) === memberSet.has(connection.b) ||
+            (articulatingCardan &&
+              (connection.a === draft.cardan!.first ||
+                connection.b === draft.cardan!.first)),
+        );
+        affected.forEach((member) => rebalanceSmartDefaults(state, member));
+        setConnectionRevision((value) => value + 1);
+      }
+      if (draft.kind === "move") {
+        const pixels = current.clone().sub(draft.startPointer).dot(draft.screenAxis),
+          rawDistance = pixels * (draft.worldLength / 92),
+          distance = state.gridStep
+            ? Math.round(rawDistance / state.gridStep) * state.gridStep
+            : rawDistance,
+          delta = draft.axis.clone().multiplyScalar(distance);
+        draft.members.forEach((member) => {
+          member.mesh.position.copy(draft.startPositions.get(member)!).add(delta);
+          member.mesh.updateMatrixWorld(true);
+        });
+        draft.internalFrames.forEach((frame, connection) => {
+          connection.point.copy(frame.point).add(delta);
+          connection.axis.copy(frame.axis);
+        });
+      } else {
+        const currentAngle = Math.atan2(
+            current.y - draft.pivotScreen.y,
+            current.x - draft.pivotScreen.x,
+          ),
+          facing = draft.axis.dot(camera.getWorldDirection(new THREE.Vector3())),
+          rawAngle = (currentAngle - draft.startPointerAngle) * (facing > 0 ? 1 : -1),
+          normalizedAngle = Math.atan2(Math.sin(rawAngle), Math.cos(rawAngle)),
+          snap = THREE.MathUtils.degToRad(state.rotationSnapStep),
+          angle = snap ? Math.round(normalizedAngle / snap) * snap : normalizedAngle,
+          rotation = new THREE.Quaternion().setFromAxisAngle(draft.axis, angle),
+          articulated = draft.axisName !== "y" ? draft.cardan : undefined;
+        if (articulated) {
+          const { centre, first, third } = articulated,
+            centreFirst = centre.connectors[0],
+            centreThird = centre.connectors[1],
+            firstHinge = first.connectors.find(
+              (connector) => connector.rotationOnly && connector.kind === "round",
+            ),
+            thirdHinge = third.connectors.find(
+              (connector) => connector.rotationOnly && connector.kind === "round",
+            ),
+            thirdOuter = third.connectors.find(
+              (connector) => connector.role === "socket" && connector.kind === "axle",
+            ),
+            firstStart = draft.startQuaternions.get(first)!,
+            centreStart = draft.startQuaternions.get(centre)!,
+            thirdStart = draft.startQuaternions.get(third)!;
+          if (centreFirst && centreThird && firstHinge && thirdHinge && thirdOuter) {
+            const firstAxis = firstHinge.axis
+                .clone()
+                .applyQuaternion(firstStart)
+                .normalize(),
+              centreFirstStartAxis = centreFirst.axis
+                .clone()
+                .applyQuaternion(centreStart)
+                .normalize();
+            if (firstAxis.dot(centreFirstStartAxis) < 0) firstAxis.negate();
+            const thirdLengthLocal = thirdOuter.local
+                .clone()
+                .sub(thirdHinge.local)
+                .normalize(),
+              thirdDirection = thirdLengthLocal
+                .clone()
+                .applyQuaternion(thirdStart)
+                .applyQuaternion(rotation)
+                .normalize(),
+              thirdAxis = firstAxis.clone().cross(thirdDirection);
+            if (thirdAxis.lengthSq() > 1.0e-6) {
+              thirdAxis.normalize();
+              const thirdStartAxis = thirdHinge.axis
+                .clone()
+                .applyQuaternion(thirdStart)
+                .normalize();
+              if (thirdAxis.dot(thirdStartAxis) < 0) thirdAxis.negate();
+              const centreQuaternion = quaternionFromAxisPairs(
+                  centreFirst.axis,
+                  centreThird.axis,
+                  firstAxis,
+                  thirdAxis,
+                ),
+                thirdQuaternion = quaternionFromAxisPairs(
+                  thirdHinge.axis,
+                  thirdLengthLocal,
+                  thirdAxis,
+                  thirdDirection,
+                );
+              first.mesh.position.copy(draft.startPositions.get(first)!);
+              first.mesh.quaternion.copy(firstStart);
+              centre.mesh.quaternion.copy(centreQuaternion);
+              centre.mesh.position
+                .copy(draft.pivot)
+                .sub(centreFirst.local.clone().applyQuaternion(centreQuaternion));
+              third.mesh.quaternion.copy(thirdQuaternion);
+              third.mesh.position
+                .copy(draft.pivot)
+                .sub(thirdHinge.local.clone().applyQuaternion(thirdQuaternion));
+              draft.members.forEach((member) => member.mesh.updateMatrixWorld(true));
+              draft.internalFrames.forEach((frame, connection) => {
+                connection.point.copy(draft.pivot);
+                connection.axis.copy(
+                  connection.a === first || connection.b === first
+                    ? firstAxis
+                    : connection.a === third || connection.b === third
+                      ? thirdAxis
+                      : frame.axis,
+                );
+              });
+            }
+          }
+        } else {
+          draft.members.forEach((member) => {
+            member.mesh.position
+              .copy(draft.startPositions.get(member)!)
+              .sub(draft.pivot)
+              .applyQuaternion(rotation)
+              .add(draft.pivot);
+            member.mesh.quaternion
+              .copy(draft.startQuaternions.get(member)!)
+              .premultiply(rotation)
+              .normalize();
+            member.mesh.updateMatrixWorld(true);
+          });
+          draft.internalFrames.forEach((frame, connection) => {
+            connection.point
+              .copy(frame.point)
+              .sub(draft.pivot)
+              .applyQuaternion(rotation)
+              .add(draft.pivot);
+            connection.axis.copy(frame.axis).applyQuaternion(rotation).normalize();
+          });
+        }
+      }
+      draft.changed = true;
+      state.renderBatchesDirty = true;
+      updateTransformGizmo();
+    };
+
+    const endGizmoDrag = (e: PointerEvent) => {
+      const draft = gizmoDrag;
+      if (!draft || e.pointerId !== draft.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (renderer.domElement.hasPointerCapture(e.pointerId))
+        renderer.domElement.releasePointerCapture(e.pointerId);
+      gizmoDrag = undefined;
+      if (!draft.changed) return;
+      if (draft.members.some((member) => member.renderBatched))
+        state.rebuildRenderBatches();
+      else state.renderBatchesDirty = true;
+      refreshDebug();
+      scheduleRecoverySave();
+      setConnectorRevision((value) => value + 1);
+      setMessage(
+        language === "es"
+          ? `${draft.kind === "move" ? "Movimiento" : "Giro"} ${draft.axisName.toUpperCase()} aplicado`
+          : `${draft.kind === "move" ? "Move" : "Rotation"} ${draft.axisName.toUpperCase()} applied`,
+      );
     };
 
     const canvas = renderer.domElement;
@@ -7864,6 +8392,7 @@ export default function Home() {
         });
         gpuSceneRenderer?.invalidate();
       });
+      updateTransformGizmo();
       const gpuExtras: THREE.Object3D[] = [
         // The WebGPU mesh pipeline currently renders opaque RGB only. When
         // looking from below, uploading the floor would therefore still
@@ -7871,6 +8400,7 @@ export default function Home() {
         // Omit it for that view until alpha materials are supported there.
         ...(viewingFloorFromBelow ? [] : [state.floor]),
         state.grid,
+        transformGizmoRoot,
         // WebGPU already highlights selected geometry through the per-instance
         // selected flag. The Three.js BoxHelper is the legacy WebGL selection
         // outline; uploading it as an extra produced the second blue box.
@@ -7965,6 +8495,16 @@ export default function Home() {
       window.removeEventListener("keydown", keydown, true);
       window.removeEventListener("keyup", keyup, true);
       window.removeEventListener("blur", clearModifiers);
+      transformGizmoRoot.traverse((object) => {
+        const renderable = object as THREE.Mesh;
+        renderable.geometry?.dispose();
+        const materials = renderable.material
+          ? Array.isArray(renderable.material)
+            ? renderable.material
+            : [renderable.material]
+          : [];
+        materials.forEach((material) => material.dispose());
+      });
       gpuSceneRenderer?.dispose();
       gpuSceneRenderer = null;
       if (gpuViewportCanvas.parentElement === host) host.removeChild(gpuViewportCanvas);
@@ -8137,6 +8677,90 @@ export default function Home() {
     else s.renderBatchesDirty = true;
     s.refreshDebug();
     setSelectedId(p.id);
+  };
+
+  const applyInspectorTransform = (
+    piece: Piece,
+    transform: THREE.Matrix4,
+    description: string,
+  ) => {
+    const state = appRef.current;
+    if (!state || running) return;
+    const members = editorAssemblyMembers(state.pieces, piece),
+      memberSet = new Set(members),
+      affected = new Set<Piece>();
+    state.recordHistory();
+    members.forEach((member) => {
+      member.mesh.updateMatrix();
+      transform
+        .clone()
+        .multiply(member.mesh.matrix)
+        .decompose(member.mesh.position, member.mesh.quaternion, member.mesh.scale);
+      member.mesh.updateMatrixWorld(true);
+    });
+    state.connections.forEach((connection) => {
+      const aInside = memberSet.has(connection.a),
+        bInside = memberSet.has(connection.b);
+      if (aInside !== bInside) affected.add(aInside ? connection.b : connection.a);
+      else if (aInside) {
+        connection.point.applyMatrix4(transform);
+        connection.axis.transformDirection(transform).normalize();
+      }
+    });
+    state.connections = state.connections.filter(
+      (connection) => memberSet.has(connection.a) === memberSet.has(connection.b),
+    );
+    affected.forEach((member) => rebalanceSmartDefaults(state, member));
+    if (members.some((member) => member.renderBatched)) state.rebuildRenderBatches();
+    else state.renderBatchesDirty = true;
+    state.refreshDebug();
+    state.scheduleRecoverySave();
+    setConnectionRevision((value) => value + 1);
+    setConnectorRevision((value) => value + 1);
+    setSelectedId(piece.id);
+    setMessage(description);
+  };
+
+  const setInspectorPosition = (axis: "x" | "y" | "z", value: number) => {
+    const piece = appRef.current?.selected;
+    if (!piece) return;
+    const delta = value - piece.mesh.position[axis];
+    if (Math.abs(delta) < 1.0e-6) return;
+    const translation = new THREE.Vector3();
+    translation[axis] = delta;
+    applyInspectorTransform(
+      piece,
+      new THREE.Matrix4().makeTranslation(translation.x, translation.y, translation.z),
+      `${axis.toUpperCase()} = ${value.toFixed(3)}`,
+    );
+  };
+
+  const setInspectorRotation = (axis: "x" | "y" | "z", degrees: number) => {
+    const state = appRef.current,
+      piece = state?.selected;
+    if (!state || !piece) return;
+    const current = piece.mesh.quaternion.clone(),
+      euler = new THREE.Euler().setFromQuaternion(current, "XYZ");
+    euler[axis] = THREE.MathUtils.degToRad(degrees);
+    const target = new THREE.Quaternion().setFromEuler(euler),
+      rotation = target.multiply(current.clone().invert());
+    if (rotation.angleTo(new THREE.Quaternion()) < 1.0e-6) return;
+    const members = editorAssemblyMembers(state.pieces, piece),
+      pivot = members
+        .reduce(
+          (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
+          new THREE.Box3(),
+        )
+        .getCenter(new THREE.Vector3()),
+      transform = new THREE.Matrix4()
+        .makeTranslation(pivot.x, pivot.y, pivot.z)
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
+        .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+    applyInspectorTransform(
+      piece,
+      transform,
+      `${language === "es" ? "Giro" : "Rotation"} ${axis.toUpperCase()} = ${degrees.toFixed(2)}°`,
+    );
   };
 
   const changeSelectedColor = async (color: number) => {
@@ -10971,6 +11595,34 @@ export default function Home() {
         <div className="drag-help">{t.dragHelp}</div>
       </aside>
       <section className="viewport" ref={mountRef}>
+        <div className="gizmo-toolbar" aria-label="Gizmo">
+          <button
+            type="button"
+            className={moveGizmoVisible ? "active" : ""}
+            disabled={running}
+            onClick={() => {
+              const next = !moveGizmoVisible;
+              moveGizmoVisibleRef.current = next;
+              setMoveGizmoVisible(next);
+            }}
+            title={language === "es" ? "Mostrar ejes de movimiento" : "Show move axes"}
+          >
+            ↔
+          </button>
+          <button
+            type="button"
+            className={rotateGizmoVisible ? "active" : ""}
+            disabled={running}
+            onClick={() => {
+              const next = !rotateGizmoVisible;
+              rotateGizmoVisibleRef.current = next;
+              setRotateGizmoVisible(next);
+            }}
+            title={language === "es" ? "Mostrar aros de giro" : "Show rotation rings"}
+          >
+            ⟳
+          </button>
+        </div>
         <div className="fps-counter" ref={fpsRef} data-level="high">
           -- FPS
         </div>
@@ -11444,14 +12096,6 @@ export default function Home() {
             )}
             {!selectedRubberBand && (
               <>
-                <button
-                  type="button"
-                  className="map-toggle aim-assembly"
-                  disabled={running}
-                  onClick={() => appRef.current?.beginAimRotation?.(selected)}
-                >
-                  {language === "es" ? "Orientar desde el visor" : "Aim from viewport"}
-                </button>
                 {selectedEditorAssembly.length > 1 && (
                   <button
                     type="button"
@@ -11465,6 +12109,18 @@ export default function Home() {
                   </button>
                 )}
                 <label>{t.move}</label>
+                <div className="transform-coordinate-grid">
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <label key={`position-${axis}`}>
+                      <span>{axis.toUpperCase()}</span>
+                      <DeferredNumberInput
+                        value={selected.mesh.position[axis]}
+                        step={gridStep || 0.01}
+                        onCommit={(value) => setInspectorPosition(axis, value)}
+                      />
+                    </label>
+                  ))}
+                </div>
                 <div className="control-grid">
                   <button onClick={() => nudge("x", -(gridStep || 0.25))}>X−</button>
                   <button onClick={() => nudge("y", gridStep || 0.25)}>Y+</button>
@@ -11514,6 +12170,18 @@ export default function Home() {
                     }
                   />
                   <span>°</span>
+                </div>
+                <div className="transform-coordinate-grid rotation-coordinates">
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <label key={`rotation-${axis}`}>
+                      <span>{axis.toUpperCase()}°</span>
+                      <DeferredNumberInput
+                        value={THREE.MathUtils.radToDeg(selected.mesh.rotation[axis])}
+                        step={rotationSnapStep || 0.1}
+                        onCommit={(value) => setInspectorRotation(axis, value)}
+                      />
+                    </label>
+                  ))}
                 </div>
                 <div className="control-grid rotate">
                   <button onClick={() => rotate("x")}>↻ X</button>

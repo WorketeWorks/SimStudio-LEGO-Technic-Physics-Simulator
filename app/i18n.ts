@@ -87,7 +87,7 @@ export const translations = {
     ready: "Catálogo local listo",
     running: "SIMULACIÓN: arrastra una pieza para aplicarle fuerza",
     cameraHelp:
-      "Arrastrar: mover · R+arrastrar: girar desde una conexión · Rueda central: desplazar cámara · Doble rueda: centrar/restaurar · Alt/botón derecho: orbitar · Rueda: zoom · Ctrl+arrastrar: Connect manual · Ctrl+Z/Y: deshacer/rehacer · Ctrl+C/V: copiar/pegar · Shift: mover Y · WASD/Q/E/flechas: rotar 90° · Alt+clic: fijar",
+      "Arrastrar: mover · Gizmo: mover/girar por eje · R+arrastrar: girar desde una conexión · Rueda central: desplazar cámara · Doble rueda: centrar/restaurar · Alt/botón derecho: orbitar · Rueda: zoom · Ctrl+arrastrar: Connect manual · Ctrl+Z/Y: deshacer/rehacer · Ctrl+C/V: copiar/pegar · Shift: deslizar por eje · WASD/Q/E/flechas: rotar 90° · Alt+clic: fijar",
     properties: "PROPIEDADES",
     piece: "PIEZA",
     color: "COLOR",
@@ -302,7 +302,7 @@ export const translations = {
     ready: "Local catalog ready",
     running: "SIMULATION: drag a part to apply force",
     cameraHelp:
-      "Drag: move · R+drag: rotate from a connection · Middle drag: pan camera · Middle double-click: focus/reset · Alt/right button: orbit · Wheel: zoom · Ctrl+drag: manual Connect · Ctrl+Z/Y: undo/redo · Ctrl+C/V: copy/paste · Shift: move Y · WASD/Q/E/arrows: rotate 90° · Alt+click: fix",
+      "Drag: move · Gizmo: move/rotate by axis · R+drag: rotate from a connection · Middle drag: pan camera · Middle double-click: focus/reset · Alt/right button: orbit · Wheel: zoom · Ctrl+drag: manual Connect · Ctrl+Z/Y: undo/redo · Ctrl+C/V: copy/paste · Shift: slide along axle · WASD/Q/E/arrows: rotate 90° · Alt+click: fix",
     properties: "PROPERTIES",
     piece: "PART",
     color: "COLOR",
