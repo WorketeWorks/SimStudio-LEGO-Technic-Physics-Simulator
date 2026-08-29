@@ -285,6 +285,7 @@ export type FramePerformanceSample = {
   batchMs: number;
   debugMs: number;
   locksMs: number;
+  instanceSyncMs: number;
   renderMs: number;
   gpuMs: number | null;
   pieces: number;
@@ -415,6 +416,7 @@ export type AppState = {
   gpuTimerSupported: boolean;
   gpuRenderer: string;
   gpuVendor: string;
+  requestRender: () => void;
   setViewportRendererPreference: (preference: ViewportRendererPreference) => void;
   setAdaptiveRendering: (enabled: boolean) => void;
   pendingPlacement?: {

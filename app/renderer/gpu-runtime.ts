@@ -47,6 +47,8 @@ export type GpuSceneStats = {
   triangles: number;
   lines: number;
   instances: number;
+  instanceSyncMs: number;
+  instancesUploaded: boolean;
 };
 
 type GpuInstanceSource = {
@@ -199,6 +201,7 @@ export class GpuSceneRenderer {
   private instanceSources: GpuInstanceSource[] = [];
   private sceneSignature = -1;
   private instanceValues = new Float32Array(0);
+  private instanceUploadRequired = true;
   private msaaSamples = 4;
 
   private constructor(
@@ -220,8 +223,12 @@ export class GpuSceneRenderer {
     return new GpuSceneRenderer(await RenderCore.create(canvas), canvas);
   }
 
-  private signature(pieces: readonly GpuScenePiece[], extras: readonly THREE.Object3D[]) {
-    let hash = 0x811c9dc5;
+  private signature(
+    pieces: readonly GpuScenePiece[],
+    extras: readonly THREE.Object3D[],
+    pieceOutlinesVisible: boolean,
+  ) {
+    let hash = pieceOutlinesVisible ? 0x811c9dc5 : 0x811c9dc4;
     for (const piece of pieces) {
       hash = Math.imul(hash ^ piece.id, 0x01000193);
       hash = Math.imul(hash ^ piece.color, 0x01000193);
@@ -239,7 +246,11 @@ export class GpuSceneRenderer {
     return hash >>> 0;
   }
 
-  private rebuild(pieces: readonly GpuScenePiece[], extras: readonly THREE.Object3D[]) {
+  private rebuild(
+    pieces: readonly GpuScenePiece[],
+    extras: readonly THREE.Object3D[],
+    pieceOutlinesVisible: boolean,
+  ) {
     const meshes = new Map<string, MeshUploadGroup>(),
       lines = new Map<string, LineUploadGroup>(),
       point = new THREE.Vector3(),
@@ -253,6 +264,7 @@ export class GpuSceneRenderer {
       ignoreVisibility: boolean,
       sourcesForMaterial: (material: THREE.Material) => GpuInstanceSourceInput[],
       overlayRoot = !!root.userData.gpuOverlay,
+      includeLines = true,
     ) => {
       root.updateMatrixWorld(true);
       inverseRoot.copy(root.matrixWorld).invert();
@@ -347,6 +359,7 @@ export class GpuSceneRenderer {
             meshes.set(key, group);
           }
         } else if (object instanceof THREE.Line) {
+          if (!includeLines) return;
           const geometry = object.geometry;
           if (
             geometry.hasAttribute("control0") &&
@@ -409,8 +422,14 @@ export class GpuSceneRenderer {
     }
     for (const [key, groupedPieces] of pieceGroups) {
       const template = groupedPieces[0];
-      collectTemplate(key, template.mesh, true, (material) =>
-        groupedPieces.map((piece) => ({ object: piece.mesh, material, piece })),
+      collectTemplate(
+        key,
+        template.mesh,
+        true,
+        (material) =>
+          groupedPieces.map((piece) => ({ object: piece.mesh, material, piece })),
+        false,
+        pieceOutlinesVisible,
       );
     }
     // Extras such as rubber bands animate their child meshes independently.
@@ -459,6 +478,7 @@ export class GpuSceneRenderer {
       );
     }
     this.instanceValues = new Float32Array(this.instanceSources.length * 20);
+    this.instanceUploadRequired = true;
   }
 
   resize(cssWidth: number, cssHeight: number, requestedPixelRatio: number) {
@@ -488,30 +508,66 @@ export class GpuSceneRenderer {
     pieces: readonly GpuScenePiece[],
     selected: ReadonlySet<object>,
     extras: readonly THREE.Object3D[],
+    pieceOutlinesVisible = true,
+    syncPieceTransforms = true,
   ): GpuSceneStats {
     const visiblePieces = pieces.filter((piece) => piece.mesh.visible),
-      signature = this.signature(visiblePieces, extras);
+      signature = this.signature(visiblePieces, extras, pieceOutlinesVisible);
     if (signature !== this.sceneSignature) {
-      this.rebuild(visiblePieces, extras);
+      this.rebuild(visiblePieces, extras, pieceOutlinesVisible);
       this.sceneSignature = signature;
     }
+    const instanceSyncStarted = performance.now();
     // Do not force a full subtree traversal every frame. Three.js marks the
     // changed object (and its descendants) dirty when a transform changes;
     // forcing `true` here rebuilt all 712 piece hierarchies even while the
     // editor was idle and caused the 100–300 ms render spikes in the profile.
-    visiblePieces.forEach((piece) => piece.mesh.updateMatrixWorld(false));
+    if (syncPieceTransforms)
+      visiblePieces.forEach((piece) => piece.mesh.updateMatrixWorld(false));
     extras.forEach((object) => object.updateMatrixWorld(false));
+    let instancesChanged = this.instanceUploadRequired;
     for (let index = 0; index < this.instanceSources.length; index++) {
       const source = this.instanceSources[index],
         offset = index * 20;
-      source.object.matrixWorld.toArray(this.instanceValues, offset);
-      this.instanceValues[offset + 16] = source.color.r;
-      this.instanceValues[offset + 17] = source.color.g;
-      this.instanceValues[offset + 18] = source.color.b;
-      this.instanceValues[offset + 19] =
-        source.piece && selected.has(source.piece) ? 1 : 0;
+      // Camera-only frames leave every part instance untouched. Extras such
+      // as the gizmo still need checking because their screen-sized transform
+      // follows the camera.
+      if (
+        source.piece &&
+        !syncPieceTransforms &&
+        !this.instanceUploadRequired
+      )
+        continue;
+      const matrix = source.object.matrixWorld.elements,
+        selectedFlag = source.piece && selected.has(source.piece) ? 1 : 0;
+      for (let component = 0; component < 16; component++) {
+        const value = matrix[component];
+        if (this.instanceValues[offset + component] === value) continue;
+        this.instanceValues[offset + component] = value;
+        instancesChanged = true;
+      }
+      if (this.instanceValues[offset + 16] !== source.color.r) {
+        this.instanceValues[offset + 16] = source.color.r;
+        instancesChanged = true;
+      }
+      if (this.instanceValues[offset + 17] !== source.color.g) {
+        this.instanceValues[offset + 17] = source.color.g;
+        instancesChanged = true;
+      }
+      if (this.instanceValues[offset + 18] !== source.color.b) {
+        this.instanceValues[offset + 18] = source.color.b;
+        instancesChanged = true;
+      }
+      if (this.instanceValues[offset + 19] !== selectedFlag) {
+        this.instanceValues[offset + 19] = selectedFlag;
+        instancesChanged = true;
+      }
     }
-    this.core.uploadInstances(this.instanceValues);
+    if (instancesChanged) {
+      this.core.uploadInstances(this.instanceValues);
+      this.instanceUploadRequired = false;
+    }
+    const instanceSyncMs = performance.now() - instanceSyncStarted;
     camera.updateMatrixWorld(true);
     this.viewProjection
       .multiplyMatrices(WEBGPU_CLIP_SPACE, camera.projectionMatrix)
@@ -555,6 +611,8 @@ export class GpuSceneRenderer {
       triangles: this.core.triangleCount,
       lines: this.core.lineCount,
       instances: this.instanceSources.length,
+      instanceSyncMs,
+      instancesUploaded: instancesChanged,
     };
   }
 
