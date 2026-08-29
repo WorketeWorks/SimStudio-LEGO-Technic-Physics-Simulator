@@ -16,10 +16,17 @@ import {
   connectorPoliciesCompatible,
 } from "../app/connector-policy.ts";
 import {
+  cardanAssemblyLayout,
   editorAssemblyMembers,
   restoreLegacyCardanEditorAssemblies,
 } from "../app/editor-assembly.ts";
 import { forceDragTarget } from "../app/editor/force-drag.ts";
+import {
+  cardanDirectionsFromCoordinates,
+  cardanEditorCoordinates,
+  cardanSecondaryAxis,
+  quaternionFromAxisPairs,
+} from "../app/cardan-kinematics.ts";
 import {
   preloadedCollisionMaps,
   preloadedGearCollisionMaps,
@@ -44,8 +51,7 @@ const loadPart = (asset) => {
 
 const connectorAt = (connectors, position) =>
   connectors.find(
-    (connector) =>
-      connector.local.distanceTo(new THREE.Vector3(...position)) < 0.05,
+    (connector) => connector.local.distanceTo(new THREE.Vector3(...position)) < 0.05,
   );
 
 test("detects round and cross holes on the small L beam", () => {
@@ -85,14 +91,18 @@ test("builds the small L collider from two orthogonal boxes", () => {
     ),
     boxes = colliders.filter((collider) => collider.shape === "box");
   assert.equal(boxes.length, 2);
-  assert.ok(connectorAt(
-    boxes.map((box) => ({ local: box.center })),
-    [1, 0, 0],
-  ));
-  assert.ok(connectorAt(
-    boxes.map((box) => ({ local: box.center })),
-    [0, 0, -1],
-  ));
+  assert.ok(
+    connectorAt(
+      boxes.map((box) => ({ local: box.center })),
+      [1, 0, 0],
+    ),
+  );
+  assert.ok(
+    connectorAt(
+      boxes.map((box) => ({ local: box.center })),
+      [0, 0, -1],
+    ),
+  );
   boxes.forEach((box) => {
     assert.equal(box.size.y, 0.5);
     assert.equal(box.size.z, 0.9);
@@ -108,19 +118,19 @@ test("builds the small L collider from two orthogonal boxes", () => {
 test("full beams use a 0.45 radial collision envelope", () => {
   const root = loadPart("32523-71"),
     connectors = detectConnectorHoles(root),
-    colliders = approximateCollisionPrimitives(
-      root,
-      "Technic Beam 3",
-      connectors,
-    );
-  colliders.filter((item) => item.shape === "box").forEach((box) => {
-    assert.equal(box.size.y, 1);
-    assert.equal(box.size.z, 0.9);
-  });
-  colliders.filter((item) => item.shape === "cylinder").forEach((cylinder) => {
-    assert.equal(cylinder.radius, 0.45);
-    assert.equal(cylinder.halfHeight, 0.5);
-  });
+    colliders = approximateCollisionPrimitives(root, "Technic Beam 3", connectors);
+  colliders
+    .filter((item) => item.shape === "box")
+    .forEach((box) => {
+      assert.equal(box.size.y, 1);
+      assert.equal(box.size.z, 0.9);
+    });
+  colliders
+    .filter((item) => item.shape === "cylinder")
+    .forEach((cylinder) => {
+      assert.equal(cylinder.radius, 0.45);
+      assert.equal(cylinder.halfHeight, 0.5);
+    });
   const singleRoot = loadPart("18654-71"),
     single = approximateCollisionPrimitives(
       singleRoot,
@@ -145,20 +155,19 @@ test("scales the reviewed cross-axle template by stud length", () => {
     assert.deepEqual(colliders[0].size.toArray(), [studs, 0.2, 0.6]);
     assert.deepEqual(colliders[1].size.toArray(), [studs, 0.6, 0.2]);
   }
-  assert.equal(
-    straightAxleCollisionPrimitives("Technic Axle 4 with Stop"),
-    undefined,
-  );
+  assert.equal(straightAxleCollisionPrimitives("Technic Axle 4 with Stop"), undefined);
 });
 
 test("gear contact colliders sit inside the normal tooth envelope", () => {
-  const normal = [{
-      shape: "cylinder",
-      center: new THREE.Vector3(),
-      radius: 2,
-      halfHeight: 0.5,
-      rotation: new THREE.Quaternion(),
-    }],
+  const normal = [
+      {
+        shape: "cylinder",
+        center: new THREE.Vector3(),
+        radius: 2,
+        halfHeight: 0.5,
+        rotation: new THREE.Quaternion(),
+      },
+    ],
     gear = approximateGearCollisionPrimitives(normal);
   assert.equal(gear.length, 1);
   assert.ok(gear[0].radius < normal[0].radius);
@@ -180,9 +189,7 @@ test("gears, tyres and axle connector shells use a 0.95 envelope", () => {
       [collider] = approximateCollisionPrimitives(root, name, []);
     assert.ok(Math.abs((collider.radius * 2) / radialDiameter - 0.95) < 1e-6);
     assert.ok(
-      Math.abs(
-        (collider.halfHeight * 2) / dimensions[thicknessAxis] - 0.95,
-      ) < 1e-6,
+      Math.abs((collider.halfHeight * 2) / dimensions[thicknessAxis] - 0.95) < 1e-6,
     );
   }
   const joiner = approximateCollisionPrimitives(
@@ -195,23 +202,56 @@ test("gears, tyres and axle connector shells use a 0.95 envelope", () => {
 
 test("keeps every restored correction map preloaded", () => {
   for (const part of [
-    "3713", "32016", "32034", "32192", "55615", "4265c", "11478",
-    "32062", "45590", "62462", "99773",
+    "3713",
+    "32016",
+    "32034",
+    "32192",
+    "55615",
+    "4265c",
+    "11478",
+    "32062",
+    "45590",
+    "62462",
+    "99773",
   ])
     assert.ok(preloadedConnectionMaps[part]?.length, `${part} connection map`);
   for (const part of [
-    "32013", "32016", "32034", "32192", "3713", "87408", "18654",
-    "2825", "32062", "32184", "32271", "4265c", "45590", "55615",
-    "60484", "64179", "3649", "10928", "32498", "94925", "99773",
+    "32013",
+    "32016",
+    "32034",
+    "32192",
+    "3713",
+    "87408",
+    "18654",
+    "2825",
+    "32062",
+    "32184",
+    "32271",
+    "4265c",
+    "45590",
+    "55615",
+    "60484",
+    "64179",
+    "3649",
+    "10928",
+    "32498",
+    "94925",
+    "99773",
   ])
     assert.ok(preloadedCollisionMaps[part]?.length, `${part} collision map`);
 });
 
 test("loads the downloaded connection corrections", () => {
-  assert.deepEqual(preloadedConnectionMaps["18947"], [{
-    local: [0, 0, 0], axis: [0, 0, 1], kind: "axle", role: "socket",
-    diameter: 0.8, length: 1,
-  }]);
+  assert.deepEqual(preloadedConnectionMaps["18947"], [
+    {
+      local: [0, 0, 0],
+      axis: [0, 0, 1],
+      kind: "axle",
+      role: "socket",
+      diameter: 0.8,
+      length: 1,
+    },
+  ]);
   assert.deepEqual(preloadedConnectionMaps["35188"], preloadedConnectionMaps["18947"]);
   assert.deepEqual(preloadedConnectionMaps["6539"], preloadedConnectionMaps["18947"]);
   assert.equal(preloadedConnectionMaps["4159"].length, 3);
@@ -222,15 +262,27 @@ test("loads the downloaded connection corrections", () => {
 test("loads the downloaded 6589 gear collision correction", () => {
   const colliders = preloadedGearCollisionMaps["6589"];
   assert.equal(colliders.length, 3);
-  assert.deepEqual(colliders.map((collider) => collider.radius), [0.49, 0.805, 0.79]);
-  assert.deepEqual(colliders.map((collider) => collider.halfHeight), [0.25, 0.02, 0.029]);
+  assert.deepEqual(
+    colliders.map((collider) => collider.radius),
+    [0.49, 0.805, 0.79],
+  );
+  assert.deepEqual(
+    colliders.map((collider) => collider.halfHeight),
+    [0.25, 0.02, 0.029],
+  );
 });
 
 test("the 6573 differential exposes lateral sockets, a rotation-only axle stud and two gear volumes", () => {
   const sockets = preloadedConnectionMaps["6573"];
   assert.equal(sockets.length, 3);
-  assert.deepEqual(sockets.slice(0, 2).map((socket) => socket.kind), ["round", "round"]);
-  assert.deepEqual(sockets.slice(0, 2).map((socket) => socket.local[2]), [-1.5, 1.5]);
+  assert.deepEqual(
+    sockets.slice(0, 2).map((socket) => socket.kind),
+    ["round", "round"],
+  );
+  assert.deepEqual(
+    sockets.slice(0, 2).map((socket) => socket.local[2]),
+    [-1.5, 1.5],
+  );
   assert.equal(sockets[2].kind, "axle");
   assert.equal(sockets[2].role, "shaft");
   assert.equal(sockets[2].rotationOnly, true);
@@ -238,8 +290,14 @@ test("the 6573 differential exposes lateral sockets, a rotation-only axle stud a
   assert.deepEqual(sockets[2].local, [0, -0.75, 0]);
   const gearVolumes = preloadedGearCollisionMaps["6573"];
   assert.equal(gearVolumes.length, 2);
-  assert.deepEqual(gearVolumes.map((volume) => volume.center[2]), [-1.5, 1.5]);
-  assert.deepEqual(gearVolumes.map((volume) => volume.radius), [1.3, 0.8]);
+  assert.deepEqual(
+    gearVolumes.map((volume) => volume.center[2]),
+    [-1.5, 1.5],
+  );
+  assert.deepEqual(
+    gearVolumes.map((volume) => volume.radius),
+    [1.3, 0.8],
+  );
   assert.ok(preloadedSpecialGearParts.has("6573"));
   const normalVolumes = preloadedCollisionMaps["6573"];
   assert.equal(normalVolumes.length, 8);
@@ -254,15 +312,21 @@ test("the 61903 Cardan components expose two perpendicular free pivots", () => {
   const centre = preloadedConnectionMaps["62519"],
     end = preloadedConnectionMaps["62520"];
   assert.equal(centre.length, 2);
-  assert.deepEqual(centre.map((connector) => connector.axis), [
-    [1, 0, 0],
-    [0, 1, 0],
-  ]);
-  assert.ok(centre.every((connector) =>
-    connector.role === "shaft" &&
-    connector.kind === "round" &&
-    connector.rotationOnly === true
-  ));
+  assert.deepEqual(
+    centre.map((connector) => connector.axis),
+    [
+      [1, 0, 0],
+      [0, 1, 0],
+    ],
+  );
+  assert.ok(
+    centre.every(
+      (connector) =>
+        connector.role === "shaft" &&
+        connector.kind === "round" &&
+        connector.rotationOnly === true,
+    ),
+  );
   assert.equal(end.length, 2);
   assert.equal(end[0].kind, "axle");
   assert.deepEqual(end[0].local, [0, 0, -1]);
@@ -270,10 +334,13 @@ test("the 61903 Cardan components expose two perpendicular free pivots", () => {
   assert.deepEqual(end[1].axis, [1, 0, 0]);
   assert.equal(end[1].rotationOnly, true);
   assert.ok(centre.every((connector) => connector.singleConnection === true));
-  assert.ok(centre.every((connector) =>
-    connector.connectionTarget?.partId === "62520" &&
-    connector.connectionTarget?.connectorId === 2
-  ));
+  assert.ok(
+    centre.every(
+      (connector) =>
+        connector.connectionTarget?.partId === "62520" &&
+        connector.connectionTarget?.connectorId === 2,
+    ),
+  );
   assert.deepEqual(end[1].connectionTarget, { partId: "62519" });
   assert.equal(preloadedCollisionMaps["62519"].length, 2);
   assert.equal(preloadedCollisionMaps["62520"].length, 1);
@@ -306,29 +373,24 @@ test("connector target rules accept either free Cardan arm but reject other part
 
 test("the two official Cardan end poses align with different centre pivots", () => {
   const centre = preloadedConnectionMaps["62519"],
-    endAxis = new THREE.Vector3().fromArray(
-      preloadedConnectionMaps["62520"][1].axis,
-    ),
-    secondEndRotation = new THREE.Quaternion(
-      Math.SQRT1_2,
-      Math.SQRT1_2,
-      0,
-      0,
-    ),
+    endAxis = new THREE.Vector3().fromArray(preloadedConnectionMaps["62520"][1].axis),
+    secondEndRotation = new THREE.Quaternion(Math.SQRT1_2, Math.SQRT1_2, 0, 0),
     firstAxis = endAxis.clone(),
     secondAxis = endAxis.clone().applyQuaternion(secondEndRotation);
-  assert.ok(Math.abs(firstAxis.dot(new THREE.Vector3().fromArray(centre[0].axis))) > 0.999);
-  assert.ok(Math.abs(secondAxis.dot(new THREE.Vector3().fromArray(centre[1].axis))) > 0.999);
+  assert.ok(
+    Math.abs(firstAxis.dot(new THREE.Vector3().fromArray(centre[0].axis))) > 0.999,
+  );
+  assert.ok(
+    Math.abs(secondAxis.dot(new THREE.Vector3().fromArray(centre[1].axis))) > 0.999,
+  );
   assert.ok(Math.abs(firstAxis.dot(secondAxis)) < 0.001);
 });
 
 test("autoconnect breaks coincident ties by axis orientation with 180 degrees equivalent", () => {
-  const alignedError = 1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(
-      new THREE.Vector3(-1, 0, 0),
-    )),
-    perpendicularError = 1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(
-      new THREE.Vector3(0, 1, 0),
-    ));
+  const alignedError =
+      1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(new THREE.Vector3(-1, 0, 0))),
+    perpendicularError =
+      1 - Math.abs(new THREE.Vector3(1, 0, 0).dot(new THREE.Vector3(0, 1, 0)));
   assert.equal(alignedError, 0);
   assert.equal(
     automaticConnectorMatchIsBetter(0.2, alignedError, {
@@ -377,6 +439,107 @@ test("legacy Cardan components become one detachable editor assembly", () => {
   });
   restoreLegacyCardanEditorAssemblies(pieces, connections);
   assert.ok(pieces.every((piece) => piece.editorAssemblyId === undefined));
+});
+
+test("Cardan reference follows a single external axle and stays stable with two", () => {
+  const centre = {
+      id: 1,
+      part: "62519",
+      connectors: preloadedConnectionMaps["62519"],
+    },
+    endA = { id: 2, part: "62520", connectors: preloadedConnectionMaps["62520"] },
+    endB = { id: 3, part: "62520", connectors: preloadedConnectionMaps["62520"] },
+    axleA = { id: 4, part: "axle-a", connectors: [] },
+    axleB = { id: 5, part: "axle-b", connectors: [] },
+    axleShaft = { kind: "axle", role: "shaft" },
+    internal = [
+      {
+        a: endA,
+        b: centre,
+        socket: endA.connectors[1],
+        shaft: centre.connectors[0],
+      },
+      {
+        a: endB,
+        b: centre,
+        socket: endB.connectors[1],
+        shaft: centre.connectors[1],
+      },
+    ],
+    externalB = {
+      a: endB,
+      b: axleB,
+      socket: endB.connectors[0],
+      shaft: axleShaft,
+    },
+    externalA = {
+      a: endA,
+      b: axleA,
+      socket: endA.connectors[0],
+      shaft: axleShaft,
+    };
+  const automatic = cardanAssemblyLayout([centre, endA, endB], [...internal, externalB]);
+  assert.equal(automatic.first, endB);
+  assert.equal(automatic.referenceLockedBySingleAxle, true);
+  assert.equal(centre.editorCardanReferenceConnector, 1);
+
+  const retained = cardanAssemblyLayout(
+    [centre, endA, endB],
+    [...internal, externalA, externalB],
+  );
+  assert.equal(retained.first, endB);
+  assert.equal(retained.referenceLockedBySingleAxle, false);
+});
+
+test("editor Cardan kinematics preserves both hinges and produces non-uniform phase", () => {
+  const inputShaft = new THREE.Vector3(0, 0, 1),
+    outputShaft = new THREE.Vector3(0, Math.sin(Math.PI / 6), Math.cos(Math.PI / 6)),
+    localHinge = new THREE.Vector3(1, 0, 0),
+    localShaft = new THREE.Vector3(0, 0, -1),
+    initialFirstHinge = new THREE.Vector3(1, 0, 0),
+    initialSecondHinge = cardanSecondaryAxis(initialFirstHinge, outputShaft, 1);
+  assert.ok(initialSecondHinge);
+  const solve = (inputAngle) => {
+      const firstHinge = initialFirstHinge.clone().applyAxisAngle(inputShaft, inputAngle),
+        secondHinge = cardanSecondaryAxis(firstHinge, outputShaft, 1);
+      assert.ok(secondHinge);
+      const outputRotation = quaternionFromAxisPairs(
+        localHinge,
+        localShaft,
+        secondHinge,
+        outputShaft,
+      );
+      return { firstHinge, secondHinge, outputRotation };
+    },
+    start = solve(0),
+    turned = solve(Math.PI / 4),
+    outputReferenceStart = new THREE.Vector3(0, 1, 0).applyQuaternion(
+      start.outputRotation,
+    ),
+    outputReferenceTurned = new THREE.Vector3(0, 1, 0).applyQuaternion(
+      turned.outputRotation,
+    ),
+    outputAngle = Math.atan2(
+      outputShaft.dot(outputReferenceStart.clone().cross(outputReferenceTurned)),
+      outputReferenceStart.dot(outputReferenceTurned),
+    );
+  assert.ok(Math.abs(turned.firstHinge.dot(turned.secondHinge)) < 1e-12);
+  assert.ok(Math.abs(turned.secondHinge.dot(outputShaft)) < 1e-12);
+  assert.ok(Math.abs(outputAngle - Math.PI / 4) > 0.02);
+});
+
+test("Cardan inspector coordinates round-trip aim and independent input roll", () => {
+  const inputDirection = new THREE.Vector3(0.1, 0.2, 1).normalize(),
+    expected = { aimX: 0.31, aimZ: -0.27, roll: 0.83 },
+    directions = cardanDirectionsFromCoordinates(inputDirection, expected),
+    measured = cardanEditorCoordinates(
+      directions.inputDirection,
+      directions.outputDirection,
+      directions.firstHingeAxis,
+    );
+  assert.ok(Math.abs(measured.aimX - expected.aimX) < 1e-12);
+  assert.ok(Math.abs(measured.aimZ - expected.aimZ) < 1e-12);
+  assert.ok(Math.abs(measured.roll - expected.roll) < 1e-12);
 });
 
 test("pointer force stays on the depth plane captured by the initial click", () => {

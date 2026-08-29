@@ -1,6 +1,4 @@
-import initRenderWasm, {
-  RenderCore,
-} from "./wasm/sim_studio_render.js";
+import initRenderWasm, { RenderCore } from "./wasm/sim_studio_render.js";
 import renderWasmUrl from "./wasm/sim_studio_render_bg.wasm?url";
 import * as THREE from "three";
 
@@ -9,10 +7,22 @@ const ORIGIN = new THREE.Vector3();
 // Three.js builds an OpenGL-style projection (depth -1..1). WebGPU expects
 // depth 0..1, so remap clip-space Z before uploading the camera uniform.
 const WEBGPU_CLIP_SPACE = new THREE.Matrix4().set(
-  1, 0, 0, 0,
-  0, 1, 0, 0,
-  0, 0, 0.5, 0.5,
-  0, 0, 0, 1,
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0.5,
+  0.5,
+  0,
+  0,
+  0,
+  1,
 );
 
 export type GpuPrototypeResult = {
@@ -252,7 +262,13 @@ export class GpuSceneRenderer {
           const geometry = object.geometry,
             position = geometry.getAttribute("position");
           if (!position?.count) return;
-          localMatrix.multiplyMatrices(inverseRoot, object.matrixWorld);
+          // Extra leaves (the transform gizmo and selection markers) can be
+          // registered while hidden with scale 0. Their world matrix is then
+          // singular, so inverse(root) would bake a collapsed/invalid geometry
+          // until the whole WebGPU renderer was recreated. A template root's
+          // own geometry is already local and always uses the identity matrix.
+          if (object === root) localMatrix.identity();
+          else localMatrix.multiplyMatrices(inverseRoot, object.matrixWorld);
           normalMatrix.getNormalMatrix(localMatrix);
           const materials = Array.isArray(object.material)
               ? object.material
@@ -267,9 +283,7 @@ export class GpuSceneRenderer {
             if (!material || count < 3) continue;
             materialColor(material, this.color);
             const overlay = !material.depthTest || overlayRoot;
-            if (
-              (material as THREE.Material & { wireframe?: boolean }).wireframe
-            ) {
+            if ((material as THREE.Material & { wireframe?: boolean }).wireframe) {
               const key = `${keyPrefix}:wire:${this.color.getHexString()}:${overlay}`,
                 group = lines.get(key) ?? {
                   positions: [],
@@ -316,8 +330,8 @@ export class GpuSceneRenderer {
               geometryNormal = geometry.getAttribute("normal");
             for (let offset = 0; offset < completeCount; offset++) {
               const sourceIndex = geometry.index
-                ? geometry.index.getX(range.start + offset)
-                : range.start + offset,
+                  ? geometry.index.getX(range.start + offset)
+                  : range.start + offset,
                 vertexIndex = group.positions.length / 3;
               point.fromBufferAttribute(position, sourceIndex).applyMatrix4(localMatrix);
               group.positions.push(point.x, point.y, point.z);
@@ -374,8 +388,7 @@ export class GpuSceneRenderer {
             };
             if (object instanceof THREE.LineSegments) {
               const completeCount = count - (count % 2);
-              for (let offset = 0; offset < completeCount; offset++)
-                addVertex(offset);
+              for (let offset = 0; offset < completeCount; offset++) addVertex(offset);
             } else {
               for (let offset = 0; offset + 1 < count; offset++) {
                 addVertex(offset);
@@ -407,7 +420,10 @@ export class GpuSceneRenderer {
       const overlayRoot = !!root.userData.gpuOverlay;
       root.updateMatrixWorld(true);
       root.traverse((object) => {
-        if (!object.visible || !(object instanceof THREE.Mesh || object instanceof THREE.Line))
+        if (
+          !object.visible ||
+          !(object instanceof THREE.Mesh || object instanceof THREE.Line)
+        )
           return;
         collectTemplate(
           `extra:${root.id}:${object.id}`,
@@ -454,8 +470,7 @@ export class GpuSceneRenderer {
     const nativeRatio = Math.min(devicePixelRatio, 2),
       qualityScale = Math.min(1, requestedPixelRatio / nativeRatio);
     if (this.msaaSamples === 4 && qualityScale <= 0.9) this.msaaSamples = 1;
-    else if (this.msaaSamples === 1 && qualityScale >= 0.999)
-      this.msaaSamples = 4;
+    else if (this.msaaSamples === 1 && qualityScale >= 0.999) this.msaaSamples = 4;
     this.core.setMsaaSamples(this.msaaSamples);
     this.canvas.dataset.pixelRatio = pixelRatio.toFixed(2);
     this.canvas.dataset.msaaSamples = String(this.msaaSamples);

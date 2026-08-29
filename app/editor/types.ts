@@ -68,6 +68,8 @@ export type Piece = CatalogPart & {
   /** Components that move/select together in the editor but remain separate physics bodies. */
   editorAssemblyId?: string;
   editorAssemblyDetached?: boolean;
+  /** Centre connector (0/1) whose end is the Cardan editor's input/reference. */
+  editorCardanReferenceConnector?: 0 | 1;
   rotationPivotLocal?: THREE.Vector3;
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;
@@ -95,6 +97,7 @@ export type EditorPieceSnapshot = {
   dynamicAxleConnections: boolean;
   editorAssemblyId?: string;
   editorAssemblyDetached?: boolean;
+  editorCardanReferenceConnector?: 0 | 1;
   rotationPivotLocal?: THREE.Vector3;
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;

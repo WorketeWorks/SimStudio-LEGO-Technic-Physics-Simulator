@@ -32,9 +32,17 @@ import {
   connectorPoliciesCompatible,
 } from "./connector-policy";
 import {
+  cardanAssemblyLayout,
   editorAssemblyMembers,
   restoreLegacyCardanEditorAssemblies,
 } from "./editor-assembly";
+import {
+  cardanDirectionsFromCoordinates,
+  cardanEditorCoordinates,
+  cardanSecondaryAxis,
+  quaternionFromAxisPairs,
+  type CardanEditorCoordinates,
+} from "./cardan-kinematics";
 import { forceDragTarget } from "./editor/force-drag";
 import { paletteParts, paletteRequestAliases } from "./palette";
 import { preloadedConnectionMaps } from "./connection-maps";
@@ -355,6 +363,13 @@ const belongsToDefaultPalette = (part: CatalogPart) =>
     .filter(Boolean)
     .some((value) => paletteReferenceSet.has(value!.toLowerCase()));
 
+const editorTransformMembers = (state: AppState, selected: Piece) => {
+  const explicit = [...state.selectedPieces];
+  return explicit.length > 1 && explicit.includes(selected)
+    ? explicit
+    : editorAssemblyMembers(state.pieces, selected);
+};
+
 const nonPhysicalGearParts = new Set([
   "6539",
   "18947",
@@ -398,6 +413,55 @@ const gearAxisForPiece = (piece: Piece) => {
     : (piece.connectors.find((connector) => connector.kind === "axle")?.axis.clone() ??
       new THREE.Vector3(0, 1, 0));
   return localAxis.transformDirection(piece.mesh.matrixWorld).normalize();
+};
+
+type CardanLayout = NonNullable<ReturnType<typeof cardanAssemblyLayout>>;
+
+const cardanPoseParts = (layout: CardanLayout) => {
+  const firstHinge = layout.first.connectors.find(
+      (connector) => connector.rotationOnly && connector.kind === "round",
+    ),
+    thirdHinge = layout.third.connectors.find(
+      (connector) => connector.rotationOnly && connector.kind === "round",
+    ),
+    firstOuter = layout.first.connectors.find(
+      (connector) => connector.role === "socket" && connector.kind === "axle",
+    ),
+    thirdOuter = layout.third.connectors.find(
+      (connector) => connector.role === "socket" && connector.kind === "axle",
+    ),
+    centreFirst = layout.centre.connectors[0],
+    centreThird = layout.centre.connectors[1];
+  return firstHinge &&
+    thirdHinge &&
+    firstOuter &&
+    thirdOuter &&
+    centreFirst &&
+    centreThird
+    ? { firstHinge, thirdHinge, firstOuter, thirdOuter, centreFirst, centreThird }
+    : undefined;
+};
+
+const measureCardanCoordinates = (layout: CardanLayout) => {
+  const pose = cardanPoseParts(layout);
+  if (!pose) return undefined;
+  layout.first.mesh.updateMatrixWorld(true);
+  layout.third.mesh.updateMatrixWorld(true);
+  const inputDirection = pose.firstHinge.local
+      .clone()
+      .sub(pose.firstOuter.local)
+      .transformDirection(layout.first.mesh.matrixWorld)
+      .normalize(),
+    outputDirection = pose.thirdOuter.local
+      .clone()
+      .sub(pose.thirdHinge.local)
+      .transformDirection(layout.third.mesh.matrixWorld)
+      .normalize(),
+    firstHingeAxis = pose.firstHinge.axis
+      .clone()
+      .transformDirection(layout.first.mesh.matrixWorld)
+      .normalize();
+  return cardanEditorCoordinates(inputDirection, outputDirection, firstHingeAxis);
 };
 
 const initialViewportRendererPreference = (): ViewportRendererPreference => {
@@ -1506,6 +1570,20 @@ export default function Home() {
     gizmoCenter.renderOrder = 1002;
     transformGizmoRoot.add(gizmoCenter);
     scene.add(transformGizmoRoot);
+    const cardanReferenceMarker = new THREE.Mesh(
+      new THREE.TorusGeometry(0.24, 0.028, 10, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd83d,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    );
+    cardanReferenceMarker.name = "cardan-reference-end";
+    cardanReferenceMarker.userData.gpuOverlay = true;
+    cardanReferenceMarker.renderOrder = 1003;
+    cardanReferenceMarker.scale.setScalar(0);
+    scene.add(cardanReferenceMarker);
     const grid = createStudioGrid(darkTheme);
     scene.add(grid);
     const floor = new THREE.Mesh(
@@ -4689,6 +4767,7 @@ export default function Home() {
       pan = false,
       moved = false,
       shiftHeld = false,
+      shiftVerticalConsumed = false,
       rotationPivotHeld = false,
       moving: Piece | undefined,
       movingGroup: Piece[] = [],
@@ -4797,68 +4876,17 @@ export default function Home() {
     };
 
     const cardanLayout = (members: Piece[]) => {
-      const centre = members.find((member) => member.part.toLowerCase() === "62519"),
-        ends = members.filter((member) => member.part.toLowerCase() === "62520");
-      if (members.length !== 3 || !centre || ends.length !== 2) return undefined;
-      const endForCentreConnector = (connectorIndex: number) => {
-        const connector = centre.connectors[connectorIndex],
-          connection = state.connections.find(
-            (candidate) =>
-              (candidate.a === centre &&
-                candidate.socket === connector &&
-                ends.includes(candidate.b)) ||
-              (candidate.b === centre &&
-                candidate.shaft === connector &&
-                ends.includes(candidate.a)),
-          );
-        return connection
-          ? connection.a === centre
-            ? connection.b
-            : connection.a
-          : undefined;
-      };
-      const first = endForCentreConnector(0) ?? ends[0],
-        third = endForCentreConnector(1) ?? ends.find((end) => end !== first);
-      return third ? { centre, first, third } : undefined;
-    };
-
-    const quaternionFromAxisPairs = (
-      localPrimary: THREE.Vector3,
-      localSecondary: THREE.Vector3,
-      worldPrimary: THREE.Vector3,
-      worldSecondary: THREE.Vector3,
-    ) => {
-      const orthonormalPair = (primary: THREE.Vector3, secondary: THREE.Vector3) => {
-          const first = primary.clone().normalize(),
-            second = secondary
-              .clone()
-              .addScaledVector(first, -secondary.dot(first))
-              .normalize(),
-            third = first.clone().cross(second).normalize();
-          return { first, second, third };
-        },
-        local = orthonormalPair(localPrimary, localSecondary),
-        world = orthonormalPair(worldPrimary, worldSecondary),
-        localBasis = new THREE.Matrix4().makeBasis(
-          local.first,
-          local.second,
-          local.third,
-        ),
-        worldBasis = new THREE.Matrix4().makeBasis(
-          world.first,
-          world.second,
-          world.third,
-        );
-      return new THREE.Quaternion()
-        .setFromRotationMatrix(worldBasis.multiply(localBasis.invert()))
-        .normalize();
+      return cardanAssemblyLayout(members, state.connections);
     };
 
     const gizmoFrame = (piece: Piece, members: Piece[]) => {
-      const bounds = members.reduce(
-          (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
-          new THREE.Box3(),
-        ),
+      const bounds =
+          members.length > 1
+            ? new THREE.Box3().setFromObject(piece.mesh)
+            : members.reduce(
+                (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
+                new THREE.Box3(),
+              ),
         pivot = bounds.isEmpty()
           ? piece.mesh.getWorldPosition(new THREE.Vector3())
           : bounds.getCenter(new THREE.Vector3()),
@@ -4912,11 +4940,14 @@ export default function Home() {
       const piece = state.selected;
       if (!piece || state.running) {
         transformGizmoRoot.scale.setScalar(0);
+        cardanReferenceMarker.scale.setScalar(0);
         transformGizmoRoot.updateMatrixWorld(true);
+        cardanReferenceMarker.updateMatrixWorld(true);
         return;
       }
       const members = gizmoMembers(piece),
-        { pivot, axes } = gizmoFrame(piece, members),
+        frame = gizmoFrame(piece, members),
+        { pivot, axes } = frame,
         bounds = renderer.domElement.getBoundingClientRect(),
         projectedPivot = projectGizmoPoint(pivot);
       const visible =
@@ -4924,7 +4955,9 @@ export default function Home() {
         (moveGizmoVisibleRef.current || rotateGizmoVisibleRef.current);
       if (!visible) {
         transformGizmoRoot.scale.setScalar(0);
+        cardanReferenceMarker.scale.setScalar(0);
         transformGizmoRoot.updateMatrixWorld(true);
+        cardanReferenceMarker.updateMatrixWorld(true);
         return;
       }
       const distance = camera.position.distanceTo(pivot),
@@ -4945,7 +4978,23 @@ export default function Home() {
       gizmoCenter.scale.setScalar(
         moveGizmoVisibleRef.current || rotateGizmoVisibleRef.current ? 1 : 0,
       );
+      const referenceOuter = frame.cardan?.first.connectors.find(
+        (connector) => connector.role === "socket" && connector.kind === "axle",
+      );
+      if (frame.cardan && referenceOuter) {
+        const outerPoint = frame.cardan.first.mesh.localToWorld(
+            referenceOuter.local.clone(),
+          ),
+          inputDirection = pivot.clone().sub(outerPoint).normalize();
+        cardanReferenceMarker.position.copy(outerPoint);
+        cardanReferenceMarker.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          inputDirection,
+        );
+        cardanReferenceMarker.scale.setScalar(scale);
+      } else cardanReferenceMarker.scale.setScalar(0);
       transformGizmoRoot.updateMatrixWorld(true);
+      cardanReferenceMarker.updateMatrixWorld(true);
     };
 
     const pickTransformGizmo = () => {
@@ -4974,28 +5023,42 @@ export default function Home() {
     const nearestScreenConnector = (
       piece: Piece,
       e: { clientX: number; clientY: number },
+      includeAssembly = false,
     ) => {
-      const bounds = renderer.domElement.getBoundingClientRect();
-      piece.mesh.updateMatrixWorld(true);
-      return piece.connectors
-        .flatMap((connector) => {
-          const anchors =
-            connector.role === "shaft" && connector.kind === "axle"
-              ? axleSnapPoints(connector)
-              : [{ local: connector.local, important: true }];
-          return anchors.map((anchor) => {
-            const projected = piece.mesh
-                .localToWorld(anchor.local.clone())
-                .project(camera),
-              x = bounds.left + ((projected.x + 1) * bounds.width) / 2,
-              y = bounds.top + ((1 - projected.y) * bounds.height) / 2;
-            return {
-              connector,
-              anchorLocal: anchor.local.clone(),
-              distance: Math.hypot(x - e.clientX, y - e.clientY),
-            };
-          });
-        })
+      const bounds = renderer.domElement.getBoundingClientRect(),
+        pieces = includeAssembly ? editorAssemblyMembers(state.pieces, piece) : [piece],
+        pieceSet = new Set(pieces);
+      pieces.forEach((member) => member.mesh.updateMatrixWorld(true));
+      return pieces
+        .flatMap((member) =>
+          member.connectors.flatMap((connector) => {
+            const internallyOccupied = state.connections.some(
+              (connection) =>
+                pieceSet.has(connection.a) &&
+                pieceSet.has(connection.b) &&
+                ((connection.a === member && connection.socket === connector) ||
+                  (connection.b === member && connection.shaft === connector)),
+            );
+            if (includeAssembly && internallyOccupied) return [];
+            const anchors =
+              connector.role === "shaft" && connector.kind === "axle"
+                ? axleSnapPoints(connector)
+                : [{ local: connector.local, important: true }];
+            return anchors.map((anchor) => {
+              const projected = member.mesh
+                  .localToWorld(anchor.local.clone())
+                  .project(camera),
+                x = bounds.left + ((projected.x + 1) * bounds.width) / 2,
+                y = bounds.top + ((1 - projected.y) * bounds.height) / 2;
+              return {
+                piece: member,
+                connector,
+                anchorLocal: anchor.local.clone(),
+                distance: Math.hypot(x - e.clientX, y - e.clientY),
+              };
+            });
+          }),
+        )
         .sort((a, b) => a.distance - b.distance)[0];
     };
 
@@ -5252,6 +5315,22 @@ export default function Home() {
       // Collider envelopes can protrude beyond thin/concave LEGO geometry and
       // must never steal a click from a visible triangle behind them. They are
       // retained only as a fallback for parts without raycastable render data.
+      if (best) return best;
+      // The three Cardan meshes contain narrow fork faces and open gaps. Give
+      // their visible bounds a small pick tolerance only when no rendered
+      // triangle from any piece was hit, so clicking through a fork remains
+      // reliable without allowing an invisible envelope to steal another
+      // visible piece's click.
+      for (const piece of state.pieces) {
+        if (
+          !piece.editorAssemblyId ||
+          (piece.part.toLowerCase() !== "62519" && piece.part.toLowerCase() !== "62520")
+        )
+          continue;
+        const box = new THREE.Box3().setFromObject(piece.mesh).expandByScalar(0.07),
+          point = ray.ray.intersectBox(box, new THREE.Vector3());
+        if (point) consider(piece, point, ray.ray.origin.distanceTo(point));
+      }
       if (best) return best;
       const unitScale = new THREE.Vector3(1, 1, 1);
       const colliderFallbackPieces = state.pieces.filter((piece) => {
@@ -5606,6 +5685,7 @@ export default function Home() {
         dynamicAxleConnections: piece.dynamicAxleConnections,
         editorAssemblyId: piece.editorAssemblyId,
         editorAssemblyDetached: piece.editorAssemblyDetached,
+        editorCardanReferenceConnector: piece.editorCardanReferenceConnector,
         rotationPivotLocal: piece.rotationPivotLocal?.clone(),
         rotationPivotKey: piece.rotationPivotKey,
         gearDirectionLock: piece.gearDirectionLock,
@@ -5649,6 +5729,7 @@ export default function Home() {
               dynamicAxleConnections: boolean;
               editorAssemblyId?: string;
               editorAssemblyDetached?: boolean;
+              editorCardanReferenceConnector?: 0 | 1;
               rotationPivotLocal?: THREE.Vector3;
               rotationPivotKey?: string;
               gearDirectionLock?: -1 | 0 | 1;
@@ -5682,6 +5763,7 @@ export default function Home() {
           piece.dynamicAxleConnections = item.dynamicAxleConnections;
           piece.editorAssemblyId = item.editorAssemblyId;
           piece.editorAssemblyDetached = item.editorAssemblyDetached;
+          piece.editorCardanReferenceConnector = item.editorCardanReferenceConnector;
           piece.rotationPivotLocal = item.rotationPivotLocal?.clone();
           piece.rotationPivotKey = item.rotationPivotKey;
           piece.gearDirectionLock = item.gearDirectionLock;
@@ -5885,6 +5967,7 @@ export default function Home() {
             dynamicAxleConnections: piece.dynamicAxleConnections,
             editorAssemblyId: piece.editorAssemblyId,
             editorAssemblyDetached: piece.editorAssemblyDetached,
+            editorCardanReferenceConnector: piece.editorCardanReferenceConnector,
             rotationPivotLocal: piece.rotationPivotLocal
               ? tuple3(piece.rotationPivotLocal)
               : undefined,
@@ -6095,6 +6178,7 @@ export default function Home() {
           piece.dynamicAxleConnections = saved.dynamicAxleConnections;
           piece.editorAssemblyId = saved.editorAssemblyId;
           piece.editorAssemblyDetached = saved.editorAssemblyDetached;
+          piece.editorCardanReferenceConnector = saved.editorCardanReferenceConnector;
           piece.rotationPivotLocal = saved.rotationPivotLocal
             ? new THREE.Vector3().fromArray(saved.rotationPivotLocal)
             : undefined;
@@ -6307,6 +6391,7 @@ export default function Home() {
           dynamicAxleConnections: piece.dynamicAxleConnections,
           editorAssemblyId: piece.editorAssemblyId,
           editorAssemblyDetached: piece.editorAssemblyDetached,
+          editorCardanReferenceConnector: piece.editorCardanReferenceConnector,
           rotationPivotLocal: piece.rotationPivotLocal?.clone(),
           rotationPivotKey: piece.rotationPivotKey,
           gearDirectionLock: piece.gearDirectionLock,
@@ -6358,6 +6443,7 @@ export default function Home() {
             })())
           : undefined;
         piece.editorAssemblyDetached = item.editorAssemblyDetached;
+        piece.editorCardanReferenceConnector = item.editorCardanReferenceConnector;
         piece.rotationPivotLocal = item.rotationPivotLocal?.clone();
         piece.rotationPivotKey = item.rotationPivotKey;
         piece.gearDirectionLock = item.gearDirectionLock;
@@ -6450,8 +6536,23 @@ export default function Home() {
       previous = orbitStart = { x: e.clientX, y: e.clientY };
       moved = false;
       cast(e);
-      const gizmoHandle = pickTransformGizmo();
-      if (gizmoHandle && e.button === 0) {
+      const pointerPieceHit = pickPiece(),
+        pointerHitsCardan = pointerPieceHit
+          ? cardanAssemblyLayout(
+              editorAssemblyMembers(state.pieces, pointerPieceHit.piece),
+              state.connections,
+            ) !== undefined
+          : false,
+        gizmoHandle = pickTransformGizmo();
+      // Explicit connection/pivot gestures take precedence when a 3D gizmo
+      // handle overlaps the visible axle hole.
+      if (
+        gizmoHandle &&
+        e.button === 0 &&
+        !e.ctrlKey &&
+        !rotationPivotHeld &&
+        !pointerHitsCardan
+      ) {
         beginGizmoDrag(e, gizmoHandle);
         return;
       }
@@ -6522,7 +6623,7 @@ export default function Home() {
         if (placed > 0) scheduleRecoverySave();
         return;
       }
-      const hit = pickPiece(),
+      const hit = pointerPieceHit,
         hitPiece = hit?.piece;
       orbit = e.button === 2 || e.altKey;
       altCandidate = e.altKey && e.button === 0 ? hitPiece : undefined;
@@ -6618,13 +6719,13 @@ export default function Home() {
         return;
       }
       if (!state.running && e.ctrlKey && e.button === 0 && hitPiece) {
-        const selectedConnector = nearestScreenConnector(hitPiece, e);
+        const selectedConnector = nearestScreenConnector(hitPiece, e, true);
         if (!selectedConnector) {
           setMessage(`${hitPiece.part} no tiene puntos de conexión`);
           return;
         }
-        const { connector, anchorLocal } = selectedConnector,
-          origin = hitPiece.mesh.localToWorld(anchorLocal.clone()),
+        const { piece: connectorPiece, connector, anchorLocal } = selectedConnector,
+          origin = connectorPiece.mesh.localToWorld(anchorLocal.clone()),
           forced = e.shiftKey,
           line = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([origin, origin]),
@@ -6646,7 +6747,7 @@ export default function Home() {
         line.renderOrder = 60;
         scene.add(line);
         state.manualConnect = {
-          piece: hitPiece,
+          piece: connectorPiece,
           connector,
           anchorLocal,
           cursor: origin.clone(),
@@ -6659,15 +6760,19 @@ export default function Home() {
           forced,
           connectorsWereVisible: state.debug.connectors,
         };
-        state.selected = hitPiece;
-        state.selectedPieces = new Set([hitPiece]);
+        const connectorGroup = editorAssemblyMembers(state.pieces, connectorPiece),
+          connectorGroupCentre = connectorGroup.find(
+            (member) => member.part.toLowerCase() === "62519",
+          );
+        state.selected = connectorGroupCentre ?? connectorPiece;
+        state.selectedPieces = new Set(connectorGroup);
         state.debug.connectors = true;
-        setSelectedId(hitPiece.id);
+        setSelectedId(state.selected.id);
         setDebugViews((current) => ({ ...current, connectors: true }));
         setMessage(
           forced
-            ? `${t.forceConnect}: ${hitPiece.part} · máximo 5 u`
-            : `Connect manual: ${hitPiece.part} · suelta cerca de un punto compatible`,
+            ? `${t.forceConnect}: ${connectorPiece.part} · máximo 5 u`
+            : `Connect manual: ${connectorPiece.part} · suelta cerca de un punto compatible`,
         );
         refreshDebug();
         return;
@@ -6784,24 +6889,34 @@ export default function Home() {
             (piece) => piece.part.toLowerCase() === "62519",
           ),
           canonicalSelection = cardanCentre ?? hitPiece,
+          orderedClickedGroup = [
+            canonicalSelection,
+            ...clickedGroup.filter((piece) => piece !== canonicalSelection),
+          ],
+          previousAnchor = state.selected,
           completeGroupSelected = clickedGroup.every((piece) =>
             state.selectedPieces.has(piece),
           );
+        let selectionAnchor = canonicalSelection;
         // Shift-click toggles a complete assembly in the multi-selection.
         // Ctrl/Cmd remains reserved for the existing manual-connect gesture.
-        if (e.shiftKey) {
+        if (e.shiftKey && !shiftVerticalConsumed) {
           if (completeGroupSelected && state.selectedPieces.size > clickedGroup.length) {
             clickedGroup.forEach((piece) => state.selectedPieces.delete(piece));
-            state.selected = [...state.selectedPieces].at(-1);
+            state.selected =
+              previousAnchor && state.selectedPieces.has(previousAnchor)
+                ? previousAnchor
+                : [...state.selectedPieces][0];
             setSelectedId(state.selected?.id ?? null);
             return;
           }
-          clickedGroup.forEach((piece) => state.selectedPieces.add(piece));
+          orderedClickedGroup.forEach((piece) => state.selectedPieces.add(piece));
+          selectionAnchor = previousAnchor ?? canonicalSelection;
           // Preserve an existing multi-selection when the user starts dragging
           // one of its members; otherwise select its complete editorial group.
         } else if (!completeGroupSelected) {
-          state.selectedPieces = new Set(clickedGroup);
-        }
+          state.selectedPieces = new Set(orderedClickedGroup);
+        } else selectionAnchor = previousAnchor ?? canonicalSelection;
         moving = hitPiece;
         movingGroup = [...state.selectedPieces];
         if (!movingGroup.length) {
@@ -6821,8 +6936,8 @@ export default function Home() {
         );
         movedAxially = false;
         movingPrepared = false;
-        state.selected = canonicalSelection;
-        setSelectedId(canonicalSelection.id);
+        state.selected = selectionAnchor;
+        setSelectedId(selectionAnchor.id);
         movingStartPosition.copy(moving.mesh.position);
         movingStartPointer.set(e.clientX, e.clientY);
         const linearGuide = state.connections.find(
@@ -7104,6 +7219,13 @@ export default function Home() {
           moving.mesh.position
             .copy(movingStartPosition)
             .addScaledVector(movingLinearAxis, snappedDistance);
+        } else if (shiftActive && movingGroup.length === 1) {
+          shiftVerticalConsumed = true;
+          const rawHeight =
+            movingStartPosition.y - (e.clientY - movingStartPointer.y) * 0.015;
+          moving.mesh.position.y = state.gridStep
+            ? Math.round(rawHeight / state.gridStep) * state.gridStep
+            : rawHeight;
         } else {
           cast(e);
           const ground =
@@ -7469,6 +7591,7 @@ export default function Home() {
 
     const keydown = (e: KeyboardEvent) => {
       if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+        if (!e.repeat) shiftVerticalConsumed = false;
         shiftHeld = true;
         updateManualForceMode(true);
       }
@@ -7602,6 +7725,7 @@ export default function Home() {
       gearMotorHeldKeys.delete(e.code);
       if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
         shiftHeld = false;
+        shiftVerticalConsumed = false;
         updateManualForceMode(false);
       }
       if (e.code === "KeyR") rotationPivotHeld = false;
@@ -7609,6 +7733,7 @@ export default function Home() {
 
     const clearModifiers = () => {
       shiftHeld = false;
+      shiftVerticalConsumed = false;
       rotationPivotHeld = false;
       updateManualForceMode(false);
     };
@@ -7689,19 +7814,19 @@ export default function Home() {
         draft.prepared = true;
         state.recordHistory();
         const memberSet = new Set(draft.members),
-          articulatingCardan =
-            draft.kind === "rotate" &&
-            draft.axisName !== "y" &&
-            draft.cardan !== undefined,
+          articulatingCardan = draft.kind === "rotate" && draft.cardan !== undefined,
           affected = new Set<Piece>();
         state.connections.forEach((connection) => {
           const aInside = memberSet.has(connection.a),
             bInside = memberSet.has(connection.b),
-            keepFirstAnchor =
+            keepCardanAnchor =
               articulatingCardan &&
               (connection.a === draft.cardan!.first ||
-                connection.b === draft.cardan!.first);
-          if (aInside !== bInside && !keepFirstAnchor)
+                connection.b === draft.cardan!.first ||
+                (draft.axisName === "y" &&
+                  (connection.a === draft.cardan!.third ||
+                    connection.b === draft.cardan!.third)));
+          if (aInside !== bInside && !keepCardanAnchor)
             affected.add(aInside ? connection.b : connection.a);
         });
         state.connections = state.connections.filter(
@@ -7709,7 +7834,10 @@ export default function Home() {
             memberSet.has(connection.a) === memberSet.has(connection.b) ||
             (articulatingCardan &&
               (connection.a === draft.cardan!.first ||
-                connection.b === draft.cardan!.first)),
+                connection.b === draft.cardan!.first ||
+                (draft.axisName === "y" &&
+                  (connection.a === draft.cardan!.third ||
+                    connection.b === draft.cardan!.third)))),
         );
         affected.forEach((member) => rebalanceSmartDefaults(state, member));
         setConnectionRevision((value) => value + 1);
@@ -7740,7 +7868,7 @@ export default function Home() {
           snap = THREE.MathUtils.degToRad(state.rotationSnapStep),
           angle = snap ? Math.round(normalizedAngle / snap) * snap : normalizedAngle,
           rotation = new THREE.Quaternion().setFromAxisAngle(draft.axis, angle),
-          articulated = draft.axisName !== "y" ? draft.cardan : undefined;
+          articulated = draft.cardan;
         if (articulated) {
           const { centre, first, third } = articulated,
             centreFirst = centre.connectors[0],
@@ -7758,7 +7886,7 @@ export default function Home() {
             centreStart = draft.startQuaternions.get(centre)!,
             thirdStart = draft.startQuaternions.get(third)!;
           if (centreFirst && centreThird && firstHinge && thirdHinge && thirdOuter) {
-            const firstAxis = firstHinge.axis
+            const firstAxisStart = firstHinge.axis
                 .clone()
                 .applyQuaternion(firstStart)
                 .normalize(),
@@ -7766,24 +7894,40 @@ export default function Home() {
                 .clone()
                 .applyQuaternion(centreStart)
                 .normalize();
-            if (firstAxis.dot(centreFirstStartAxis) < 0) firstAxis.negate();
+            if (firstAxisStart.dot(centreFirstStartAxis) < 0) firstAxisStart.negate();
             const thirdLengthLocal = thirdOuter.local
                 .clone()
                 .sub(thirdHinge.local)
                 .normalize(),
-              thirdDirection = thirdLengthLocal
+              thirdDirectionStart = thirdLengthLocal
                 .clone()
                 .applyQuaternion(thirdStart)
-                .applyQuaternion(rotation)
                 .normalize(),
-              thirdAxis = firstAxis.clone().cross(thirdDirection);
-            if (thirdAxis.lengthSq() > 1.0e-6) {
-              thirdAxis.normalize();
-              const thirdStartAxis = thirdHinge.axis
-                .clone()
-                .applyQuaternion(thirdStart)
-                .normalize();
-              if (thirdAxis.dot(thirdStartAxis) < 0) thirdAxis.negate();
+              firstQuaternion =
+                draft.axisName === "y"
+                  ? firstStart.clone().premultiply(rotation).normalize()
+                  : firstStart.clone(),
+              firstAxis =
+                draft.axisName === "y"
+                  ? firstAxisStart.clone().applyQuaternion(rotation).normalize()
+                  : firstAxisStart.clone(),
+              // Red/blue aim the output shaft. Green keeps both shaft
+              // directions fixed and rotates only the input yoke. Solving the
+              // two perpendicular hinge axes then produces the Cardan's real,
+              // non-uniform output phase instead of a rigid 1:1 rotation.
+              thirdDirection =
+                draft.axisName === "y"
+                  ? thirdDirectionStart.clone()
+                  : thirdDirectionStart.clone().applyQuaternion(rotation).normalize(),
+              thirdAxisSign =
+                firstAxisStart
+                  .clone()
+                  .cross(thirdDirectionStart)
+                  .dot(thirdHinge.axis.clone().applyQuaternion(thirdStart)) < 0
+                  ? -1
+                  : 1,
+              thirdAxis = cardanSecondaryAxis(firstAxis, thirdDirection, thirdAxisSign);
+            if (thirdAxis) {
               const centreQuaternion = quaternionFromAxisPairs(
                   centreFirst.axis,
                   centreThird.axis,
@@ -7796,8 +7940,10 @@ export default function Home() {
                   thirdAxis,
                   thirdDirection,
                 );
-              first.mesh.position.copy(draft.startPositions.get(first)!);
-              first.mesh.quaternion.copy(firstStart);
+              first.mesh.quaternion.copy(firstQuaternion);
+              first.mesh.position
+                .copy(draft.pivot)
+                .sub(firstHinge.local.clone().applyQuaternion(firstQuaternion));
               centre.mesh.quaternion.copy(centreQuaternion);
               centre.mesh.position
                 .copy(draft.pivot)
@@ -8401,6 +8547,7 @@ export default function Home() {
         ...(viewingFloorFromBelow ? [] : [state.floor]),
         state.grid,
         transformGizmoRoot,
+        cardanReferenceMarker,
         // WebGPU already highlights selected geometry through the per-instance
         // selected flag. The Three.js BoxHelper is the legacy WebGL selection
         // outline; uploading it as an extra produced the second blue box.
@@ -8505,6 +8652,8 @@ export default function Home() {
           : [];
         materials.forEach((material) => material.dispose());
       });
+      cardanReferenceMarker.geometry.dispose();
+      (cardanReferenceMarker.material as THREE.Material).dispose();
       gpuSceneRenderer?.dispose();
       gpuSceneRenderer = null;
       if (gpuViewportCanvas.parentElement === host) host.removeChild(gpuViewportCanvas);
@@ -8631,7 +8780,7 @@ export default function Home() {
     if (!s || !p || running) return;
     s.recordHistory();
     p.mesh.updateMatrix();
-    const members = editorAssemblyMembers(s.pieces, p),
+    const members = editorTransformMembers(s, p),
       before = p.mesh.matrix.clone(),
       radians = THREE.MathUtils.degToRad(rotationAngle * dir);
     rotatePieceAroundPivotWithGlobalSnap(p, axis, radians, s.rotationSnapStep);
@@ -8668,7 +8817,7 @@ export default function Home() {
       p = s?.selected;
     if (!s || !p || running) return;
     s.recordHistory();
-    const members = editorAssemblyMembers(s.pieces, p);
+    const members = editorTransformMembers(s, p);
     members.forEach((member) => {
       member.mesh.position[axis] += amount;
       member.mesh.updateMatrixWorld(true);
@@ -8686,7 +8835,7 @@ export default function Home() {
   ) => {
     const state = appRef.current;
     if (!state || running) return;
-    const members = editorAssemblyMembers(state.pieces, piece),
+    const members = editorTransformMembers(state, piece),
       memberSet = new Set(members),
       affected = new Set<Piece>();
     state.recordHistory();
@@ -8745,13 +8894,8 @@ export default function Home() {
     const target = new THREE.Quaternion().setFromEuler(euler),
       rotation = target.multiply(current.clone().invert());
     if (rotation.angleTo(new THREE.Quaternion()) < 1.0e-6) return;
-    const members = editorAssemblyMembers(state.pieces, piece),
-      pivot = members
-        .reduce(
-          (box, member) => box.union(new THREE.Box3().setFromObject(member.mesh)),
-          new THREE.Box3(),
-        )
-        .getCenter(new THREE.Vector3()),
+    const members = editorTransformMembers(state, piece),
+      pivot = new THREE.Box3().setFromObject(piece.mesh).getCenter(new THREE.Vector3()),
       transform = new THREE.Matrix4()
         .makeTranslation(pivot.x, pivot.y, pivot.z)
         .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
@@ -8760,6 +8904,147 @@ export default function Home() {
       piece,
       transform,
       `${language === "es" ? "Giro" : "Rotation"} ${axis.toUpperCase()} = ${degrees.toFixed(2)}°`,
+    );
+  };
+
+  const setInspectorCardanCoordinate = (
+    coordinate: keyof CardanEditorCoordinates,
+    degrees: number,
+  ) => {
+    const state = appRef.current,
+      selectedPiece = state?.selected;
+    if (!state || !selectedPiece || running) return;
+    const members = editorAssemblyMembers(state.pieces, selectedPiece),
+      layout = cardanAssemblyLayout(members, state.connections),
+      pose = layout && cardanPoseParts(layout),
+      measured = layout && measureCardanCoordinates(layout);
+    if (!layout || !pose || !measured) return;
+    const coordinates = {
+        ...measured,
+        [coordinate]: THREE.MathUtils.degToRad(degrees),
+      },
+      inputDirection = pose.firstHinge.local
+        .clone()
+        .sub(pose.firstOuter.local)
+        .transformDirection(layout.first.mesh.matrixWorld)
+        .normalize(),
+      directions = cardanDirectionsFromCoordinates(inputDirection, coordinates),
+      currentThirdAxis = pose.thirdHinge.axis
+        .clone()
+        .transformDirection(layout.third.mesh.matrixWorld)
+        .normalize(),
+      currentFirstAxis = pose.firstHinge.axis
+        .clone()
+        .transformDirection(layout.first.mesh.matrixWorld)
+        .normalize(),
+      currentOutputDirection = pose.thirdOuter.local
+        .clone()
+        .sub(pose.thirdHinge.local)
+        .transformDirection(layout.third.mesh.matrixWorld)
+        .normalize(),
+      orientationSign =
+        currentFirstAxis.clone().cross(currentOutputDirection).dot(currentThirdAxis) < 0
+          ? -1
+          : 1,
+      thirdAxis = cardanSecondaryAxis(
+        directions.firstHingeAxis,
+        directions.outputDirection,
+        orientationSign,
+      );
+    if (!thirdAxis) {
+      setMessage(
+        language === "es"
+          ? "El cardán no puede alcanzar esa orientación: las bisagras quedarían alineadas"
+          : "The Cardan cannot reach that orientation because its hinges would align",
+      );
+      return;
+    }
+    const firstInputLocal = pose.firstHinge.local
+        .clone()
+        .sub(pose.firstOuter.local)
+        .normalize(),
+      thirdOutputLocal = pose.thirdOuter.local
+        .clone()
+        .sub(pose.thirdHinge.local)
+        .normalize(),
+      firstQuaternion = quaternionFromAxisPairs(
+        firstInputLocal,
+        pose.firstHinge.axis,
+        directions.inputDirection,
+        directions.firstHingeAxis,
+      ),
+      centreQuaternion = quaternionFromAxisPairs(
+        pose.centreFirst.axis,
+        pose.centreThird.axis,
+        directions.firstHingeAxis,
+        thirdAxis,
+      ),
+      thirdQuaternion = quaternionFromAxisPairs(
+        pose.thirdHinge.axis,
+        thirdOutputLocal,
+        thirdAxis,
+        directions.outputDirection,
+      ),
+      pivot = layout.centre.mesh.getWorldPosition(new THREE.Vector3()),
+      memberSet = new Set(members),
+      affected = new Set<Piece>();
+    state.recordHistory();
+    state.connections.forEach((connection) => {
+      const aInside = memberSet.has(connection.a),
+        bInside = memberSet.has(connection.b),
+        preservedExternal =
+          connection.a === layout.first ||
+          connection.b === layout.first ||
+          (coordinate === "roll" &&
+            (connection.a === layout.third || connection.b === layout.third));
+      if (aInside !== bInside && !preservedExternal)
+        affected.add(aInside ? connection.b : connection.a);
+    });
+    state.connections = state.connections.filter((connection) => {
+      const aInside = memberSet.has(connection.a),
+        bInside = memberSet.has(connection.b);
+      return (
+        aInside === bInside ||
+        connection.a === layout.first ||
+        connection.b === layout.first ||
+        (coordinate === "roll" &&
+          (connection.a === layout.third || connection.b === layout.third))
+      );
+    });
+    layout.first.mesh.quaternion.copy(firstQuaternion);
+    layout.first.mesh.position
+      .copy(pivot)
+      .sub(pose.firstHinge.local.clone().applyQuaternion(firstQuaternion));
+    layout.centre.mesh.quaternion.copy(centreQuaternion);
+    layout.centre.mesh.position
+      .copy(pivot)
+      .sub(pose.centreFirst.local.clone().applyQuaternion(centreQuaternion));
+    layout.third.mesh.quaternion.copy(thirdQuaternion);
+    layout.third.mesh.position
+      .copy(pivot)
+      .sub(pose.thirdHinge.local.clone().applyQuaternion(thirdQuaternion));
+    members.forEach((member) => member.mesh.updateMatrixWorld(true));
+    state.connections.forEach((connection) => {
+      if (!memberSet.has(connection.a) || !memberSet.has(connection.b)) return;
+      connection.point.copy(pivot);
+      connection.axis.copy(
+        connection.a === layout.first || connection.b === layout.first
+          ? directions.firstHingeAxis
+          : thirdAxis,
+      );
+    });
+    affected.forEach((member) => rebalanceSmartDefaults(state, member));
+    if (members.some((member) => member.renderBatched)) state.rebuildRenderBatches();
+    else state.renderBatchesDirty = true;
+    state.selected = layout.centre;
+    state.selectedPieces = new Set(members);
+    state.refreshDebug();
+    state.scheduleRecoverySave();
+    setConnectionRevision((value) => value + 1);
+    setConnectorRevision((value) => value + 1);
+    setSelectedId(layout.centre.id);
+    setMessage(
+      `${coordinate === "roll" ? (language === "es" ? "Giro del eje 1" : "Input roll") : language === "es" ? `Inclinación ${coordinate === "aimX" ? "X" : "Z"}` : `Aim ${coordinate === "aimX" ? "X" : "Z"}`} = ${degrees.toFixed(2)}°`,
     );
   };
 
@@ -9872,6 +10157,18 @@ export default function Home() {
     selected && appRef.current
       ? editorAssemblyMembers(appRef.current.pieces, selected)
       : [];
+  const selectedHasAdditionalPieces = appRef.current
+    ? [...appRef.current.selectedPieces].some(
+        (piece) => !selectedEditorAssembly.includes(piece),
+      )
+    : false;
+  const selectedCardanLayout =
+    appRef.current && !selectedHasAdditionalPieces
+      ? cardanAssemblyLayout(selectedEditorAssembly, appRef.current.connections)
+      : undefined;
+  const selectedCardanCoordinates = selectedCardanLayout
+    ? measureCardanCoordinates(selectedCardanLayout)
+    : undefined;
   const selectedRubberBand = selected
     ? appRef.current?.rubberBands.find((band) => band.owner === selected)
     : undefined;
@@ -9979,6 +10276,39 @@ export default function Home() {
       language === "es"
         ? `Conjunto separado: ${members.length} piezas independientes`
         : `Assembly separated: ${members.length} independent parts`,
+    );
+  };
+
+  const swapSelectedCardanReference = () => {
+    const state = appRef.current,
+      piece = state?.selected;
+    if (!state || !piece || running) return;
+    const layout = cardanAssemblyLayout(
+      editorAssemblyMembers(state.pieces, piece),
+      state.connections,
+    );
+    if (!layout) return;
+    if (layout.referenceLockedBySingleAxle) {
+      setMessage(
+        language === "es"
+          ? "La pieza 1 se elige automáticamente porque solo ese extremo está conectado a un eje"
+          : "End 1 is automatic because only that end is connected to an axle",
+      );
+      return;
+    }
+    state.recordHistory();
+    layout.centre.editorCardanReferenceConnector =
+      layout.referenceConnector === 0 ? 1 : 0;
+    state.selected = layout.centre;
+    state.selectedPieces = new Set(editorAssemblyMembers(state.pieces, layout.centre));
+    state.refreshDebug();
+    state.scheduleRecoverySave();
+    setConnectorRevision((value) => value + 1);
+    setSelectedId(layout.centre.id);
+    setMessage(
+      language === "es"
+        ? "Referencia del cardán intercambiada: el otro extremo es ahora la pieza 1"
+        : "Cardan reference swapped: the opposite end is now end 1",
     );
   };
 
@@ -12171,26 +12501,82 @@ export default function Home() {
                   />
                   <span>°</span>
                 </div>
-                <div className="transform-coordinate-grid rotation-coordinates">
-                  {(["x", "y", "z"] as const).map((axis) => (
-                    <label key={`rotation-${axis}`}>
-                      <span>{axis.toUpperCase()}°</span>
-                      <DeferredNumberInput
-                        value={THREE.MathUtils.radToDeg(selected.mesh.rotation[axis])}
-                        step={rotationSnapStep || 0.1}
-                        onCommit={(value) => setInspectorRotation(axis, value)}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="control-grid rotate">
-                  <button onClick={() => rotate("x")}>↻ X</button>
-                  <button onClick={() => rotate("y")}>↻ Y</button>
-                  <button onClick={() => rotate("z")}>↻ Z</button>
-                  <button onClick={() => rotate("x", -1)}>↺ X</button>
-                  <button onClick={() => rotate("y", -1)}>↺ Y</button>
-                  <button onClick={() => rotate("z", -1)}>↺ Z</button>
-                </div>
+                {selectedCardanCoordinates ? (
+                  <>
+                    <button
+                      className="cardan-reference-button"
+                      disabled={
+                        running || selectedCardanLayout?.referenceLockedBySingleAxle
+                      }
+                      onClick={swapSelectedCardanReference}
+                      title={
+                        selectedCardanLayout?.referenceLockedBySingleAxle
+                          ? language === "es"
+                            ? "Referencia automática por conexión exterior de eje"
+                            : "Reference selected automatically by the external axle connection"
+                          : undefined
+                      }
+                    >
+                      <span className="cardan-reference-dot" />
+                      {language === "es" ? "Cambiar pieza 1" : "Swap end 1"}
+                      {selectedCardanLayout?.referenceLockedBySingleAxle
+                        ? language === "es"
+                          ? " · automática"
+                          : " · automatic"
+                        : ""}
+                    </button>
+                    <p className="cardan-coordinate-note">
+                      {language === "es"
+                        ? "X y Z describen la dirección del extremo 3 respecto a la línea del extremo 1. El giro axial transmite la fase mediante las dos bisagras."
+                        : "X and Z describe end 3 relative to end 1. Axial roll transmits phase through both hinges."}
+                    </p>
+                    <div className="transform-coordinate-grid rotation-coordinates cardan-coordinates">
+                      {(
+                        [
+                          ["aimX", language === "es" ? "Inclinación X°" : "Aim X°"],
+                          ["aimZ", language === "es" ? "Inclinación Z°" : "Aim Z°"],
+                          ["roll", language === "es" ? "Giro eje 1°" : "Input roll°"],
+                        ] as const
+                      ).map(([coordinate, label]) => (
+                        <label key={`cardan-${coordinate}`}>
+                          <span>{label}</span>
+                          <DeferredNumberInput
+                            value={THREE.MathUtils.radToDeg(
+                              selectedCardanCoordinates[coordinate],
+                            )}
+                            step={rotationSnapStep || 0.1}
+                            onCommit={(value) =>
+                              setInspectorCardanCoordinate(coordinate, value)
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="transform-coordinate-grid rotation-coordinates">
+                      {(["x", "y", "z"] as const).map((axis) => (
+                        <label key={`rotation-${axis}`}>
+                          <span>{axis.toUpperCase()}°</span>
+                          <DeferredNumberInput
+                            value={THREE.MathUtils.radToDeg(selected.mesh.rotation[axis])}
+                            step={rotationSnapStep || 0.1}
+                            onCommit={(value) => setInspectorRotation(axis, value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="control-grid rotate">
+                      <button onClick={() => rotate("x")}>↻ X</button>
+                      <button onClick={() => rotate("y")}>↻ Y</button>
+                      <button onClick={() => rotate("z")}>↻ Z</button>
+                      <button onClick={() => rotate("x", -1)}>↺ X</button>
+                      <button onClick={() => rotate("y", -1)}>↺ Y</button>
+                      <button onClick={() => rotate("z", -1)}>↺ Z</button>
+                    </div>
+                  </>
+                )}
               </>
             )}
             {(isAxlePart(selected) ||

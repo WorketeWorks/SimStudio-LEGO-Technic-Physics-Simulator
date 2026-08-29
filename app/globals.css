@@ -3095,6 +3095,35 @@ body.resizing-inspector * {
   background: #202328;
   border-color: #4a5057;
 }
+.cardan-coordinate-note {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+.cardan-reference-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 7px 0 4px;
+}
+.cardan-reference-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid #8a6900;
+  border-radius: 50%;
+  background: #ffd83d;
+  box-shadow: 0 0 0 2px #ffd83d40;
+}
+.transform-coordinate-grid.cardan-coordinates {
+  grid-template-columns: 1fr;
+}
+.transform-coordinate-grid.cardan-coordinates label {
+  grid-template-columns: minmax(90px, auto) 1fr;
+}
 .renderer-setting {
   margin: 0 0 15px;
   border: 1px solid var(--line);

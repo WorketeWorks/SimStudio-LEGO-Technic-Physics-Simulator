@@ -53,6 +53,7 @@ export type SavedPiece = {
   dynamicAxleConnections: boolean;
   editorAssemblyId?: string;
   editorAssemblyDetached?: boolean;
+  editorCardanReferenceConnector?: 0 | 1;
   rotationPivotLocal?: [number, number, number];
   rotationPivotKey?: string;
   gearDirectionLock?: -1 | 0 | 1;
@@ -201,12 +202,7 @@ const unitQuaternion = (value: unknown): [number, number, number, number] => {
     ],
     length = Math.hypot(tuple[0], tuple[1], tuple[2], tuple[3]);
   if (!Number.isFinite(length) || length < 1e-7) return [0, 0, 0, 1];
-  return [
-    tuple[0] / length,
-    tuple[1] / length,
-    tuple[2] / length,
-    tuple[3] / length,
-  ];
+  return [tuple[0] / length, tuple[1] / length, tuple[2] / length, tuple[3] / length];
 };
 
 const positiveNumber = (value: unknown, fallback: number, minimum = 1e-4) =>
@@ -216,9 +212,7 @@ const optionalTuple3 = (value: unknown) =>
   Array.isArray(value) ? finiteTuple3(value) : undefined;
 
 const validDate = (value: unknown, fallback: string) =>
-  typeof value === "string" && Number.isFinite(Date.parse(value))
-    ? value
-    : fallback;
+  typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : fallback;
 
 const sanitizeProjectDocument = (
   document: Partial<SimStudioProjectDocument>,
@@ -227,41 +221,40 @@ const sanitizeProjectDocument = (
     rawPieces = Array.isArray(document.pieces) ? document.pieces : [],
     pieces: SavedPiece[] = rawPieces.map((rawPiece, pieceIndex) => {
       const piece = rawPiece as Partial<SavedPiece>,
-        connectors = (Array.isArray(piece.connectors)
-          ? piece.connectors
-          : []
-        ).map((rawConnector) => {
-          const connector = rawConnector as Partial<SavedConnector>;
-          return {
-            local: finiteTuple3(connector.local),
-            axis: unitTuple3(connector.axis),
-            kind:
-              connector.kind === "axle" || connector.kind === "half"
-                ? connector.kind
-                : "round",
-            role: connector.role === "shaft" ? "shaft" : "socket",
-            diameter: positiveNumber(connector.diameter, 0.48, 0.01),
-            length:
-              connector.length === undefined
-                ? undefined
-                : positiveNumber(connector.length, 0.5, 0.01),
-            rotationOnly: connector.rotationOnly === true || undefined,
-            connectionTarget:
-              connector.connectionTarget &&
-              typeof connector.connectionTarget.partId === "string"
-                ? {
-                    partId: connector.connectionTarget.partId.trim(),
-                    connectorId:
-                      typeof connector.connectionTarget.connectorId === "number" &&
-                      Number.isInteger(connector.connectionTarget.connectorId) &&
-                      connector.connectionTarget.connectorId > 0
-                        ? connector.connectionTarget.connectorId
-                        : undefined,
-                  }
-                : undefined,
-            singleConnection: connector.singleConnection === true || undefined,
-          } satisfies SavedConnector;
-        }),
+        connectors = (Array.isArray(piece.connectors) ? piece.connectors : []).map(
+          (rawConnector) => {
+            const connector = rawConnector as Partial<SavedConnector>;
+            return {
+              local: finiteTuple3(connector.local),
+              axis: unitTuple3(connector.axis),
+              kind:
+                connector.kind === "axle" || connector.kind === "half"
+                  ? connector.kind
+                  : "round",
+              role: connector.role === "shaft" ? "shaft" : "socket",
+              diameter: positiveNumber(connector.diameter, 0.48, 0.01),
+              length:
+                connector.length === undefined
+                  ? undefined
+                  : positiveNumber(connector.length, 0.5, 0.01),
+              rotationOnly: connector.rotationOnly === true || undefined,
+              connectionTarget:
+                connector.connectionTarget &&
+                typeof connector.connectionTarget.partId === "string"
+                  ? {
+                      partId: connector.connectionTarget.partId.trim(),
+                      connectorId:
+                        typeof connector.connectionTarget.connectorId === "number" &&
+                        Number.isInteger(connector.connectionTarget.connectorId) &&
+                        connector.connectionTarget.connectorId > 0
+                          ? connector.connectionTarget.connectorId
+                          : undefined,
+                    }
+                  : undefined,
+              singleConnection: connector.singleConnection === true || undefined,
+            } satisfies SavedConnector;
+          },
+        ),
         sanitizeCollider = (
           rawCollider: SavedCollisionPrimitive,
         ): SavedCollisionPrimitive => {
@@ -272,9 +265,9 @@ const sanitizeProjectDocument = (
             center: finiteTuple3(collider.center),
             size:
               shape === "box"
-                ? finiteTuple3(collider.size, [0.5, 0.5, 0.5]).map((size) =>
+                ? (finiteTuple3(collider.size, [0.5, 0.5, 0.5]).map((size) =>
                     Math.max(0.01, Math.abs(size)),
-                  ) as [number, number, number]
+                  ) as [number, number, number])
                 : undefined,
             radius:
               shape === "cylinder"
@@ -299,13 +292,8 @@ const sanitizeProjectDocument = (
         ) as [number, number, number];
       return {
         id:
-          typeof piece.id === "string" && piece.id
-            ? piece.id
-            : `piece-${pieceIndex + 1}`,
-        catalog:
-          piece.catalog && typeof piece.catalog === "object"
-            ? piece.catalog
-            : {},
+          typeof piece.id === "string" && piece.id ? piece.id : `piece-${pieceIndex + 1}`,
+        catalog: piece.catalog && typeof piece.catalog === "object" ? piece.catalog : {},
         asset: typeof piece.asset === "string" ? piece.asset : "",
         position: finiteTuple3(piece.position),
         rotation: unitQuaternion(piece.rotation),
@@ -318,11 +306,15 @@ const sanitizeProjectDocument = (
             ? piece.editorAssemblyId
             : undefined,
         editorAssemblyDetached: piece.editorAssemblyDetached === true || undefined,
+        editorCardanReferenceConnector:
+          piece.editorCardanReferenceConnector === 1
+            ? 1
+            : piece.editorCardanReferenceConnector === 0
+              ? 0
+              : undefined,
         rotationPivotLocal: optionalTuple3(piece.rotationPivotLocal),
         rotationPivotKey:
-          typeof piece.rotationPivotKey === "string"
-            ? piece.rotationPivotKey
-            : undefined,
+          typeof piece.rotationPivotKey === "string" ? piece.rotationPivotKey : undefined,
         gearDirectionLock:
           piece.gearDirectionLock === -1 || piece.gearDirectionLock === 1
             ? piece.gearDirectionLock
@@ -330,16 +322,18 @@ const sanitizeProjectDocument = (
         gearMotor:
           piece.gearMotor && typeof piece.gearMotor === "object"
             ? {
-                key: typeof piece.gearMotor.key === "string" ? piece.gearMotor.key : "KeyM",
-                speed: typeof piece.gearMotor.speed === "number" ? piece.gearMotor.speed : 8,
-                force: typeof piece.gearMotor.force === "number" ? piece.gearMotor.force : 20,
+                key:
+                  typeof piece.gearMotor.key === "string" ? piece.gearMotor.key : "KeyM",
+                speed:
+                  typeof piece.gearMotor.speed === "number" ? piece.gearMotor.speed : 8,
+                force:
+                  typeof piece.gearMotor.force === "number" ? piece.gearMotor.force : 20,
               }
             : undefined,
         connectors,
-        colliders: (Array.isArray(piece.colliders)
-          ? piece.colliders
-          : []
-        ).map(sanitizeCollider),
+        colliders: (Array.isArray(piece.colliders) ? piece.colliders : []).map(
+          sanitizeCollider,
+        ),
         gearColliders: (Array.isArray(piece.gearColliders)
           ? piece.gearColliders
           : []
@@ -359,9 +353,8 @@ const sanitizeProjectDocument = (
       "axle-cross",
       "axle-round",
     ],
-    connections = (Array.isArray(document.connections)
-      ? document.connections
-      : []
+    connections = (
+      Array.isArray(document.connections) ? document.connections : []
     ).flatMap((rawConnection, connectionIndex) => {
       const connection = rawConnection as Partial<SavedConnection>,
         a = typeof connection.a === "string" ? piecesById.get(connection.a) : undefined,
@@ -414,57 +407,55 @@ const sanitizeProjectDocument = (
       };
       return [saved];
     }),
-    gearLinks = (Array.isArray(document.gearLinks)
-      ? document.gearLinks
-      : []
-    ).flatMap((rawLink) => {
-      const link = rawLink as Partial<SavedGearLink>,
-        a = typeof link.a === "string" ? piecesById.get(link.a) : undefined,
-        b = typeof link.b === "string" ? piecesById.get(link.b) : undefined;
-      if (!a || !b || a === b) return [];
-      const sanitizeSpec = (
-        spec: SavedGearLink["specA"] | undefined,
-      ) => ({
-        teeth: Math.max(1, Math.trunc(finiteNumber(spec?.teeth, 1))),
-        kind: typeof spec?.kind === "string" ? spec.kind : "spur",
-        pitchRadius: positiveNumber(spec?.pitchRadius, 0.5, 0.01),
-      });
+    gearLinks = (Array.isArray(document.gearLinks) ? document.gearLinks : []).flatMap(
+      (rawLink) => {
+        const link = rawLink as Partial<SavedGearLink>,
+          a = typeof link.a === "string" ? piecesById.get(link.a) : undefined,
+          b = typeof link.b === "string" ? piecesById.get(link.b) : undefined;
+        if (!a || !b || a === b) return [];
+        const sanitizeSpec = (spec: SavedGearLink["specA"] | undefined) => ({
+          teeth: Math.max(1, Math.trunc(finiteNumber(spec?.teeth, 1))),
+          kind: typeof spec?.kind === "string" ? spec.kind : "spur",
+          pitchRadius: positiveNumber(spec?.pitchRadius, 0.5, 0.01),
+        });
+        return [
+          {
+            a: a.id,
+            b: b.id,
+            specA: sanitizeSpec(link.specA),
+            specB: sanitizeSpec(link.specB),
+            centerA: finiteTuple3(link.centerA),
+            centerB: finiteTuple3(link.centerB),
+            poseAxisA: unitTuple3(link.poseAxisA),
+            poseAxisB: unitTuple3(link.poseAxisB),
+            axisA: unitTuple3(link.axisA),
+            axisB: unitTuple3(link.axisB),
+            ratio: finiteNumber(link.ratio, -1),
+            centerDistance: Math.max(0, finiteNumber(link.centerDistance, 0)),
+            expectedDistance: Math.max(0, finiteNumber(link.expectedDistance, 0)),
+            distanceError: Math.max(0, finiteNumber(link.distanceError, 0)),
+            signB: finiteNumber(link.signB, 1) < 0 ? -1 : 1,
+            perpendicular: link.perpendicular === true,
+            ratioOverride:
+              typeof link.ratioOverride === "number" &&
+              Number.isFinite(link.ratioOverride) &&
+              link.ratioOverride > 0
+                ? link.ratioOverride
+                : undefined,
+          } satisfies SavedGearLink,
+        ];
+      },
+    ),
+    rubberBands = (
+      Array.isArray(document.rubberBands) ? document.rubberBands : []
+    ).flatMap((raw, index) => {
+      const band = raw as Partial<SavedRubberBand>;
+      const guides = Array.isArray(band.guides)
+        ? band.guides.map((guide) => finiteTuple3(guide))
+        : [];
+      if (guides.length < 3) return [];
       return [
         {
-          a: a.id,
-          b: b.id,
-          specA: sanitizeSpec(link.specA),
-          specB: sanitizeSpec(link.specB),
-          centerA: finiteTuple3(link.centerA),
-          centerB: finiteTuple3(link.centerB),
-          poseAxisA: unitTuple3(link.poseAxisA),
-          poseAxisB: unitTuple3(link.poseAxisB),
-          axisA: unitTuple3(link.axisA),
-          axisB: unitTuple3(link.axisB),
-          ratio: finiteNumber(link.ratio, -1),
-          centerDistance: Math.max(0, finiteNumber(link.centerDistance, 0)),
-          expectedDistance: Math.max(
-            0,
-            finiteNumber(link.expectedDistance, 0),
-          ),
-          distanceError: Math.max(0, finiteNumber(link.distanceError, 0)),
-          signB: finiteNumber(link.signB, 1) < 0 ? -1 : 1,
-          perpendicular: link.perpendicular === true,
-          ratioOverride:
-            typeof link.ratioOverride === "number" &&
-            Number.isFinite(link.ratioOverride) &&
-            link.ratioOverride > 0
-              ? link.ratioOverride
-              : undefined,
-        } satisfies SavedGearLink,
-      ];
-    }),
-    rubberBands = (Array.isArray(document.rubberBands) ? document.rubberBands : []).flatMap(
-      (raw, index) => {
-        const band = raw as Partial<SavedRubberBand>;
-        const guides = Array.isArray(band.guides) ? band.guides.map((guide) => finiteTuple3(guide)) : [];
-        if (guides.length < 3) return [];
-        return [{
           id: typeof band.id === "string" && band.id ? band.id : `rubber-${index + 1}`,
           pieceId: typeof band.pieceId === "string" ? band.pieceId : undefined,
           guides,
@@ -473,9 +464,9 @@ const sanitizeProjectDocument = (
           stiffness: Math.max(0, finiteNumber(band.stiffness, 95)),
           damping: Math.max(0, finiteNumber(band.damping, 3)),
           color: Math.max(0, Math.trunc(finiteNumber(band.color, 0x202020))),
-        } satisfies SavedRubberBand];
-      },
-    ),
+        } satisfies SavedRubberBand,
+      ];
+    }),
     mapBaselines = Object.fromEntries(
       Object.entries(
         document.mapBaselines && typeof document.mapBaselines === "object"
@@ -484,14 +475,12 @@ const sanitizeProjectDocument = (
       ).flatMap(([part, value]) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return [];
         const baseline = Object.fromEntries(
-          ["connectors", "colliders", "gearColliders", "specialGear"].flatMap(
-            (layer) => {
-              const fingerprint = (value as Record<string, unknown>)[layer];
-              return typeof fingerprint === "string" && fingerprint.length <= 80
-                ? [[layer, fingerprint]]
-                : [];
-            },
-          ),
+          ["connectors", "colliders", "gearColliders", "specialGear"].flatMap((layer) => {
+            const fingerprint = (value as Record<string, unknown>)[layer];
+            return typeof fingerprint === "string" && fingerprint.length <= 80
+              ? [[layer, fingerprint]]
+              : [];
+          }),
         ) as SavedMapBaseline;
         return Object.keys(baseline).length
           ? [[part.toLowerCase().slice(0, 80), baseline]]
@@ -522,8 +511,7 @@ const sanitizeProjectDocument = (
         : "Untitled mechanism",
     createdAt: validDate(document.createdAt, now),
     updatedAt: validDate(document.updatedAt, now),
-    appVersion:
-      typeof document.appVersion === "string" ? document.appVersion : "0.4",
+    appVersion: typeof document.appVersion === "string" ? document.appVersion : "0.4",
     revision:
       document.revision === undefined
         ? undefined
@@ -532,12 +520,9 @@ const sanitizeProjectDocument = (
       document.savedRevision === undefined
         ? undefined
         : document.savedRevision === null
-        ? null
-        : Math.max(0, Math.trunc(finiteNumber(document.savedRevision, 0))),
-    assets:
-      document.assets && typeof document.assets === "object"
-        ? document.assets
-        : {},
+          ? null
+          : Math.max(0, Math.trunc(finiteNumber(document.savedRevision, 0))),
+    assets: document.assets && typeof document.assets === "object" ? document.assets : {},
     pieces,
     connections,
     gearLinks,
@@ -677,9 +662,7 @@ export async function listBrowserProjects() {
       transaction.objectStore(META_STORE).getAll() as IDBRequest<ProjectSummary[]>,
     );
     await transactionDone(transaction);
-    return projects.sort((left, right) =>
-      right.updatedAt.localeCompare(left.updatedAt),
-    );
+    return projects.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   } finally {
     database.close();
   }
@@ -689,10 +672,7 @@ export async function saveBrowserProject(document: SimStudioProjectDocument) {
   const validated = validateProjectDocument(document);
   const database = await openDatabase();
   try {
-    const transaction = database.transaction(
-      [META_STORE, DOCUMENT_STORE],
-      "readwrite",
-    );
+    const transaction = database.transaction([META_STORE, DOCUMENT_STORE], "readwrite");
     transaction.objectStore(META_STORE).put(projectSummary(validated));
     transaction.objectStore(DOCUMENT_STORE).put({
       id: validated.id,
@@ -723,10 +703,7 @@ export async function loadBrowserProject(id: string) {
 export async function deleteBrowserProject(id: string) {
   const database = await openDatabase();
   try {
-    const transaction = database.transaction(
-      [META_STORE, DOCUMENT_STORE],
-      "readwrite",
-    );
+    const transaction = database.transaction([META_STORE, DOCUMENT_STORE], "readwrite");
     transaction.objectStore(META_STORE).delete(id);
     transaction.objectStore(DOCUMENT_STORE).delete(id);
     await transactionDone(transaction);
