@@ -285,6 +285,23 @@ header {
   max-height: 62px;
   object-fit: contain;
 }
+.compound-thumb img {
+  position: absolute;
+  max-width: 78%;
+}
+.compound-thumb .compound-thumb-secondary {
+  transform: translateY(-13px) scale(0.88);
+}
+.compound-thumb .compound-thumb-primary {
+  transform: translateY(12px) scale(0.88);
+  z-index: 1;
+}
+.compound-thumb.compound-thumb-top-primary .compound-thumb-secondary {
+  transform: translateY(12px) scale(0.88);
+}
+.compound-thumb.compound-thumb-top-primary .compound-thumb-primary {
+  transform: translateY(-13px) scale(0.88);
+}
 .thumb span {
   font-size: 25px;
   color: #9ca8af;

@@ -27,8 +27,7 @@ type Loop = {
   points: number;
   radialRatio: number;
 };
-const coord = (v: THREE.Vector3, i: number) =>
-  i === 0 ? v.x : i === 1 ? v.y : v.z;
+const coord = (v: THREE.Vector3, i: number) => (i === 0 ? v.x : i === 1 ? v.y : v.z);
 const vector = (axis: number, a: number, b: number, c: number) =>
   axis === 0
     ? new THREE.Vector3(a, b, c)
@@ -72,8 +71,7 @@ export function objectLocalTrimesh(root: THREE.Object3D): LocalTrimesh {
       vertices.push(point.x, point.y, point.z);
     }
     const index = object.geometry.index;
-    if (index)
-      for (let i = 0; i < index.count; i++) indices.push(base + index.getX(i));
+    if (index) for (let i = 0; i < index.count; i++) indices.push(base + index.getX(i));
     else for (let i = 0; i < position.count; i++) indices.push(base + i);
   });
   return {
@@ -161,9 +159,7 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
             ),
           ),
           maximumRadius = Math.max(...radii),
-          radialRatio = maximumRadius > 0
-            ? Math.min(...radii) / maximumRadius
-            : 1;
+          radialRatio = maximumRadius > 0 ? Math.min(...radii) / maximumRadius : 1;
         if (
           du < 0.32 ||
           dv < 0.32 ||
@@ -216,14 +212,8 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
       const start = center.clone(),
         end = center.clone(),
         margin = 0.08;
-      start.setComponent(
-        a.axisIndex,
-        Math.min(a.plane, b.plane) - margin,
-      );
-      end.setComponent(
-        a.axisIndex,
-        Math.max(a.plane, b.plane) + margin,
-      );
+      start.setComponent(a.axisIndex, Math.min(a.plane, b.plane) - margin);
+      end.setComponent(a.axisIndex, Math.max(a.plane, b.plane) + margin);
       const worldStart = root.localToWorld(start),
         worldEnd = root.localToWorld(end),
         worldDirection = worldEnd.clone().sub(worldStart),
@@ -240,9 +230,7 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
       if (centerLineBlocked) continue;
       if (
         !result.some(
-          (c) =>
-            c.local.distanceTo(center) < 0.12 &&
-            Math.abs(c.axis.dot(axis)) > 0.9,
+          (c) => c.local.distanceTo(center) < 0.12 && Math.abs(c.axis.dot(axis)) > 0.9,
         )
       )
         result.push({ local: center, axis, kind, role: "socket", diameter });
@@ -294,11 +282,11 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
     for (let u = minimumU; u <= maximumU; u++)
       for (let v = minimumV; v <= maximumV; v++) {
         const center = vector(
-          axisIndex,
-          (coord(bounds.min, axisIndex) + coord(bounds.max, axisIndex)) / 2,
-          u,
-          v,
-        ),
+            axisIndex,
+            (coord(bounds.min, axisIndex) + coord(bounds.max, axisIndex)) / 2,
+            u,
+            v,
+          ),
           existing = result.find(
             (connector) =>
               connector.local.distanceTo(center) < 0.18 &&
@@ -311,37 +299,16 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
           const angle = (sample * Math.PI) / 4,
             cosine = Math.cos(angle),
             sine = Math.sin(angle);
-          if (
-            probe(
-              center,
-              axisIndex,
-              uAxis,
-              vAxis,
-              cosine * 0.47,
-              sine * 0.47,
-            )
-          )
+          if (probe(center, axisIndex, uAxis, vAxis, cosine * 0.47, sine * 0.47))
             surroundingMaterial++;
-          if (
-            !probe(
-              center,
-              axisIndex,
-              uAxis,
-              vAxis,
-              cosine * 0.22,
-              sine * 0.22,
-            )
-          )
+          if (!probe(center, axisIndex, uAxis, vAxis, cosine * 0.22, sine * 0.22))
             innerOpening++;
         }
-        const kind: MeshConnector["kind"] =
-          innerOpening >= 7 ? "round" : "axle";
+        const kind: MeshConnector["kind"] = innerOpening >= 7 ? "round" : "axle";
         if (
           (kind === "round" && surroundingMaterial < 3) ||
           (kind === "axle" &&
-            (surroundingMaterial < 1 ||
-              innerOpening < 3 ||
-              innerOpening > 5))
+            (surroundingMaterial < 1 || innerOpening < 3 || innerOpening > 5))
         )
           continue;
         if (existing) {
@@ -372,11 +339,7 @@ export function fallbackBeamConnectors(
   const count = Math.max(1, Math.min(15, +match[1])),
     center = objectLocalBounds(root).getCenter(new THREE.Vector3());
   return Array.from({ length: count }, (_, i) => ({
-    local: new THREE.Vector3(
-      center.x,
-      center.y,
-      center.z + i - (count - 1) / 2,
-    ),
+    local: new THREE.Vector3(center.x, center.y, center.z + i - (count - 1) / 2),
     axis: new THREE.Vector3(1, 0, 0),
     kind: "round" as const,
     role: "socket" as const,
@@ -396,9 +359,7 @@ export function rodConnectors(
     axis = new THREE.Vector3();
   axis.setComponent(axisIndex, 1);
   const length = dimensions[axisIndex] * 0.94,
-    diameter = Math.max(
-      ...dimensions.filter((_, index) => index !== axisIndex),
-    );
+    diameter = Math.max(...dimensions.filter((_, index) => index !== axisIndex));
   if (kind === "axle")
     return [{ local: center, axis, kind, role: "shaft", diameter, length }];
   const studs = Math.max(2, Math.round(length)),
@@ -428,11 +389,22 @@ export function hybridAxlePinConnectors(root: THREE.Object3D): MeshConnector[] {
 }
 
 export type CollisionPrimitive = {
-  shape: "box" | "cylinder";
+  shape: "box" | "cylinder" | "sphere" | "hollowCylinder" | "arc";
   center: THREE.Vector3;
   size?: THREE.Vector3;
   radius?: number;
+  /** Inner radius for hollow cylinders and annular arcs. */
+  innerRadius?: number;
   halfHeight?: number;
+  /** Arc start and sweep in degrees. */
+  startAngle?: number;
+  arcAngle?: number;
+  /** Three X/Z points defining the arc centreline. */
+  arcPoints?: [[number, number], [number, number], [number, number]];
+  /** Radial width around the three-point arc centreline. */
+  arcThickness?: number;
+  /** Convex segments used by the physical hollow/arc approximation. */
+  segments?: number;
   rotation: THREE.Quaternion;
   /** Allows this normal (green) collider to hit another gear's green layer. */
   gearCollision?: boolean;
@@ -453,9 +425,7 @@ export function straightAxleStudLength(name: string) {
 }
 
 /** Reviewed cross-axle map template exported from Sim Studio. */
-export function straightAxleConnectors(
-  name: string,
-): MeshConnector[] | undefined {
+export function straightAxleConnectors(name: string): MeshConnector[] | undefined {
   const length = straightAxleStudLength(name);
   if (!length) return undefined;
   return [
@@ -515,19 +485,13 @@ export function approximateCollisionPrimitives(
     axisIndex = dimensions.indexOf(Math.max(...dimensions)),
     longAxis = new THREE.Vector3(),
     beamOrPanel = /^Technic (Beam|Panel)/i.test(name),
-    beamThickness = /(?:\bx\s*0\.5\b|\b0\.5\b|\bhalf\b)/i.test(name)
-      ? 0.5
-      : 1;
+    beamThickness = /(?:\bx\s*0\.5\b|\b0\.5\b|\bhalf\b)/i.test(name) ? 0.5 : 1;
   longAxis.setComponent(axisIndex, 1);
   if (/^Technic (Axle|Pin)/i.test(name)) {
     const others = dimensions.filter((_, index) => index !== axisIndex),
-      axleConnectorShell = /^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(
-        name,
-      ),
+      axleConnectorShell = /^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(name),
       actualRadius = Math.min(...others) / 2,
-      radius = axleConnectorShell
-        ? 0.475
-        : Math.max(0.12, actualRadius * 0.82),
+      radius = axleConnectorShell ? 0.475 : Math.max(0.12, actualRadius * 0.82),
       length = dimensions[axisIndex] * (axleConnectorShell ? 0.95 : 0.94),
       rotation = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
@@ -600,9 +564,7 @@ export function approximateCollisionPrimitives(
           )
         )
           continue;
-        const projections = indices.map((index) =>
-            points[index].dot(direction),
-          ),
+        const projections = indices.map((index) => points[index].dot(direction)),
           minimum = Math.min(...projections),
           maximum = Math.max(...projections),
           origin = direction.clone().multiplyScalar((minimum + maximum) / 2);
@@ -617,16 +579,11 @@ export function approximateCollisionPrimitives(
           span: maximum - minimum,
         });
       }
-    candidates.sort(
-      (a, b) => b.indices.length - a.indices.length || a.span - b.span,
-    );
+    candidates.sort((a, b) => b.indices.length - a.indices.length || a.span - b.span);
     const chosen: Candidate[] = [],
       covered = new Set<number>();
     for (const candidate of candidates) {
-      if (
-        candidate.indices.some((index) => !covered.has(index)) ||
-        chosen.length === 0
-      ) {
+      if (candidate.indices.some((index) => !covered.has(index)) || chosen.length === 0) {
         chosen.push(candidate);
         candidate.indices.forEach((index) => covered.add(index));
       }
@@ -667,18 +624,12 @@ export function approximateCollisionPrimitives(
         result.push({
           shape: "box",
           center: line.origin.clone(),
-          size: new THREE.Vector3(
-            line.span,
-            colliderDepth,
-            colliderHeight,
-          ),
+          size: new THREE.Vector3(line.span, colliderDepth, colliderHeight),
           rotation,
         });
       }
       for (let index = 0; index < points.length; index++) {
-        const memberships = chosen.filter((line) =>
-          line.indices.includes(index),
-        );
+        const memberships = chosen.filter((line) => line.indices.includes(index));
         if (memberships.length > 1) keyIndices.add(index);
       }
       for (const index of keyIndices) {
@@ -719,11 +670,10 @@ export function approximateCollisionPrimitives(
           ),
         },
       ];
-    const
-      crossSection = Math.max(
-        0.42,
-        Math.min(0.72, [...dimensions].sort((a, b) => a - b)[1] * 0.72),
-      );
+    const crossSection = Math.max(
+      0.42,
+      Math.min(0.72, [...dimensions].sort((a, b) => a - b)[1] * 0.72),
+    );
     return [
       {
         shape: "box",
@@ -758,12 +708,27 @@ export function approximateGearCollisionPrimitives(
   colliders: CollisionPrimitive[],
 ): CollisionPrimitive[] {
   return colliders.map((primitive) => {
-    if (primitive.shape === "cylinder")
+    if (primitive.shape !== "box")
       return {
         ...primitive,
         center: primitive.center.clone(),
         radius: Math.max(0.01, (primitive.radius ?? 0.5) * 0.88),
-        halfHeight: Math.max(0.01, (primitive.halfHeight ?? 0.5) * 0.96),
+        innerRadius:
+          primitive.innerRadius === undefined
+            ? undefined
+            : Math.max(0.01, primitive.innerRadius * 0.88),
+        arcPoints: primitive.arcPoints?.map((point) => [
+          point[0] * 0.88,
+          point[1] * 0.88,
+        ]) as CollisionPrimitive["arcPoints"],
+        arcThickness:
+          primitive.arcThickness === undefined
+            ? undefined
+            : Math.max(0.01, primitive.arcThickness * 0.88),
+        halfHeight:
+          primitive.halfHeight === undefined
+            ? undefined
+            : Math.max(0.01, primitive.halfHeight * 0.96),
         rotation: primitive.rotation.clone(),
       };
     const size = primitive.size?.clone() ?? new THREE.Vector3(1, 1, 1),

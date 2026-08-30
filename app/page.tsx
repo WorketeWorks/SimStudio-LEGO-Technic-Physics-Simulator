@@ -27,6 +27,11 @@ import {
   type MeshConnector,
 } from "./connectors";
 import {
+  annularCollisionSegments,
+  arcCollisionControlPoints,
+  type ArcControlPoints,
+} from "./collision-primitives";
+import {
   automaticConnectorMatchIsBetter,
   connectorAcceptsAdditionalConnection,
   connectorPoliciesCompatible,
@@ -260,12 +265,64 @@ const runtimeConnectorFromStored = (value: unknown): MeshConnector => {
 };
 
 const runtimeColliderFromStored = (value: unknown): CollisionPrimitive => {
-  const collider = value as SavedCollisionPrimitive;
+  const collider = value as SavedCollisionPrimitive & { gearColision?: boolean };
+  if (
+    !["box", "cylinder", "sphere", "hollowCylinder", "arc"].includes(collider.shape) ||
+    !Array.isArray(collider.center) ||
+    collider.center.length < 3 ||
+    !Array.isArray(collider.rotation) ||
+    collider.rotation.length < 4
+  )
+    throw new Error("Collider incorrecto");
+  const radial = collider.shape !== "box";
+  const hollow = collider.shape === "hollowCylinder" || collider.shape === "arc";
+  const outerRadius = radial ? Math.max(0.02, collider.radius ?? 0.5) : undefined;
   return {
     ...collider,
     center: new THREE.Vector3().fromArray(collider.center),
-    size: collider.size ? new THREE.Vector3().fromArray(collider.size) : undefined,
+    size:
+      collider.shape === "box"
+        ? new THREE.Vector3()
+            .fromArray(collider.size ?? [1, 1, 1])
+            .max(new THREE.Vector3(0.01, 0.01, 0.01))
+        : undefined,
+    radius: outerRadius,
+    innerRadius: hollow
+      ? THREE.MathUtils.clamp(
+          collider.innerRadius ?? (outerRadius ?? 0.5) * 0.55,
+          0.01,
+          (outerRadius ?? 0.5) - 0.01,
+        )
+      : undefined,
+    halfHeight:
+      collider.shape === "cylinder" || hollow
+        ? Math.max(0.01, collider.halfHeight ?? 0.5)
+        : undefined,
+    startAngle: collider.shape === "arc" ? (collider.startAngle ?? 0) : undefined,
+    arcAngle:
+      collider.shape === "arc"
+        ? THREE.MathUtils.clamp(collider.arcAngle ?? 90, -360, 360) || 1
+        : undefined,
+    arcPoints:
+      collider.shape === "arc" && Array.isArray(collider.arcPoints)
+        ? (collider.arcPoints.map((point) => [
+            Number(point[0]),
+            Number(point[1]),
+          ]) as ArcControlPoints)
+        : undefined,
+    arcThickness:
+      collider.shape === "arc"
+        ? Math.max(
+            0.01,
+            collider.arcThickness ??
+              (outerRadius ?? 0.5) - (collider.innerRadius ?? 0.25),
+          )
+        : undefined,
+    segments: hollow
+      ? THREE.MathUtils.clamp(Math.round(collider.segments ?? 24), 1, 64)
+      : undefined,
     rotation: new THREE.Quaternion().fromArray(collider.rotation),
+    gearCollision: collider.gearCollision === true || collider.gearColision === true,
   };
 };
 
@@ -286,21 +343,33 @@ const packagedParts = preloadedCatalog.parts as Record<
       singleConnection?: boolean;
     }[];
     colliders: {
-      shape: "box" | "cylinder";
+      shape: CollisionPrimitive["shape"];
       center: number[];
       size?: number[];
       radius?: number;
+      innerRadius?: number;
       halfHeight?: number;
+      startAngle?: number;
+      arcAngle?: number;
+      arcPoints?: ArcControlPoints;
+      arcThickness?: number;
+      segments?: number;
       rotation: number[];
       gearCollision?: boolean;
       gearRatio?: number;
     }[];
     gearColliders?: {
-      shape: "box" | "cylinder";
+      shape: CollisionPrimitive["shape"];
       center: number[];
       size?: number[];
       radius?: number;
+      innerRadius?: number;
       halfHeight?: number;
+      startAngle?: number;
+      arcAngle?: number;
+      arcPoints?: ArcControlPoints;
+      arcThickness?: number;
+      segments?: number;
       rotation: number[];
       gearCollision?: boolean;
       gearRatio?: number;
@@ -377,8 +446,7 @@ const editorTransformPivot = (
   members = editorTransformMembers(state, selected),
 ) => {
   const cardan = cardanAssemblyLayout(members, state.connections);
-  if (cardan)
-    return cardan.centre.mesh.getWorldPosition(new THREE.Vector3());
+  if (cardan) return cardan.centre.mesh.getWorldPosition(new THREE.Vector3());
   selected.mesh.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(selected.mesh);
   return bounds.isEmpty()
@@ -396,7 +464,28 @@ const nonPhysicalGearParts = new Set([
   "4159",
   "7445",
   "7446",
+  // These are the fixed/captive halves of complete turntables. They remain
+  // listed under Gears, while only their matching upper half meshes gears.
+  "99009",
+  "18939",
 ]);
+const turntableCounterpart: Record<string, string> = {
+  "99009": "99010",
+  "18938u": "18939",
+};
+// Turntable halves share the same LDraw origin and are assembled there.
+const turntableCounterpartOffset: Record<string, THREE.Vector3> = {
+  "99009": new THREE.Vector3(),
+  "18938u": new THREE.Vector3(),
+};
+const compoundPreviewThumb: Record<string, string> = {
+  "99009": "/catalog/renders/99010.png",
+  "18938u": "/catalog/renders/18939.png",
+};
+const compoundPreviewColor: Record<string, number> = {
+  "99009": 0,
+  "18938u": 71,
+};
 const correctionPartKeys = (
   p: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">,
 ) => [
@@ -2035,48 +2124,18 @@ export default function Home() {
         try {
           const saved = localStorage.getItem(`sim-colliders-v1:${correctionStorageKey}`);
           if (saved) {
-            const stored = JSON.parse(saved) as {
-              shape: "box" | "cylinder";
-              center: number[];
-              size?: number[];
-              radius?: number;
-              halfHeight?: number;
-              rotation: number[];
-              gearCollision?: boolean;
-              gearColision?: boolean;
-              gearRatio?: number;
-            }[];
+            const stored = JSON.parse(saved) as SavedCollisionPrimitive[];
             if (Array.isArray(stored))
               colliders = stored
                 .filter(
                   (primitive) =>
-                    (primitive.shape === "box" || primitive.shape === "cylinder") &&
+                    ["box", "cylinder", "sphere", "hollowCylinder", "arc"].includes(
+                      primitive.shape,
+                    ) &&
                     primitive.center?.length >= 3 &&
                     primitive.rotation?.length >= 4,
                 )
-                .map((primitive) => ({
-                  shape: primitive.shape,
-                  center: new THREE.Vector3().fromArray(primitive.center),
-                  size:
-                    primitive.shape === "box" && primitive.size?.length === 3
-                      ? new THREE.Vector3().fromArray(primitive.size)
-                      : undefined,
-                  radius:
-                    primitive.shape === "cylinder"
-                      ? Math.max(0.01, primitive.radius ?? 0.5)
-                      : undefined,
-                  halfHeight:
-                    primitive.shape === "cylinder"
-                      ? Math.max(0.01, primitive.halfHeight ?? 0.5)
-                      : undefined,
-                  rotation: new THREE.Quaternion().fromArray(primitive.rotation),
-                  gearCollision:
-                    primitive.gearCollision === true || primitive.gearColision === true,
-                  gearRatio:
-                    Number.isFinite(primitive.gearRatio) && primitive.gearRatio! > 0
-                      ? primitive.gearRatio
-                      : undefined,
-                }));
+                .map(runtimeColliderFromStored);
           }
         } catch {}
       if (!colliders && preloadedCollisions)
@@ -2134,23 +2193,8 @@ export default function Home() {
             `sim-gear-colliders-v1:${correctionStorageKey}`,
           );
           if (saved) {
-            const rows = JSON.parse(saved) as {
-              shape: "box" | "cylinder";
-              center: number[];
-              size?: number[];
-              radius?: number;
-              halfHeight?: number;
-              rotation: number[];
-            }[];
-            if (Array.isArray(rows))
-              gearColliders = rows.map((primitive) => ({
-                ...primitive,
-                center: new THREE.Vector3().fromArray(primitive.center),
-                size: primitive.size
-                  ? new THREE.Vector3().fromArray(primitive.size)
-                  : undefined,
-                rotation: new THREE.Quaternion().fromArray(primitive.rotation),
-              }));
+            const rows = JSON.parse(saved) as SavedCollisionPrimitive[];
+            if (Array.isArray(rows)) gearColliders = rows.map(runtimeColliderFromStored);
           }
         } catch {}
         if (!gearColliders.length && preloadedGearCollisions)
@@ -2627,30 +2671,71 @@ export default function Home() {
             })),
           ];
           for (const { primitive, gearLayer } of debugColliders) {
-            const geometry =
-              primitive.shape === "box"
-                ? new THREE.BoxGeometry(
-                    primitive.size!.x,
-                    primitive.size!.y,
-                    primitive.size!.z,
-                  )
-                : new THREE.CylinderGeometry(
-                    primitive.radius!,
-                    primitive.radius!,
-                    primitive.halfHeight! * 2,
-                    12,
-                  );
-            const helper = new THREE.Mesh(
-              geometry,
-              new THREE.MeshBasicMaterial({
+            const material = new THREE.MeshBasicMaterial({
                 color: gearLayer ? 0xff4fa3 : piece.fixed ? 0xffc928 : 0x3dff78,
                 wireframe: true,
                 transparent: true,
                 opacity: 0.72,
                 depthTest: false,
               }),
-            );
+              helper = new THREE.Group();
+            if (primitive.shape === "box")
+              helper.add(
+                new THREE.Mesh(
+                  new THREE.BoxGeometry(
+                    primitive.size!.x,
+                    primitive.size!.y,
+                    primitive.size!.z,
+                  ),
+                  material,
+                ),
+              );
+            else if (primitive.shape === "sphere")
+              helper.add(
+                new THREE.Mesh(
+                  new THREE.SphereGeometry(primitive.radius!, 18, 12),
+                  material,
+                ),
+              );
+            else if (primitive.shape === "cylinder")
+              helper.add(
+                new THREE.Mesh(
+                  new THREE.CylinderGeometry(
+                    primitive.radius!,
+                    primitive.radius!,
+                    primitive.halfHeight! * 2,
+                    18,
+                  ),
+                  material,
+                ),
+              );
+            else {
+              for (const segment of annularCollisionSegments(primitive)) {
+                const mesh = new THREE.Mesh(
+                  new THREE.BoxGeometry(segment.size.x, segment.size.y, segment.size.z),
+                  material,
+                );
+                mesh.position.copy(segment.center);
+                mesh.quaternion.copy(segment.rotation);
+                helper.add(mesh);
+              }
+              if (primitive.shape === "arc")
+                arcCollisionControlPoints(primitive).forEach((point, pointIndex) => {
+                  const marker = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.065, 10, 8),
+                    new THREE.MeshBasicMaterial({
+                      color: [0x35d7ff, 0xffd43b, 0xff6b74][pointIndex],
+                      depthTest: false,
+                    }),
+                  );
+                  marker.position.set(point[0], 0, point[1]);
+                  helper.add(marker);
+                });
+            }
             helper.renderOrder = 40;
+            helper.traverse((child) => {
+              child.renderOrder = 40;
+            });
             helper.userData = {
               debugKind: "collider",
               piece,
@@ -3491,6 +3576,84 @@ export default function Home() {
       position: THREE.Vector3,
       rotation?: THREE.Quaternion,
     ): Promise<Piece | null> => {
+      const counterpartId = turntableCounterpart[p.part.toLowerCase()];
+      if (counterpartId && !p.embeddedGeometry && !state.bulkLoading) {
+        const counterpartCatalog = paletteParts.find(
+          (part) => part.part.toLowerCase() === counterpartId,
+        );
+        if (!counterpartCatalog) return null;
+        const wasBulkLoading = state.bulkLoading,
+          baseRotation = rotation?.clone() ?? new THREE.Quaternion();
+        state.bulkLoading = true;
+        try {
+          const primary = await addPart(p, position.clone(), baseRotation),
+            counterpart = await addPart(
+              counterpartCatalog,
+              position.clone().add(turntableCounterpartOffset[p.part.toLowerCase()]),
+              baseRotation,
+            );
+          if (!primary || !counterpart) return null;
+          const assembly = [primary, counterpart],
+            editorAssemblyId = `turntable-${primary.id}`;
+          assembly.forEach((piece) => {
+            piece.editorAssemblyId = editorAssemblyId;
+            piece.editorAssemblyDetached = undefined;
+          });
+          if (!rotation) {
+            const bounds = new THREE.Box3();
+            assembly.forEach((piece) => bounds.expandByObject(piece.mesh));
+            const lift = -bounds.min.y;
+            assembly.forEach((piece) => {
+              piece.mesh.position.y += lift;
+              piece.mesh.updateMatrixWorld(true);
+            });
+          }
+          assembly.forEach((piece) => {
+            piece.mesh.visible = true;
+            verifyPieceConnections(piece, false);
+          });
+          // These parts are inserted as a closed assembly. Add their dedicated
+          // central pivot directly instead of relying on the broad auto-scan.
+          const primaryJoint = primary.connectors.find(
+              (connector) =>
+                connector.connectionTarget?.partId.toLowerCase() ===
+                counterpart.part.toLowerCase(),
+            ),
+            counterpartJoint = counterpart.connectors.find(
+              (connector) =>
+                connector.connectionTarget?.partId.toLowerCase() ===
+                primary.part.toLowerCase(),
+            );
+          if (primaryJoint && counterpartJoint) {
+            const socketPiece =
+                primaryJoint.role === "socket" ? primary : counterpart,
+              socket = primaryJoint.role === "socket" ? primaryJoint : counterpartJoint,
+              shaftPiece =
+                primaryJoint.role === "shaft" ? primary : counterpart,
+              shaft = primaryJoint.role === "shaft" ? primaryJoint : counterpartJoint;
+            addConnection(socketPiece, shaftPiece, socket, shaft, {
+              point: worldConnector(socketPiece, socket).point,
+              axis: worldConnector(socketPiece, socket).axis,
+              localAxisA: socket.axis.clone().normalize(),
+            });
+          }
+          // The pair is already snapped through its dedicated centre joint.
+          primary.mesh.userData.skipNextPlacementConnect = true;
+          return primary;
+        } finally {
+          state.bulkLoading = wasBulkLoading;
+          if (!wasBulkLoading) {
+            setCount(state.pieces.length);
+            setMessage(
+              language === "es"
+                ? `${p.part} · Plataforma giratoria completa de 2 piezas`
+                : `${p.part} · Complete 2-piece turntable`,
+            );
+            refreshDebug();
+            scheduleRenderBatchRebuild();
+          }
+        }
+      }
       if (p.part.toLowerCase() === "61903" && !p.embeddedGeometry) {
         const endCatalog = paletteParts.find((part) => part.part === "62520"),
           centreCatalog = paletteParts.find((part) => part.part === "62519");
@@ -5128,8 +5291,8 @@ export default function Home() {
       )
         return undefined;
       const hits = ray
-        .intersectObject(transformGizmoRoot, true)
-        .filter((candidate) => candidate.object.userData.gizmo),
+          .intersectObject(transformGizmoRoot, true)
+          .filter((candidate) => candidate.object.userData.gizmo),
         hit =
           hits.find((candidate) =>
             String(candidate.object.userData.gizmo).startsWith("move-"),
@@ -5579,11 +5742,17 @@ export default function Home() {
             halfSize =
               primitive.shape === "box"
                 ? primitive.size!.clone().multiplyScalar(0.5)
-                : new THREE.Vector3(
-                    primitive.radius!,
-                    primitive.halfHeight!,
-                    primitive.radius!,
-                  ),
+                : primitive.shape === "sphere"
+                  ? new THREE.Vector3(
+                      primitive.radius!,
+                      primitive.radius!,
+                      primitive.radius!,
+                    )
+                  : new THREE.Vector3(
+                      primitive.radius!,
+                      primitive.halfHeight!,
+                      primitive.radius!,
+                    ),
             localHit = localRay.intersectBox(
               new THREE.Box3(halfSize.clone().negate(), halfSize),
               new THREE.Vector3(),
@@ -6110,7 +6279,14 @@ export default function Home() {
         center: tuple3(collider.center),
         size: collider.size ? tuple3(collider.size) : undefined,
         radius: collider.radius,
+        innerRadius: collider.innerRadius,
         halfHeight: collider.halfHeight,
+        startAngle: collider.startAngle,
+        arcAngle: collider.arcAngle,
+        arcPoints: collider.arcPoints?.map((point) => [...point]) as
+          ArcControlPoints | undefined,
+        arcThickness: collider.arcThickness,
+        segments: collider.segments,
         rotation: tuple4(collider.rotation),
         gearCollision: collider.gearCollision,
         gearRatio: collider.gearRatio,
@@ -6753,12 +6929,7 @@ export default function Home() {
       cast(e);
       const pointerPieceHit = pickPiece(),
         gizmoHandle = pickTransformGizmo(e);
-      if (
-        gizmoHandle &&
-        e.button === 0 &&
-        !e.ctrlKey &&
-        !rotationPivotHeld
-      ) {
+      if (gizmoHandle && e.button === 0 && !e.ctrlKey && !rotationPivotHeld) {
         beginGizmoDrag(e, gizmoHandle);
         return;
       }
@@ -8320,24 +8491,24 @@ export default function Home() {
       }
       const interactionActive = Boolean(
         orbit ||
-          pan ||
-          moving ||
-          gizmoDrag ||
-          pivotRotate ||
-          aimRotation ||
-          rubberGuideDrag ||
-          spring?.dragged,
+        pan ||
+        moving ||
+        gizmoDrag ||
+        pivotRotate ||
+        aimRotation ||
+        rubberGuideDrag ||
+        spring?.dragged,
       );
       const pieceTransformsMayHaveChanged = Boolean(
         state.running ||
-          renderRequested ||
-          state.renderBatchesDirty ||
-          moving ||
-          gizmoDrag ||
-          pivotRotate ||
-          aimRotation ||
-          rubberGuideDrag ||
-          spring?.dragged,
+        renderRequested ||
+        state.renderBatchesDirty ||
+        moving ||
+        gizmoDrag ||
+        pivotRotate ||
+        aimRotation ||
+        rubberGuideDrag ||
+        spring?.dragged,
       );
       if (
         !state.running &&
@@ -9061,16 +9232,11 @@ export default function Home() {
         appliedRadians = step
           ? Math.round((current + radians) / step) * step - current
           : radians,
-        worldAxis = localAxis
-          .clone()
-          .transformDirection(p.mesh.matrixWorld)
-          .normalize(),
+        worldAxis = localAxis.clone().transformDirection(p.mesh.matrixWorld).normalize(),
         pivot = editorTransformPivot(s, p, members);
       transform = new THREE.Matrix4()
         .makeTranslation(pivot.x, pivot.y, pivot.z)
-        .multiply(
-          new THREE.Matrix4().makeRotationAxis(worldAxis, appliedRadians),
-        )
+        .multiply(new THREE.Matrix4().makeRotationAxis(worldAxis, appliedRadians))
         .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
     } else {
       const before = p.mesh.matrix.clone();
@@ -9112,8 +9278,7 @@ export default function Home() {
     else s.renderBatchesDirty = true;
     s.refreshDebug();
     s.scheduleRecoverySave();
-    if (disconnected || members.length > 1)
-      setConnectionRevision((value) => value + 1);
+    if (disconnected || members.length > 1) setConnectionRevision((value) => value + 1);
     if (members.length > 1) setConnectorRevision((value) => value + 1);
     setSelectedId(p.id);
     if (disconnected)
@@ -9141,8 +9306,7 @@ export default function Home() {
     s.connections.forEach((connection) => {
       const aInside = memberSet.has(connection.a),
         bInside = memberSet.has(connection.b);
-      if (aInside && bInside)
-        connection.point.add(delta);
+      if (aInside && bInside) connection.point.add(delta);
       else if (aInside !== bInside) affected.add(aInside ? connection.b : connection.a);
     });
     s.connections = s.connections.filter(
@@ -11006,6 +11170,8 @@ export default function Home() {
       ...primitive,
       center: primitive.center.clone(),
       size: primitive.size?.clone(),
+      arcPoints: primitive.arcPoints?.map((point) => [...point]) as
+        ArcControlPoints | undefined,
       rotation: primitive.rotation.clone(),
     }),
     colliderData = (colliders: CollisionPrimitive[]) =>
@@ -11014,7 +11180,13 @@ export default function Home() {
         center: primitive.center.toArray(),
         size: primitive.size?.toArray(),
         radius: primitive.radius,
+        innerRadius: primitive.innerRadius,
         halfHeight: primitive.halfHeight,
+        startAngle: primitive.startAngle,
+        arcAngle: primitive.arcAngle,
+        arcPoints: primitive.arcPoints,
+        arcThickness: primitive.arcThickness,
+        segments: primitive.segments,
         rotation: primitive.rotation.toArray(),
         gearCollision: primitive.gearCollision,
         gearRatio: primitive.gearRatio,
@@ -11062,27 +11234,28 @@ export default function Home() {
   const addCollider = (shape: CollisionPrimitive["shape"]) => {
     if (!selected || running) return;
     const next = selectedCollisionPrimitives.map(cloneCollider);
-    next.push(
-      shape === "box"
-        ? {
-            shape,
-            center: new THREE.Vector3(),
-            size: new THREE.Vector3(1, 1, 1),
-            rotation: new THREE.Quaternion(),
-          }
-        : {
-            shape,
-            center: new THREE.Vector3(),
-            radius: 0.5,
-            halfHeight: 0.5,
-            rotation: new THREE.Quaternion(),
-          },
-    );
-    commitCollisionMap(
-      selected,
-      next,
-      `Mapa ${selected.part}: ${shape === "box" ? "caja" : "cilindro"} añadido`,
-    );
+    const primitive: CollisionPrimitive = {
+      shape,
+      center: new THREE.Vector3(),
+      rotation: new THREE.Quaternion(),
+    };
+    if (shape === "box") primitive.size = new THREE.Vector3(1, 1, 1);
+    else {
+      primitive.radius = shape === "sphere" || shape === "cylinder" ? 0.5 : 0.6;
+      if (shape !== "sphere") primitive.halfHeight = 0.5;
+      if (shape === "hollowCylinder" || shape === "arc") {
+        primitive.innerRadius = 0.35;
+        primitive.segments = shape === "arc" ? 8 : 24;
+      }
+      if (shape === "arc") {
+        primitive.startAngle = 0;
+        primitive.arcAngle = 90;
+        primitive.arcPoints = arcCollisionControlPoints(primitive);
+        primitive.arcThickness = 0.25;
+      }
+    }
+    next.push(primitive);
+    commitCollisionMap(selected, next, `Mapa ${selected.part}: collider añadido`);
   };
 
   const setSpecialGear = (enabled: boolean) => {
@@ -11127,7 +11300,19 @@ export default function Home() {
 
   const updateCollider = (
     index: number,
-    field: "shape" | "center" | "size" | "rotation" | "radius" | "halfHeight",
+    field:
+      | "shape"
+      | "center"
+      | "size"
+      | "rotation"
+      | "radius"
+      | "innerRadius"
+      | "halfHeight"
+      | "startAngle"
+      | "arcAngle"
+      | "arcPoint"
+      | "arcThickness"
+      | "segments",
     value: string,
     component = 0,
   ) => {
@@ -11140,18 +11325,81 @@ export default function Home() {
       if (primitive.shape === "box") {
         primitive.size ??= new THREE.Vector3(1, 1, 1);
         primitive.radius = undefined;
+        primitive.innerRadius = undefined;
         primitive.halfHeight = undefined;
+        primitive.startAngle = undefined;
+        primitive.arcAngle = undefined;
+        primitive.arcPoints = undefined;
+        primitive.arcThickness = undefined;
+        primitive.segments = undefined;
       } else {
         primitive.size = undefined;
         primitive.radius ??= 0.5;
-        primitive.halfHeight ??= 0.5;
+        if (primitive.shape === "sphere") {
+          primitive.innerRadius = undefined;
+          primitive.halfHeight = undefined;
+          primitive.startAngle = undefined;
+          primitive.arcAngle = undefined;
+          primitive.arcPoints = undefined;
+          primitive.arcThickness = undefined;
+          primitive.segments = undefined;
+        } else {
+          primitive.halfHeight ??= 0.5;
+          if (primitive.shape === "hollowCylinder" || primitive.shape === "arc") {
+            primitive.innerRadius = THREE.MathUtils.clamp(
+              primitive.innerRadius ?? primitive.radius * 0.55,
+              0.01,
+              primitive.radius - 0.01,
+            );
+            primitive.segments ??= primitive.shape === "arc" ? 8 : 24;
+          } else {
+            primitive.innerRadius = undefined;
+            primitive.segments = undefined;
+          }
+          if (primitive.shape === "arc") {
+            primitive.startAngle ??= 0;
+            primitive.arcAngle ??= 90;
+            primitive.arcPoints = arcCollisionControlPoints(primitive);
+            primitive.arcThickness ??= Math.max(
+              0.01,
+              primitive.radius - (primitive.innerRadius ?? primitive.radius * 0.55),
+            );
+          } else {
+            primitive.startAngle = undefined;
+            primitive.arcAngle = undefined;
+            primitive.arcPoints = undefined;
+            primitive.arcThickness = undefined;
+          }
+        }
       }
     } else if (field === "center") primitive.center.setComponent(component, +value || 0);
     else if (field === "size")
       primitive.size?.setComponent(component, Math.max(0.01, +value || 0.01));
-    else if (field === "radius") primitive.radius = Math.max(0.01, +value || 0.01);
+    else if (field === "radius") {
+      primitive.radius = Math.max(0.02, +value || 0.02);
+      if (primitive.innerRadius !== undefined)
+        primitive.innerRadius = Math.min(primitive.innerRadius, primitive.radius - 0.01);
+    } else if (field === "innerRadius")
+      primitive.innerRadius = THREE.MathUtils.clamp(
+        +value || 0.01,
+        0.01,
+        Math.max(0.01, (primitive.radius ?? 0.5) - 0.01),
+      );
     else if (field === "halfHeight")
       primitive.halfHeight = Math.max(0.01, +value || 0.01);
+    else if (field === "startAngle") primitive.startAngle = +value || 0;
+    else if (field === "arcAngle")
+      primitive.arcAngle = THREE.MathUtils.clamp(+value || 1, -360, 360);
+    else if (field === "arcPoint") {
+      const points = arcCollisionControlPoints(primitive),
+        pointIndex = Math.floor(component / 2),
+        coordinate = component % 2;
+      points[pointIndex][coordinate] = +value || 0;
+      primitive.arcPoints = points;
+    } else if (field === "arcThickness")
+      primitive.arcThickness = Math.max(0.01, +value || 0.01);
+    else if (field === "segments")
+      primitive.segments = THREE.MathUtils.clamp(Math.round(+value || 1), 1, 64);
     else {
       const rotation = new THREE.Euler().setFromQuaternion(primitive.rotation, "XYZ");
       if (component === 0) rotation.x = THREE.MathUtils.degToRad(+value || 0);
@@ -11203,14 +11451,20 @@ export default function Home() {
     center: number[];
     size?: number[];
     radius?: number;
+    innerRadius?: number;
     halfHeight?: number;
+    startAngle?: number;
+    arcAngle?: number;
+    arcPoints?: ArcControlPoints;
+    arcThickness?: number;
+    segments?: number;
     rotation?: number[];
     gearCollision?: boolean;
     gearColision?: boolean;
     gearRatio?: number;
   }): CollisionPrimitive => {
     if (
-      !["box", "cylinder"].includes(row.shape) ||
+      !["box", "cylinder", "sphere", "hollowCylinder", "arc"].includes(row.shape) ||
       !Array.isArray(row.center) ||
       row.center.length < 3
     )
@@ -11218,6 +11472,9 @@ export default function Home() {
     const shape = row.shape as CollisionPrimitive["shape"];
     if (shape === "box" && (!Array.isArray(row.size) || row.size.length < 3))
       throw new Error("Tamaño de caja incorrecto");
+    const radial = shape !== "box",
+      hollow = shape === "hollowCylinder" || shape === "arc",
+      radius = radial ? Math.max(0.02, row.radius ?? 0.5) : undefined;
     return {
       shape,
       center: new THREE.Vector3().fromArray(row.center),
@@ -11227,9 +11484,47 @@ export default function Home() {
               .fromArray(row.size!)
               .max(new THREE.Vector3(0.01, 0.01, 0.01))
           : undefined,
-      radius: shape === "cylinder" ? Math.max(0.01, row.radius ?? 0.5) : undefined,
+      radius,
+      innerRadius: hollow
+        ? THREE.MathUtils.clamp(
+            row.innerRadius ?? (radius ?? 0.5) * 0.55,
+            0.01,
+            (radius ?? 0.5) - 0.01,
+          )
+        : undefined,
       halfHeight:
-        shape === "cylinder" ? Math.max(0.01, row.halfHeight ?? 0.5) : undefined,
+        shape === "cylinder" || hollow
+          ? Math.max(0.01, row.halfHeight ?? 0.5)
+          : undefined,
+      startAngle: shape === "arc" ? (row.startAngle ?? 0) : undefined,
+      arcAngle:
+        shape === "arc"
+          ? THREE.MathUtils.clamp(row.arcAngle ?? 90, -360, 360) || 1
+          : undefined,
+      arcPoints:
+        shape === "arc" &&
+        Array.isArray(row.arcPoints) &&
+        row.arcPoints.length === 3 &&
+        row.arcPoints.every(
+          (point) =>
+            Array.isArray(point) &&
+            point.length >= 2 &&
+            Number.isFinite(point[0]) &&
+            Number.isFinite(point[1]),
+        )
+          ? (row.arcPoints.map((point) => [point[0], point[1]]) as ArcControlPoints)
+          : undefined,
+      arcThickness:
+        shape === "arc"
+          ? Math.max(
+              0.01,
+              row.arcThickness ??
+                (radius ?? 0.5) - (row.innerRadius ?? (radius ?? 0.5) * 0.55),
+            )
+          : undefined,
+      segments: hollow
+        ? THREE.MathUtils.clamp(Math.round(row.segments ?? 24), 1, 64)
+        : undefined,
       rotation:
         Array.isArray(row.rotation) && row.rotation.length >= 4
           ? new THREE.Quaternion().fromArray(row.rotation).normalize()
@@ -12231,24 +12526,48 @@ export default function Home() {
                 );
               }}
             >
-              <div className="thumb">
+              <div
+                className={
+                  compoundPreviewThumb[p.part]
+                    ? `thumb compound-thumb ${
+                        p.part === "18938u" ? "compound-thumb-top-primary" : ""
+                      }`
+                    : "thumb"
+                }
+              >
                 {p.thumb ? (
-                  <img
-                    src={p.thumb}
-                    alt={p.name}
-                    onError={(event) => {
-                      if (p.sourceThumb && event.currentTarget.src !== p.sourceThumb) {
-                        event.currentTarget.src = p.sourceThumb;
-                      } else {
-                        event.currentTarget.style.display = "none";
-                      }
-                    }}
-                    style={{
-                      filter: p.rawThumb
-                        ? palettePreviewFilter(p.color)
-                        : previewFilter(p.color),
-                    }}
-                  />
+                  <>
+                    {compoundPreviewThumb[p.part] && (
+                      <img
+                        className="compound-thumb-secondary"
+                        src={compoundPreviewThumb[p.part]}
+                        alt=""
+                        aria-hidden="true"
+                        style={{
+                          filter: palettePreviewFilter(
+                            compoundPreviewColor[p.part] ?? 71,
+                          ),
+                        }}
+                      />
+                    )}
+                    <img
+                      className={compoundPreviewThumb[p.part] ? "compound-thumb-primary" : undefined}
+                      src={p.thumb}
+                      alt={p.name}
+                      onError={(event) => {
+                        if (p.sourceThumb && event.currentTarget.src !== p.sourceThumb) {
+                          event.currentTarget.src = p.sourceThumb;
+                        } else {
+                          event.currentTarget.style.display = "none";
+                        }
+                      }}
+                      style={{
+                        filter: p.rawThumb
+                          ? palettePreviewFilter(p.color)
+                          : previewFilter(p.color),
+                      }}
+                    />
+                  </>
                 ) : (
                   <span>⚙</span>
                 )}
@@ -12859,7 +13178,9 @@ export default function Home() {
                     <label key={`position-${axis}`}>
                       <span>{axis.toUpperCase()}</span>
                       <DeferredNumberInput
-                        value={selectedTransformPivot?.[axis] ?? selected.mesh.position[axis]}
+                        value={
+                          selectedTransformPivot?.[axis] ?? selected.mesh.position[axis]
+                        }
                         step={gridStep || 0.01}
                         onCommit={(value) => setInspectorPosition(axis, value)}
                       />
@@ -13541,6 +13862,11 @@ export default function Home() {
                 <div className="map-actions collision-map-actions">
                   <button onClick={() => addCollider("box")}>{t.addBox}</button>
                   <button onClick={() => addCollider("cylinder")}>{t.addCylinder}</button>
+                  <button onClick={() => addCollider("sphere")}>{t.addSphere}</button>
+                  <button onClick={() => addCollider("hollowCylinder")}>
+                    {t.addHollowCylinder}
+                  </button>
+                  <button onClick={() => addCollider("arc")}>{t.addArc}</button>
                   <button onClick={exportCollisionMap}>{t.exportJson}</button>
                   <button onClick={() => colliderFileRef.current?.click()}>
                     {t.importJson}
@@ -13568,7 +13894,15 @@ export default function Home() {
                     >
                       <summary>
                         <b>#{index + 1}</b>{" "}
-                        {primitive.shape === "box" ? t.box : t.cylinder}
+                        {primitive.shape === "box"
+                          ? t.box
+                          : primitive.shape === "cylinder"
+                            ? t.cylinder
+                            : primitive.shape === "sphere"
+                              ? t.sphere
+                              : primitive.shape === "hollowCylinder"
+                                ? t.hollowCylinder
+                                : t.arc}
                         <button
                           onClick={(event) => {
                             event.preventDefault();
@@ -13587,6 +13921,9 @@ export default function Home() {
                         >
                           <option value="box">{t.box}</option>
                           <option value="cylinder">{t.cylinder}</option>
+                          <option value="sphere">{t.sphere}</option>
+                          <option value="hollowCylinder">{t.hollowCylinder}</option>
+                          <option value="arc">{t.arc}</option>
                         </select>
                       </div>
                       {selected.specialGear && collisionLayer === "normal" && (
@@ -13689,12 +14026,91 @@ export default function Home() {
                               ))}
                           </div>
                         </>
-                      ) : (
+                      ) : primitive.shape === "sphere" ? (
                         <div className="measure-fields">
                           <label>
                             {t.radius}
                             <DeferredNumberInput
+                              min={0.02}
+                              value={primitive.radius ?? 0.5}
+                              onCommit={(nextValue) =>
+                                updateCollider(index, "radius", String(nextValue))
+                              }
+                            />
+                          </label>
+                        </div>
+                      ) : primitive.shape === "arc" ? (
+                        <div className="measure-fields">
+                          <label>
+                            {t.halfHeight}
+                            <DeferredNumberInput
                               min={0.01}
+                              value={primitive.halfHeight ?? 0.5}
+                              onCommit={(nextValue) =>
+                                updateCollider(index, "halfHeight", String(nextValue))
+                              }
+                            />
+                          </label>
+                          <label>
+                            {t.arcThickness}
+                            <DeferredNumberInput
+                              min={0.01}
+                              value={primitive.arcThickness ?? 0.25}
+                              onCommit={(nextValue) =>
+                                updateCollider(index, "arcThickness", String(nextValue))
+                              }
+                            />
+                          </label>
+                          {arcCollisionControlPoints(primitive).map(
+                            (point, pointIndex) => (
+                              <div key={pointIndex}>
+                                <label>
+                                  {pointIndex === 0
+                                    ? t.arcStartPoint
+                                    : pointIndex === 1
+                                      ? t.arcMiddlePoint
+                                      : t.arcEndPoint}
+                                </label>
+                                <div className="vector-fields">
+                                  {point.map((value, coordinate) => (
+                                    <DeferredNumberInput
+                                      key={coordinate}
+                                      value={value}
+                                      onCommit={(nextValue) =>
+                                        updateCollider(
+                                          index,
+                                          "arcPoint",
+                                          String(nextValue),
+                                          pointIndex * 2 + coordinate,
+                                        )
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ),
+                          )}
+                          <label>
+                            {t.segments}
+                            <DeferredNumberInput
+                              min={1}
+                              max={64}
+                              step={1}
+                              value={primitive.segments ?? 8}
+                              onCommit={(nextValue) =>
+                                updateCollider(index, "segments", String(nextValue))
+                              }
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="measure-fields">
+                          <label>
+                            {primitive.shape === "hollowCylinder"
+                              ? t.outerRadius
+                              : t.radius}
+                            <DeferredNumberInput
+                              min={0.02}
                               value={primitive.radius ?? 0.5}
                               onCommit={(nextValue) =>
                                 updateCollider(index, "radius", String(nextValue))
@@ -13711,6 +14127,37 @@ export default function Home() {
                               }
                             />
                           </label>
+                          {primitive.shape === "hollowCylinder" && (
+                            <>
+                              <label>
+                                {t.innerRadius}
+                                <DeferredNumberInput
+                                  min={0.01}
+                                  max={Math.max(0.01, (primitive.radius ?? 0.5) - 0.01)}
+                                  value={primitive.innerRadius ?? 0.25}
+                                  onCommit={(nextValue) =>
+                                    updateCollider(
+                                      index,
+                                      "innerRadius",
+                                      String(nextValue),
+                                    )
+                                  }
+                                />
+                              </label>
+                              <label>
+                                {t.segments}
+                                <DeferredNumberInput
+                                  min={1}
+                                  max={64}
+                                  step={1}
+                                  value={primitive.segments ?? 24}
+                                  onCommit={(nextValue) =>
+                                    updateCollider(index, "segments", String(nextValue))
+                                  }
+                                />
+                              </label>
+                            </>
+                          )}
                         </div>
                       )}
                     </details>

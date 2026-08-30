@@ -30,11 +30,17 @@ export type SavedConnector = {
 };
 
 export type SavedCollisionPrimitive = {
-  shape: "box" | "cylinder";
+  shape: "box" | "cylinder" | "sphere" | "hollowCylinder" | "arc";
   center: [number, number, number];
   size?: [number, number, number];
   radius?: number;
+  innerRadius?: number;
   halfHeight?: number;
+  startAngle?: number;
+  arcAngle?: number;
+  arcPoints?: [[number, number], [number, number], [number, number]];
+  arcThickness?: number;
+  segments?: number;
   rotation: [number, number, number, number];
   gearCollision?: boolean;
   gearRatio?: number;
@@ -182,6 +188,19 @@ const finiteTuple3 = (
   ];
 };
 
+const finiteArcPoints = (
+  value: unknown,
+): [[number, number], [number, number], [number, number]] | undefined => {
+  if (!Array.isArray(value) || value.length !== 3) return undefined;
+  const points = value.map((point) => {
+    if (!Array.isArray(point) || point.length < 2) return undefined;
+    return [finiteNumber(point[0], 0), finiteNumber(point[1], 0)] as [number, number];
+  });
+  return points.every(Boolean)
+    ? (points as [[number, number], [number, number], [number, number]])
+    : undefined;
+};
+
 const unitTuple3 = (
   value: unknown,
   fallback: [number, number, number] = [0, 1, 0],
@@ -259,7 +278,16 @@ const sanitizeProjectDocument = (
           rawCollider: SavedCollisionPrimitive,
         ): SavedCollisionPrimitive => {
           const collider = rawCollider as Partial<SavedCollisionPrimitive>,
-            shape = collider.shape === "cylinder" ? "cylinder" : "box";
+            shape = (
+              ["box", "cylinder", "sphere", "hollowCylinder", "arc"] as const
+            ).includes(collider.shape as never)
+              ? collider.shape!
+              : "box",
+            radial = shape !== "box",
+            hollow = shape === "hollowCylinder" || shape === "arc",
+            outerRadius = radial
+              ? positiveNumber(collider.radius, 0.25, hollow ? 0.02 : 0.01)
+              : undefined;
           return {
             shape,
             center: finiteTuple3(collider.center),
@@ -269,14 +297,53 @@ const sanitizeProjectDocument = (
                     Math.max(0.01, Math.abs(size)),
                   ) as [number, number, number])
                 : undefined,
-            radius:
-              shape === "cylinder"
-                ? positiveNumber(collider.radius, 0.25, 0.01)
-                : undefined,
+            radius: outerRadius,
+            innerRadius: hollow
+              ? Math.min(
+                  positiveNumber(collider.innerRadius, 0.12, 0.01),
+                  outerRadius! - 0.01,
+                )
+              : undefined,
             halfHeight:
-              shape === "cylinder"
+              shape === "cylinder" || shape === "hollowCylinder" || shape === "arc"
                 ? positiveNumber(collider.halfHeight, 0.25, 0.01)
                 : undefined,
+            startAngle:
+              shape === "arc" && typeof collider.startAngle === "number"
+                ? collider.startAngle
+                : undefined,
+            arcAngle:
+              shape === "arc"
+                ? Math.sign(finiteNumber(collider.arcAngle, 90) || 1) *
+                  Math.min(
+                    360,
+                    Math.max(1, Math.abs(finiteNumber(collider.arcAngle, 90))),
+                  )
+                : undefined,
+            arcPoints: shape === "arc" ? finiteArcPoints(collider.arcPoints) : undefined,
+            arcThickness:
+              shape === "arc"
+                ? positiveNumber(
+                    collider.arcThickness,
+                    Math.max(
+                      0.01,
+                      (outerRadius ?? 0.25) -
+                        positiveNumber(collider.innerRadius, 0.12, 0.01),
+                    ),
+                    0.01,
+                  )
+                : undefined,
+            segments: hollow
+              ? Math.round(
+                  Math.min(
+                    64,
+                    Math.max(
+                      1,
+                      positiveNumber(collider.segments, shape === "arc" ? 8 : 24, 1),
+                    ),
+                  ),
+                )
+              : undefined,
             rotation: unitQuaternion(collider.rotation),
             gearCollision: collider.gearCollision === true || undefined,
             gearRatio:

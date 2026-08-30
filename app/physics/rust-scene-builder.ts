@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { annularCollisionSegments } from "../collision-primitives";
+import type { CollisionPrimitive } from "../connectors";
 import { exactTriangleMeshForPiece } from "./exact-collider";
 import {
   COLLISION_GROUP_GEAR_MESH,
@@ -33,19 +35,74 @@ import { sampleRubberBand } from "./rubber-band";
 const frictionlessPinRefs = new Set(["3749", "3673", "32556"]);
 
 const vec3 = (value: THREE.Vector3): RustVec3 => [value.x, value.y, value.z];
-const quat = (value: THREE.Quaternion): RustQuat => [
-  value.x,
-  value.y,
-  value.z,
-  value.w,
-];
+const quat = (value: THREE.Quaternion): RustQuat => [value.x, value.y, value.z, value.w];
+
+const expandedColliderParts = (
+  primitive: CollisionPrimitive,
+  axialClearance = 0,
+  beamClearance = 0,
+) => {
+  const identity = new THREE.Quaternion();
+  if (primitive.shape === "box")
+    return [
+      {
+        center: new THREE.Vector3(),
+        rotation: identity,
+        shape: {
+          kind: "box" as const,
+          halfExtents: [
+            primitive.size!.x / 2,
+            Math.max(0.01, primitive.size!.y / 2 - beamClearance / 2),
+            primitive.size!.z / 2,
+          ] as RustVec3,
+        },
+      },
+    ];
+  if (primitive.shape === "sphere")
+    return [
+      {
+        center: new THREE.Vector3(),
+        rotation: identity,
+        shape: { kind: "ball" as const, radius: Math.max(0.01, primitive.radius!) },
+      },
+    ];
+  if (primitive.shape === "cylinder")
+    return [
+      {
+        center: new THREE.Vector3(),
+        rotation: identity,
+        shape: {
+          kind: "cylinder" as const,
+          halfHeight: Math.max(
+            0.01,
+            primitive.halfHeight! - Math.max(axialClearance, beamClearance) / 2,
+          ),
+          radius: primitive.radius!,
+        },
+      },
+    ];
+  const verticalClearance = Math.max(axialClearance, beamClearance);
+  return annularCollisionSegments(primitive).map((segment) => ({
+    center: segment.center,
+    rotation: segment.rotation,
+    shape: {
+      kind: "box" as const,
+      halfExtents: [
+        segment.size.x / 2,
+        Math.max(0.01, segment.size.y / 2 - verticalClearance / 2),
+        segment.size.z / 2,
+      ] as RustVec3,
+    },
+  }));
+};
 
 const colliderExtentAlongAxis = (
   piece: Piece,
   primitive: Piece["colliders"][number],
   axis: THREE.Vector3,
 ) => {
-  if (primitive.shape === "cylinder") {
+  if (primitive.shape === "sphere") return primitive.radius ?? 0;
+  if (primitive.shape !== "box") {
     const cylinderAxis = new THREE.Vector3(0, 1, 0)
       .applyQuaternion(primitive.rotation)
       .transformDirection(piece.mesh.matrixWorld)
@@ -53,8 +110,7 @@ const colliderExtentAlongAxis = (
     const alignment = Math.abs(cylinderAxis.dot(axis));
     return (
       alignment * (primitive.halfHeight ?? 0) +
-      Math.sqrt(Math.max(0, 1 - alignment * alignment)) *
-        (primitive.radius ?? 0)
+      Math.sqrt(Math.max(0, 1 - alignment * alignment)) * (primitive.radius ?? 0)
     );
   }
   const rotation = piece.mesh
@@ -106,8 +162,7 @@ export function buildRustJointConfig(
   if (!bodyA || !bodyB || bodyA === bodyB) return undefined;
 
   const dynamicAxle =
-    (connection.profile === "axle-cross" ||
-      connection.profile === "axle-round") &&
+    (connection.profile === "axle-cross" || connection.profile === "axle-round") &&
     connection.b.dynamicAxleConnections;
   const worldAxisA = dynamicAxle
     ? connection.socket.axis
@@ -136,28 +191,18 @@ export function buildRustJointConfig(
   let anchorB = anchor;
 
   if (dynamicAxle) {
-    anchorA = connection.a.mesh.localToWorld(
-      connection.socket.local.clone(),
-    );
+    anchorA = connection.a.mesh.localToWorld(connection.socket.local.clone());
 
-    const shaftCenter = connection.b.mesh.localToWorld(
-      connection.shaft.local.clone(),
-    );
+    const shaftCenter = connection.b.mesh.localToWorld(connection.shaft.local.clone());
 
-    const along = anchorA
-      .clone()
-      .sub(shaftCenter)
-      .dot(worldAxisB);
+    const along = anchorA.clone().sub(shaftCenter).dot(worldAxisB);
 
-    anchorB = shaftCenter
-      .clone()
-      .addScaledVector(worldAxisB, along);
+    anchorB = shaftCenter.clone().addScaledVector(worldAxisB, along);
   }
   const passiveMotorForce =
     connection.mode === "rotation" && connection.b.frictionPin
       ? 3.5
-      : connection.mode === "rotation" &&
-          frictionlessPinRefs.has(connection.b.part)
+      : connection.mode === "rotation" && frictionlessPinRefs.has(connection.b.part)
         ? physicsSettings.frictionlessPinRotation
         : 0;
   return {
@@ -183,14 +228,13 @@ export function buildRustGearConfigs(
   bodyIdByPiece: Map<Piece, number>,
   connections: Connection[] = [],
 ): RustGearConfig[] {
-  const connectedPieces = [...new Set(
-    connections.flatMap((connection) => [connection.a, connection.b]),
-  )];
+  const connectedPieces = [
+    ...new Set(connections.flatMap((connection) => [connection.a, connection.b])),
+  ];
   const differentialSidePairs = new Set(
-    buildRustDifferentialConfigs(connectedPieces, connections, bodyIdByPiece)
-      .map(({ leftBody, rightBody }) =>
-        [leftBody, rightBody].sort((a, b) => a - b).join(":"),
-      ),
+    buildRustDifferentialConfigs(connectedPieces, connections, bodyIdByPiece).map(
+      ({ leftBody, rightBody }) => [leftBody, rightBody].sort((a, b) => a - b).join(":"),
+    ),
   );
   const differentialInternalPairs = new Set(differentialSidePairs);
   const differentialRefs = new Set(["6573", "62821"]);
@@ -208,12 +252,14 @@ export function buildRustGearConfigs(
     ).find((candidate) => candidate.carrierBody === carrierBody);
     if (!differential) continue;
     const satelliteBodies = connections.flatMap((connection) => {
-      if (connection.mode !== "rotation" || connection.profile !== "axle-cross") return [];
-      const satellite = connection.a === carrier
-        ? connection.b
-        : connection.b === carrier
-          ? connection.a
-          : undefined;
+      if (connection.mode !== "rotation" || connection.profile !== "axle-cross")
+        return [];
+      const satellite =
+        connection.a === carrier
+          ? connection.b
+          : connection.b === carrier
+            ? connection.a
+            : undefined;
       const body = satellite && bodyIdByPiece.get(satellite);
       return body && body !== carrierBody ? [body] : [];
     });
@@ -229,9 +275,8 @@ export function buildRustGearConfigs(
     const bodyA = bodyIdByPiece.get(link.a.value);
     const bodyB = bodyIdByPiece.get(link.b.value);
     if (!bodyA || !bodyB || bodyA === bodyB) return [];
-    if (differentialInternalPairs.has(
-      [bodyA, bodyB].sort((a, b) => a - b).join(":"),
-    )) return [];
+    if (differentialInternalPairs.has([bodyA, bodyB].sort((a, b) => a - b).join(":")))
+      return [];
 
     const currentFrame = (
       piece: Piece,
@@ -276,14 +321,11 @@ export function buildRustGearConfigs(
       ]) {
         const reference = piece.mesh.localToWorld(local).sub(center);
         reference.addScaledVector(axis, -reference.dot(axis));
-        if (reference.lengthSq() > 1.0e-8)
-          return vec3(reference.normalize());
+        if (reference.lengthSq() > 1.0e-8) return vec3(reference.normalize());
       }
 
       const fallback =
-        Math.abs(axis.x) < 0.8
-          ? new THREE.Vector3(1, 0, 0)
-          : new THREE.Vector3(0, 0, 1);
+        Math.abs(axis.x) < 0.8 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
       fallback.addScaledVector(axis, -fallback.dot(axis)).normalize();
       return vec3(fallback);
     };
@@ -338,11 +380,12 @@ export function buildRustDifferentialConfigs(
     const center = carrier.mesh.localToWorld(new THREE.Vector3());
     const sides = connections.flatMap((connection) => {
       if (connection.profile !== "axle-round") return [];
-      const other = connection.a === carrier
-        ? connection.b
-        : connection.b === carrier
-          ? connection.a
-          : undefined;
+      const other =
+        connection.a === carrier
+          ? connection.b
+          : connection.b === carrier
+            ? connection.a
+            : undefined;
       const body = other && bodyIdByPiece.get(other);
       if (!body || body === carrierBody) return [];
       const axis = connection.axis.clone().normalize();
@@ -368,9 +411,10 @@ export function buildRustDifferentialConfigs(
         reference.addScaledVector(gearAxis, -reference.dot(gearAxis));
         if (reference.lengthSq() > 1.0e-8) return vec3(reference.normalize());
       }
-      const fallback = Math.abs(gearAxis.x) < 0.8
-        ? new THREE.Vector3(1, 0, 0)
-        : new THREE.Vector3(0, 0, 1);
+      const fallback =
+        Math.abs(gearAxis.x) < 0.8
+          ? new THREE.Vector3(1, 0, 0)
+          : new THREE.Vector3(0, 0, 1);
       return vec3(
         fallback.addScaledVector(gearAxis, -fallback.dot(gearAxis)).normalize(),
       );
@@ -378,11 +422,12 @@ export function buildRustDifferentialConfigs(
     const satellitePieces = connections.flatMap((connection) => {
       if (connection.mode !== "rotation" || connection.profile !== "axle-cross")
         return [];
-      const satellite = connection.a === carrier
-        ? connection.b
-        : connection.b === carrier
-          ? connection.a
-          : undefined;
+      const satellite =
+        connection.a === carrier
+          ? connection.b
+          : connection.b === carrier
+            ? connection.a
+            : undefined;
       return satellite ? [satellite] : [];
     });
     const satellites = [
@@ -391,12 +436,15 @@ export function buildRustDifferentialConfigs(
           const body = bodyIdByPiece.get(satellite);
           if (!body || body === carrierBody) return [];
           const link = gearLinks.find((candidate) => {
-            const other = candidate.a.value === satellite
-              ? candidate.b.value
-              : candidate.b.value === satellite
-                ? candidate.a.value
-                : undefined;
-            return other && outputs.some((output) => bodyIdByPiece.get(other) === output.body);
+            const other =
+              candidate.a.value === satellite
+                ? candidate.b.value
+                : candidate.b.value === satellite
+                  ? candidate.a.value
+                  : undefined;
+            return (
+              other && outputs.some((output) => bodyIdByPiece.get(other) === output.body)
+            );
           });
           if (!link) return [];
           const satelliteIsA = link.a.value === satellite,
@@ -428,34 +476,41 @@ export function buildRustDifferentialConfigs(
             sideCoefficient = satelliteIsA
               ? link.signB * sidePose.spec.teeth
               : sidePose.spec.teeth;
-          return [[body, {
-            body,
-            sideBody,
-            axis: vec3(satelliteAxis.clone().normalize()),
-            sideAxis: vec3(sideAxis.clone().normalize()),
-            center: vec3(satelliteCenter),
-            sideCenter: vec3(sideCenter),
-            reference: referenceFor(satellite, satelliteAxis),
-            sideReference: referenceFor(sidePiece, sideAxis),
-            coefficient,
-            sideCoefficient,
-            phaseLock:
-              Number.isInteger(satellitePose.spec.teeth) &&
-              Number.isInteger(sidePose.spec.teeth) &&
-              satellitePose.spec.teeth % 2 === 0 &&
-              sidePose.spec.teeth % 2 === 0,
-          }] as const];
+          return [
+            [
+              body,
+              {
+                body,
+                sideBody,
+                axis: vec3(satelliteAxis.clone().normalize()),
+                sideAxis: vec3(sideAxis.clone().normalize()),
+                center: vec3(satelliteCenter),
+                sideCenter: vec3(sideCenter),
+                reference: referenceFor(satellite, satelliteAxis),
+                sideReference: referenceFor(sidePiece, sideAxis),
+                coefficient,
+                sideCoefficient,
+                phaseLock:
+                  Number.isInteger(satellitePose.spec.teeth) &&
+                  Number.isInteger(sidePose.spec.teeth) &&
+                  satellitePose.spec.teeth % 2 === 0 &&
+                  sidePose.spec.teeth % 2 === 0,
+              },
+            ] as const,
+          ];
         }),
       ).values(),
     ];
-    return [{
-      id: `differential:${carrier.id}`,
-      leftBody: outputs[0].body,
-      rightBody: outputs[1].body,
-      carrierBody,
-      axis: vec3(axis),
-      satellites,
-    }];
+    return [
+      {
+        id: `differential:${carrier.id}`,
+        leftBody: outputs[0].body,
+        rightBody: outputs[1].body,
+        carrierBody,
+        axis: vec3(axis),
+        satellites,
+      },
+    ];
   });
 }
 
@@ -486,8 +541,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   );
   const physicalPieces = pieces.filter((piece) => !rubberOwners.has(piece));
   const physicalConnections = connections.filter(
-    (connection) =>
-      !rubberOwners.has(connection.a) && !rubberOwners.has(connection.b),
+    (connection) => !rubberOwners.has(connection.a) && !rubberOwners.has(connection.b),
   );
 
   const parent = new Map(physicalPieces.map((piece) => [piece, piece]));
@@ -587,8 +641,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
         density: number,
         gearCollision = false,
       ) => {
-        const specialGearContact =
-          !gearLayer && piece.specialGear && gearCollision;
+        const specialGearContact = !gearLayer && piece.specialGear && gearCollision;
         colliders.push({
           ownerId: piece.id,
           center: vec3(center),
@@ -603,18 +656,18 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
             ? COLLISION_GROUP_GEAR_MESH
             : specialGearContact
               ? COLLISION_GROUP_SPECIAL_GEAR_CONTACT
-            : piece.gear
-              ? COLLISION_GROUP_GEAR_NORMAL
-              : COLLISION_GROUP_NON_GEAR,
+              : piece.gear
+                ? COLLISION_GROUP_GEAR_NORMAL
+                : COLLISION_GROUP_NON_GEAR,
           collisionMask: gearLayer
             ? COLLISION_GROUP_GEAR_MESH
             : specialGearContact
               ? COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_GEAR_NORMAL
-            : piece.gear
-              ? COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_SPECIAL_GEAR_CONTACT
-              : COLLISION_GROUP_NON_GEAR |
-                COLLISION_GROUP_GEAR_NORMAL |
-                COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
+              : piece.gear
+                ? COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_SPECIAL_GEAR_CONTACT
+                : COLLISION_GROUP_NON_GEAR |
+                  COLLISION_GROUP_GEAR_NORMAL |
+                  COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
           shape,
         });
       };
@@ -641,71 +694,42 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
               ? physicsSettings.axleTolerance
               : 0;
           const beamClearance =
-            articulatedBodyIds.has(bodyId) &&
-            /^Technic (Beam|Panel)/i.test(piece.name)
+            articulatedBodyIds.has(bodyId) && /^Technic (Beam|Panel)/i.test(piece.name)
               ? physicsSettings.beamClearance
               : 0;
-          const shape: RustColliderConfig["shape"] =
-            primitive.shape === "box"
-              ? {
-                  kind: "box",
-                  halfExtents: [
-                    primitive.size!.x / 2,
-                    Math.max(
-                      0.01,
-                      primitive.size!.y / 2 - beamClearance / 2,
-                    ),
-                    primitive.size!.z / 2,
-                  ],
-                }
-              : {
-                  kind: "cylinder",
-                  halfHeight: Math.max(
-                    0.01,
-                    primitive.halfHeight! -
-                      Math.max(axialClearance, beamClearance) / 2,
-                  ),
-                  radius: primitive.radius!,
-                };
-          finishCollider(
-            shape,
-            physicsOffset
-              .clone()
-              .add(primitive.center.clone().applyQuaternion(physicsBase)),
-            physicsBase.clone().multiply(primitive.rotation),
-            false,
-            (piece.kind === "motor" ? 1.7 : 1) /
-              Math.max(1, piece.colliders.length),
-            primitive.gearCollision === true,
+          expandedColliderParts(primitive, axialClearance, beamClearance).forEach(
+            (part) => {
+              const localCenter = primitive.center
+                  .clone()
+                  .add(part.center.clone().applyQuaternion(primitive.rotation)),
+                localRotation = primitive.rotation.clone().multiply(part.rotation);
+              finishCollider(
+                part.shape,
+                physicsOffset.clone().add(localCenter.applyQuaternion(physicsBase)),
+                physicsBase.clone().multiply(localRotation),
+                false,
+                (piece.kind === "motor" ? 1.7 : 1) / Math.max(1, piece.colliders.length),
+                primitive.gearCollision === true,
+              );
+            },
           );
         });
       }
 
       piece.gearColliders.forEach((primitive) => {
-        const shape: RustColliderConfig["shape"] =
-          primitive.shape === "box"
-            ? {
-                kind: "box",
-                halfExtents: [
-                  primitive.size!.x / 2,
-                  primitive.size!.y / 2,
-                  primitive.size!.z / 2,
-                ],
-              }
-            : {
-                kind: "cylinder",
-                halfHeight: primitive.halfHeight!,
-                radius: primitive.radius!,
-              };
-        finishCollider(
-          shape,
-          physicsOffset
-            .clone()
-            .add(primitive.center.clone().applyQuaternion(physicsBase)),
-          physicsBase.clone().multiply(primitive.rotation),
-          true,
-          0,
-        );
+        expandedColliderParts(primitive).forEach((part) => {
+          const localCenter = primitive.center
+              .clone()
+              .add(part.center.clone().applyQuaternion(primitive.rotation)),
+            localRotation = primitive.rotation.clone().multiply(part.rotation);
+          finishCollider(
+            part.shape,
+            physicsOffset.clone().add(localCenter.applyQuaternion(physicsBase)),
+            physicsBase.clone().multiply(localRotation),
+            true,
+            0,
+          );
+        });
       });
     });
 
@@ -741,17 +765,33 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
     nodes.forEach((position, index) => {
       const ownerId = ownerIds[index];
       bodies.push({
-        id: nodeIds[index], fixed: false, position: vec3(position), rotation: [0, 0, 0, 1],
-        mass: nodeMass, linearDamping: 4.5, angularDamping: 1,
-        additionalSolverIterations: 4, ccd: true,
-        colliders: [{ ownerId, center: [0, 0, 0], rotation: [0, 0, 0, 1],
-          friction: physicsSettings.rubberFriction, density: 0,
-          collisionGroup: COLLISION_GROUP_NON_GEAR,
-          collisionMask: COLLISION_GROUP_NON_GEAR | COLLISION_GROUP_GEAR_NORMAL | COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
-          // The visible 1.6 mm band is thinner than Rapier's contact margin at
-          // LEGO scale. A small physical skin keeps near-tangent wraps in
-          // contact so elastic tension is transferred to the surrounded part.
-          shape: { kind: "ball", radius: band.radius * 1.4 } }],
+        id: nodeIds[index],
+        fixed: false,
+        position: vec3(position),
+        rotation: [0, 0, 0, 1],
+        mass: nodeMass,
+        linearDamping: 4.5,
+        angularDamping: 1,
+        additionalSolverIterations: 4,
+        ccd: true,
+        colliders: [
+          {
+            ownerId,
+            center: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            friction: physicsSettings.rubberFriction,
+            density: 0,
+            collisionGroup: COLLISION_GROUP_NON_GEAR,
+            collisionMask:
+              COLLISION_GROUP_NON_GEAR |
+              COLLISION_GROUP_GEAR_NORMAL |
+              COLLISION_GROUP_SPECIAL_GEAR_CONTACT,
+            // The visible 1.6 mm band is thinner than Rapier's contact margin at
+            // LEGO scale. A small physical skin keeps near-tangent wraps in
+            // contact so elastic tension is transferred to the surrounded part.
+            shape: { kind: "ball", radius: band.radius * 1.4 },
+          },
+        ],
       });
     });
     // Consecutive rope particles are held by the elastic solver. Letting
@@ -796,9 +836,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       if (
         axisKey.x < -1e-6 ||
         (Math.abs(axisKey.x) <= 1e-6 && axisKey.y < -1e-6) ||
-        (Math.abs(axisKey.x) <= 1e-6 &&
-          Math.abs(axisKey.y) <= 1e-6 &&
-          axisKey.z < 0)
+        (Math.abs(axisKey.x) <= 1e-6 && Math.abs(axisKey.y) <= 1e-6 && axisKey.z < 0)
       )
         axisKey.multiplyScalar(-1);
       const handles = [bodyA, bodyB].sort((left, right) => left - right);
@@ -810,11 +848,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       guideKeys.add(key);
     }
 
-    const joint = buildRustJointConfig(
-      connection,
-      bodyIdByPiece,
-      physicsSettings,
-    );
+    const joint = buildRustJointConfig(connection, bodyIdByPiece, physicsSettings);
     return joint ? [joint] : [];
   });
 
@@ -860,7 +894,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
         const distance = delta.dot(axis);
         const radial = delta.clone().addScaledVector(axis, -distance).length();
         const radialReach =
-          primitive.shape === "cylinder"
+          primitive.shape !== "box"
             ? (primitive.radius ?? 0)
             : Math.max(
                 primitive.size?.x ?? 0,

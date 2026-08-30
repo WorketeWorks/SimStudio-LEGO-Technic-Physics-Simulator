@@ -1,9 +1,15 @@
 export type StoredCollisionPrimitive = {
-  shape: "box" | "cylinder";
+  shape: "box" | "cylinder" | "sphere" | "hollowCylinder" | "arc";
   center: [number, number, number];
   size?: [number, number, number];
   radius?: number;
+  innerRadius?: number;
   halfHeight?: number;
+  startAngle?: number;
+  arcAngle?: number;
+  arcPoints?: [[number, number], [number, number], [number, number]];
+  arcThickness?: number;
+  segments?: number;
   rotation: [number, number, number, number];
   gearCollision?: boolean;
   gearRatio?: number;
@@ -1872,6 +1878,36 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
       ]
     }
   ],
+  "99010": [
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 1.45,
+      "halfHeight": 0.5,
+      "rotation": [0, 0, 0, 1]
+    },
+    {
+      "shape": "cylinder",
+      "center": [0, -0.175, 0],
+      "radius": 1.85,
+      "halfHeight": 0.32,
+      "rotation": [0, 0, 0, 1]
+    },
+    {
+      "shape": "cylinder",
+      "center": [1, 1, 0],
+      "radius": 0.45,
+      "halfHeight": 0.5,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    },
+    {
+      "shape": "cylinder",
+      "center": [-1, 1, 0],
+      "radius": 0.45,
+      "halfHeight": 0.5,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    }
+  ],
   "4265c": [
     {
       "shape": "cylinder",
@@ -2169,6 +2205,15 @@ export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive
     }
   ],
   "99773": [],
+  "99010": [
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 1.5,
+      "halfHeight": 0.5,
+      "rotation": [0, 0, 0, 1]
+    }
+  ],
   "4265c": []
 };
 

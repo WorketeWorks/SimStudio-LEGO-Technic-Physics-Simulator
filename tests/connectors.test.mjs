@@ -9,6 +9,7 @@ import {
   straightAxleCollisionPrimitives,
   straightAxleConnectors,
 } from "../app/connectors.ts";
+import { annularCollisionSegments } from "../app/collision-primitives.ts";
 import { preloadedConnectionMaps } from "../app/connection-maps.ts";
 import {
   automaticConnectorMatchIsBetter,
@@ -53,6 +54,59 @@ const connectorAt = (connectors, position) =>
   connectors.find(
     (connector) => connector.local.distanceTo(new THREE.Vector3(...position)) < 0.05,
   );
+
+test("hollow and arc colliders preserve their bore with configurable sweeps", () => {
+  const base = {
+      center: new THREE.Vector3(),
+      radius: 2,
+      innerRadius: 1,
+      halfHeight: 0.25,
+      rotation: new THREE.Quaternion(),
+    },
+    ring = annularCollisionSegments({
+      ...base,
+      shape: "hollowCylinder",
+      segments: 24,
+    }),
+    arc = annularCollisionSegments({
+      ...base,
+      shape: "arc",
+      startAngle: 0,
+      arcAngle: 90,
+      segments: 6,
+    }),
+    reverseArc = annularCollisionSegments({
+      ...base,
+      shape: "arc",
+      startAngle: 0,
+      arcAngle: -90,
+      segments: 6,
+    }),
+    threePointArc = annularCollisionSegments({
+      ...base,
+      shape: "arc",
+      arcPoints: [
+        [2, 0],
+        [Math.SQRT2, -Math.SQRT2],
+        [0, -2],
+      ],
+      arcThickness: 0.4,
+      segments: 6,
+    });
+  assert.equal(ring.length, 24);
+  assert.equal(arc.length, 6);
+  assert.equal(reverseArc.length, 6);
+  assert.equal(threePointArc.length, 6);
+  for (const segment of ring) {
+    assert.ok(Math.abs(segment.center.length() - 1.5) < 1e-12);
+    assert.equal(segment.size.x, 1);
+    assert.equal(segment.size.y, 0.5);
+  }
+  assert.ok(arc.at(-1).center.z < 0);
+  assert.ok(reverseArc.at(-1).center.z > 0);
+  assert.ok(Math.abs(threePointArc[0].center.length() - 2) < 1e-12);
+  assert.equal(threePointArc[0].size.x, 0.4);
+});
 
 test("detects round and cross holes on the small L beam", () => {
   const connectors = detectConnectorHoles(loadPart("32056-72"));
