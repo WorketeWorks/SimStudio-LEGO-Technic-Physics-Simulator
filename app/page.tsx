@@ -1555,7 +1555,7 @@ export default function Home() {
           gizmoMaterial(axis),
         ),
         ring = new THREE.Mesh(
-          new THREE.TorusGeometry(0.72, 0.018, 10, 72),
+          new THREE.TorusGeometry(0.72, 0.032, 12, 72),
           gizmoMaterial(axis),
         );
       shaft.position.y = 0.36;
@@ -5111,7 +5111,7 @@ export default function Home() {
               );
             previous = current;
           }
-          if (closest <= 10)
+          if (closest <= 16)
             candidates.push({ handle: `rotate-${axisName}`, distance: closest });
         });
       }
