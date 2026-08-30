@@ -3192,6 +3192,11 @@ body.resizing-inspector * {
 .renderer-quality {
   grid-template-columns: 1fr 1fr;
 }
+.renderer-setting .gizmo-appearance-parameter span {
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
+}
 .map-update-trigger {
   display: flex;
   align-items: center;

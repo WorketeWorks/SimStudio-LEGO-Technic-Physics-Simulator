@@ -327,7 +327,8 @@ export class GpuSceneRenderer {
               lines.set(key, group);
               continue;
             }
-            const key = `${keyPrefix}:mesh:${this.color.getHexString()}:${overlay}`,
+            const layer = Number(object.userData.gpuLayer ?? 0),
+              key = `${keyPrefix}:mesh:${layer}:${this.color.getHexString()}:${overlay}`,
               group = meshes.get(key) ?? {
                 positions: [],
                 normals: [],
@@ -540,6 +541,7 @@ export class GpuSceneRenderer {
         continue;
       const matrix = source.object.matrixWorld.elements,
         selectedFlag = source.piece && selected.has(source.piece) ? 1 : 0;
+      if (syncPieceTransforms) materialColor(source.material, source.color);
       for (let component = 0; component < 16; component++) {
         const value = matrix[component];
         if (this.instanceValues[offset + component] === value) continue;

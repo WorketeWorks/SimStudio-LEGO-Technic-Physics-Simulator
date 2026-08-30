@@ -1006,9 +1006,13 @@ export default function Home() {
   const [controlsHelpVisible, setControlsHelpVisible] = useState(true);
   const [moveGizmoVisible, setMoveGizmoVisible] = useState(true);
   const [rotateGizmoVisible, setRotateGizmoVisible] = useState(true);
+  const [gizmoScale, setGizmoScale] = useState(1);
+  const [gizmoThickness, setGizmoThickness] = useState(1);
   const [modelOutlinesVisible, setModelOutlinesVisible] = useState(true);
   const moveGizmoVisibleRef = useRef(true);
   const rotateGizmoVisibleRef = useRef(true);
+  const gizmoScaleRef = useRef(1);
+  const gizmoThicknessRef = useRef(1);
   const modelOutlinesVisibleRef = useRef(true);
   const [inspectorWidth, setInspectorWidth] = useState(270);
   const [fogSettings, setFogSettings] = useState<FogSettings>({
@@ -1274,6 +1278,16 @@ export default function Home() {
   }, [adaptiveRendering]);
 
   useEffect(() => {
+    gizmoScaleRef.current = gizmoScale;
+    gizmoThicknessRef.current = gizmoThickness;
+    try {
+      localStorage.setItem("sim-studio:gizmo-scale", String(gizmoScale));
+      localStorage.setItem("sim-studio:gizmo-thickness", String(gizmoThickness));
+    } catch {}
+    appRef.current?.setGizmoAppearance(gizmoScale, gizmoThickness);
+  }, [gizmoScale, gizmoThickness]);
+
+  useEffect(() => {
     try {
       setLastLog(localStorage.getItem("sim-studio:physics-log") ?? "");
       setTheme(localStorage.getItem("sim-studio:theme") === "dark" ? "dark" : "light");
@@ -1285,6 +1299,20 @@ export default function Home() {
         localStorage.getItem("sim-studio:model-outlines") !== "0";
       modelOutlinesVisibleRef.current = savedModelOutlinesVisible;
       setModelOutlinesVisible(savedModelOutlinesVisible);
+      const savedGizmoScale = THREE.MathUtils.clamp(
+          Number(localStorage.getItem("sim-studio:gizmo-scale")) || 1,
+          0.5,
+          2,
+        ),
+        savedGizmoThickness = THREE.MathUtils.clamp(
+          Number(localStorage.getItem("sim-studio:gizmo-thickness")) || 1,
+          0.5,
+          2.5,
+        );
+      gizmoScaleRef.current = savedGizmoScale;
+      gizmoThicknessRef.current = savedGizmoThickness;
+      setGizmoScale(savedGizmoScale);
+      setGizmoThickness(savedGizmoThickness);
       const savedGridStepText = localStorage.getItem("sim-studio:grid-step"),
         savedGridStep = savedGridStepText === null ? NaN : Number(savedGridStepText);
       if (
@@ -1542,6 +1570,7 @@ export default function Home() {
         color: gizmoColors[axis],
         depthTest: false,
         depthWrite: false,
+        transparent: true,
         toneMapped: false,
       });
     (["x", "y", "z"] as const).forEach((axis) => {
@@ -1572,11 +1601,13 @@ export default function Home() {
       moveGroup.userData.gizmo = `move-${axis}`;
       moveGroup.traverse((object) => {
         object.userData.gizmo = `move-${axis}`;
-        object.renderOrder = 1001;
+        object.userData.gpuLayer = 1;
+        object.renderOrder = 1010;
       });
       if (axis === "x") ring.rotation.y = Math.PI / 2;
       else if (axis === "y") ring.rotation.x = Math.PI / 2;
       ring.userData.gizmo = `rotate-${axis}`;
+      ring.userData.gpuLayer = 0;
       ring.renderOrder = 1000;
       transformGizmoRoot.add(ring, moveGroup);
       gizmoMoveGroups.set(axis, moveGroup);
@@ -1588,10 +1619,17 @@ export default function Home() {
         color: 0xf4f7f9,
         depthTest: false,
         depthWrite: false,
+        transparent: true,
         toneMapped: false,
       }),
     );
-    gizmoCenter.renderOrder = 1002;
+    gizmoCenter.userData.gpuLayer = 2;
+    gizmoCenter.renderOrder = 1020;
+    transformGizmoRoot.add(gizmoCenter);
+    // Preserve the same overlay order in WebGL and WebGPU: rings first,
+    // translation arrows second and the centre handle last.
+    gizmoRotateMeshes.forEach((ring) => transformGizmoRoot.add(ring));
+    gizmoMoveGroups.forEach((group) => transformGizmoRoot.add(group));
     transformGizmoRoot.add(gizmoCenter);
     scene.add(transformGizmoRoot);
     const cardanReferenceMarker = new THREE.Mesh(
@@ -1600,6 +1638,7 @@ export default function Home() {
         color: 0xffd83d,
         depthTest: false,
         depthWrite: false,
+        transparent: true,
         toneMapped: false,
       }),
     );
@@ -1620,6 +1659,7 @@ export default function Home() {
       }),
     );
     floor.position.y = -0.2;
+    floor.renderOrder = -1000;
     floor.receiveShadow = true;
     floor.userData.floor = true;
     scene.add(floor);
@@ -2295,8 +2335,62 @@ export default function Home() {
     const requestRender = () => {
       renderRequested = true;
     };
+    const applyGizmoAppearance = (scale: number, thickness: number) => {
+      gizmoScaleRef.current = THREE.MathUtils.clamp(scale, 0.5, 2);
+      gizmoThicknessRef.current = THREE.MathUtils.clamp(thickness, 0.5, 2.5);
+      gizmoMoveGroups.forEach((group) => {
+        const shaft = group.children[0] as THREE.Mesh,
+          head = group.children[1] as THREE.Mesh;
+        shaft.geometry.dispose();
+        shaft.geometry = new THREE.CylinderGeometry(
+          0.025 * gizmoThicknessRef.current,
+          0.025 * gizmoThicknessRef.current,
+          0.72,
+          10,
+        );
+        head.geometry.dispose();
+        head.geometry = new THREE.ConeGeometry(
+          0.085 * gizmoThicknessRef.current,
+          0.24,
+          12,
+        );
+      });
+      gizmoRotateMeshes.forEach((ring) => {
+        ring.geometry.dispose();
+        ring.geometry = new THREE.TorusGeometry(
+          0.72,
+          0.032 * gizmoThicknessRef.current,
+          12,
+          72,
+        );
+      });
+      gizmoCenter.geometry.dispose();
+      gizmoCenter.geometry = new THREE.SphereGeometry(
+        0.06 * gizmoThicknessRef.current,
+        12,
+        8,
+      );
+      gpuSceneRenderer?.invalidate();
+      requestRender();
+    };
+    const highlightGizmoHandle = (active?: string) => {
+      transformGizmoRoot.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        const handle = object.userData.gizmo as string | undefined,
+          axis = handle?.at(-1) as keyof typeof gizmoColors | undefined;
+        if (!handle || !axis || !(axis in gizmoColors)) return;
+        const material = object.material as THREE.MeshBasicMaterial,
+          selected = !active || handle === active;
+        material.color.setHex(active && selected ? 0xffd43b : gizmoColors[axis]);
+        if (active && !selected) material.color.multiplyScalar(0.35);
+        material.opacity = active && !selected ? 0.3 : 1;
+        material.needsUpdate = true;
+      });
+      requestRender();
+    };
     const state = {} as AppState,
       debugRoot = new THREE.Group();
+    applyGizmoAppearance(gizmoScaleRef.current, gizmoThicknessRef.current);
     let showRotationPivot = false;
     debugRoot.name = "Sim Studio diagnostics";
     scene.add(debugRoot);
@@ -3579,6 +3673,7 @@ export default function Home() {
       gpuRenderer,
       gpuVendor,
       requestRender,
+      setGizmoAppearance: applyGizmoAppearance,
       setViewportRendererPreference: () => undefined,
       setAdaptiveRendering: () => undefined,
       renderBatchItems: [],
@@ -4992,7 +5087,7 @@ export default function Home() {
         worldPerPixel =
           (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
           Math.max(1, bounds.height),
-        scale = Math.max(0.35, worldPerPixel * 112),
+        scale = Math.max(0.35, worldPerPixel * 112) * gizmoScaleRef.current,
         basis = new THREE.Matrix4().makeBasis(axes.x, axes.y, axes.z);
       transformGizmoRoot.position.copy(pivot);
       transformGizmoRoot.quaternion.setFromRotationMatrix(basis);
@@ -5032,11 +5127,15 @@ export default function Home() {
         (!moveGizmoVisibleRef.current && !rotateGizmoVisibleRef.current)
       )
         return undefined;
-      const hit = ray
+      const hits = ray
         .intersectObject(transformGizmoRoot, true)
-        .find((candidate) => candidate.object.userData.gizmo);
-      if (hit?.object.userData.gizmo)
-        return hit.object.userData.gizmo as string;
+        .filter((candidate) => candidate.object.userData.gizmo),
+        hit =
+          hits.find((candidate) =>
+            String(candidate.object.userData.gizmo).startsWith("move-"),
+          ) ?? hits[0];
+      const exactHandle = hit?.object.userData.gizmo as string | undefined;
+      if (exactHandle?.startsWith("move-")) return exactHandle;
 
       // The rendered arrows and rings are deliberately thin. Pick them in
       // screen space as a fallback so their interactive area matches what the
@@ -5050,7 +5149,7 @@ export default function Home() {
         worldPerPixel =
           (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
           Math.max(1, bounds.height),
-        scale = Math.max(0.35, worldPerPixel * 112),
+        scale = Math.max(0.35, worldPerPixel * 112) * gizmoScaleRef.current,
         pointSegmentDistance = (
           point: THREE.Vector2,
           start: THREE.Vector2,
@@ -5076,7 +5175,7 @@ export default function Home() {
             );
           if (!start.visible || !end.visible) return;
           const screenDistance = pointSegmentDistance(pointer, start.point, end.point);
-          if (screenDistance <= 11)
+          if (screenDistance <= Math.max(11, 11 * gizmoThicknessRef.current))
             candidates.push({ handle: `move-${axisName}`, distance: screenDistance });
         });
       }
@@ -5111,12 +5210,16 @@ export default function Home() {
               );
             previous = current;
           }
-          if (closest <= 16)
+          if (closest <= Math.max(12, 16 * gizmoThicknessRef.current))
             candidates.push({ handle: `rotate-${axisName}`, distance: closest });
         });
       }
-      candidates.sort((a, b) => a.distance - b.distance);
-      return candidates[0]?.handle;
+      candidates.sort((a, b) => {
+        const aMove = a.handle.startsWith("move-"),
+          bMove = b.handle.startsWith("move-");
+        return aMove === bMove ? a.distance - b.distance : aMove ? -1 : 1;
+      });
+      return candidates[0]?.handle ?? exactHandle;
     };
     const springAnchor = (active = spring) => {
       if (!active) return undefined;
@@ -7846,6 +7949,7 @@ export default function Home() {
       if (!piece || state.running) return;
       const match = /^(move|rotate)-([xyz])$/.exec(value);
       if (!match) return;
+      highlightGizmoHandle(value);
       e.preventDefault();
       e.stopPropagation();
       const members = gizmoMembers(piece),
@@ -8104,6 +8208,7 @@ export default function Home() {
       if (renderer.domElement.hasPointerCapture(e.pointerId))
         renderer.domElement.releasePointerCapture(e.pointerId);
       gizmoDrag = undefined;
+      highlightGizmoHandle();
       if (!draft.changed) return;
       if (draft.members.some((member) => member.renderBatched))
         state.rebuildRenderBatches();
@@ -12333,6 +12438,37 @@ export default function Home() {
                 ? "Mantiene resolución completa y MSAA 4×."
                 : "Keeps full resolution and 4× MSAA."}
           </small>
+          <label className="renderer-quality-label">
+            {language === "es" ? "Apariencia del gizmo" : "Gizmo appearance"}
+          </label>
+          <div className="physics-parameter gizmo-appearance-parameter">
+            <div>
+              <span>{language === "es" ? "Escala" : "Scale"}</span>
+              <output>{gizmoScale.toFixed(2)}×</output>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.05"
+              value={gizmoScale}
+              onChange={(event) => setGizmoScale(Number(event.target.value))}
+            />
+          </div>
+          <div className="physics-parameter gizmo-appearance-parameter">
+            <div>
+              <span>{language === "es" ? "Grosor" : "Thickness"}</span>
+              <output>{gizmoThickness.toFixed(2)}×</output>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="2.5"
+              step="0.05"
+              value={gizmoThickness}
+              onChange={(event) => setGizmoThickness(Number(event.target.value))}
+            />
+          </div>
           <label>
             {language === "es" ? "Contorno negro de las piezas" : "Part outlines"}
           </label>

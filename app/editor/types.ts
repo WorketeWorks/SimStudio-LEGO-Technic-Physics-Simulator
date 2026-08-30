@@ -417,6 +417,7 @@ export type AppState = {
   gpuRenderer: string;
   gpuVendor: string;
   requestRender: () => void;
+  setGizmoAppearance: (scale: number, thickness: number) => void;
   setViewportRendererPreference: (preference: ViewportRendererPreference) => void;
   setAdaptiveRendering: (enabled: boolean) => void;
   pendingPlacement?: {
