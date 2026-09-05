@@ -5,12 +5,6 @@ use rapier3d::prelude::*;
 use crate::math::{normalized, vector};
 use crate::model::GearConfig;
 
-// One forward/reverse sweep only propagates a driven velocity across roughly
-// one neighbouring contact before Rapier runs. Longer gear trains therefore
-// entered the step with mutually inconsistent velocities and could eject the
-// whole chain. Four cheap gear-only sweeps converge chains without adding
-// more Rapier substeps.
-const VELOCITY_SOLVER_PASSES: usize = 8;
 const VELOCITY_EPSILON: Real = 1.0e-6;
 const GEOMETRY_EPSILON: Real = 1.0e-8;
 
@@ -174,22 +168,13 @@ pub fn project_velocities(
     world: &mut PhysicsWorld,
     dt: Real,
 ) {
-    // One bilateral angular constraint transfers torque without injecting
-    // linear impulses into every axle. Longer graphs receive more cheap
-    // Gauss-Seidel passes, capped to keep large mechanisms predictable.
-    let passes = gears.len().min(24).max(VELOCITY_SOLVER_PASSES);
-    for _ in 0..passes {
-        for gear in gears {
-            solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
-        }
-
-        for gear in gears.iter().rev() {
-            solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
-        }
-    }
-
+    // A single symmetric sweep. The caller interleaves this with the
+    // differential and bearing rows so a closed drivetrain converges together.
     for gear in gears {
-        settle_near_rest(gear, world);
+        solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
+    }
+    for gear in gears.iter().rev() {
+        solve_ideal_gear_velocity(gear, world, phase_velocity_bias(gear, world, dt));
     }
 }
 
@@ -259,7 +244,7 @@ fn solve_ideal_gear_velocity(
         solve_bevel_contact_impulse(gear, world);
         return;
     }
-    let (axis_a, axis_b, speed_a, speed_b, inv_a, inv_b, fixed_a, fixed_b) = {
+    let (linear, angular_a, angular_b, error, denominator) = {
         let (Some(body_a), Some(body_b)) = (
             world.bodies.get(gear.body_a),
             world.bodies.get(gear.body_b),
@@ -272,49 +257,43 @@ fn solve_ideal_gear_velocity(
         let axis_b = (position_b.rotation * gear.local_axis_b).normalize();
         let center_a = position_a.transform_point(gear.local_center_a);
         let center_b = position_b.transform_point(gear.local_center_b);
-        let center_velocity_a = body_a.velocity_at_point(center_a);
-        let center_velocity_b = body_b.velocity_at_point(center_b);
+        let delta = center_b - center_a;
+        let radial_a = delta - axis_a * delta.dot(axis_a);
+        let radial_b = delta - axis_b * delta.dot(axis_b);
+        if radial_a.length_squared() <= GEOMETRY_EPSILON
+            || radial_b.length_squared() <= GEOMETRY_EPSILON { return; }
+        let ca = gear.teeth_a;
+        let cb = gear.signed_teeth_b;
+        // Differentiate the moving line of centres as well as the shaft
+        // angles. The same Jacobian must measure slip and apply its reaction;
+        // a torque-only correction otherwise creates energy in planetary gears.
+        let linear = axis_a.cross(delta) * (ca / radial_a.length_squared())
+            + axis_b.cross(delta) * (cb / radial_b.length_squared());
+        let ma = body_a.mass_properties();
+        let mb = body_b.mass_properties();
+        let angular_a = ca * (axis_a - radial_a * (delta.dot(axis_a) / radial_a.length_squared()))
+            + (center_a - ma.world_com).cross(linear);
+        let angular_b = cb * (axis_b - radial_b * (delta.dot(axis_b) / radial_b.length_squared()))
+            - (center_b - mb.world_com).cross(linear);
         (
-            axis_a,
-            axis_b,
-            mesh_speed_in_body_frame(
-                axis_a,
-                center_b - center_a,
-                center_velocity_b - center_velocity_a,
-                body_a.angvel(),
-            ),
-            mesh_speed_in_body_frame(
-                axis_b,
-                center_a - center_b,
-                center_velocity_a - center_velocity_b,
-                body_b.angvel(),
-            ),
-            axis_a.dot(body_a.mass_properties().effective_world_inv_inertia * axis_a),
-            axis_b.dot(body_b.mass_properties().effective_world_inv_inertia * axis_b),
-            body_a.is_fixed(),
-            body_b.is_fixed(),
+            linear,
+            angular_a,
+            angular_b,
+            linear.dot(body_a.linvel() - body_b.linvel())
+                + angular_a.dot(body_a.angvel()) + angular_b.dot(body_b.angvel()) - phase_bias,
+            linear.dot((ma.effective_inv_mass + mb.effective_inv_mass) * linear)
+                + angular_a.dot(ma.effective_world_inv_inertia * angular_a)
+                + angular_b.dot(mb.effective_world_inv_inertia * angular_b),
         )
     };
-    if fixed_a && fixed_b {
-        return;
-    }
-    let coefficient_a = gear.teeth_a.max(1.0);
-    let coefficient_b = gear.signed_teeth_b;
-    let error = coefficient_a * speed_a + coefficient_b * speed_b - phase_bias;
-    let denominator = coefficient_a * coefficient_a * inv_a
-        + coefficient_b * coefficient_b * inv_b;
     if error.abs() <= VELOCITY_EPSILON || denominator <= GEOMETRY_EPSILON {
         return;
     }
     let lambda = -error / denominator;
-    if !fixed_a {
-        world.bodies[gear.body_a]
-            .apply_torque_impulse(axis_a * (lambda * coefficient_a), true);
-    }
-    if !fixed_b {
-        world.bodies[gear.body_b]
-            .apply_torque_impulse(axis_b * (lambda * coefficient_b), true);
-    }
+    world.bodies[gear.body_a].apply_impulse(linear * lambda, true);
+    world.bodies[gear.body_b].apply_impulse(-linear * lambda, true);
+    world.bodies[gear.body_a].apply_torque_impulse(angular_a * lambda, true);
+    world.bodies[gear.body_b].apply_torque_impulse(angular_b * lambda, true);
 }
 
 fn point_impulse_denominator(
@@ -424,33 +403,6 @@ fn solve_bevel_contact_impulse(gear: &GearRuntime, world: &mut PhysicsWorld) {
     }
 }
 
-/// Axial tooth speed measured against the moving line between both gear
-/// centres.  Using only `angvel · axis` is correct for two stationary axles,
-/// but misses the essential planetary case: a fork/carrier can orbit one gear
-/// around another while both axial speeds initially remain zero.
-///
-/// The radial line is measured in this gear's rotating body frame. Its signed
-/// angular rate is subtracted from the body's axial rate, so translating a
-/// meshed gear tangentially produces the exact spin required for rolling
-/// contact. Parallel meshes still use torque impulses only; bevel meshes use
-/// the pitch-point reaction above so differential carriers receive force in
-/// both directions.
-fn mesh_speed_in_body_frame(
-    axis: Vector,
-    center_delta: Vector,
-    center_delta_velocity: Vector,
-    body_angular_velocity: Vector,
-) -> Real {
-    let radial = center_delta - axis * center_delta.dot(axis);
-    let radial_length_squared = radial.length_squared();
-    if radial_length_squared <= GEOMETRY_EPSILON {
-        return body_angular_velocity.dot(axis);
-    }
-
-    let radial_velocity_in_body_frame =
-        center_delta_velocity - body_angular_velocity.cross(center_delta);
-    -axis.dot(radial.cross(radial_velocity_in_body_frame)) / radial_length_squared
-}
 
 
 
@@ -504,20 +456,9 @@ pub fn project_exact_no_slip(
     gears: &[GearRuntime],
     world: &mut PhysicsWorld,
 ) {
-    // This is the hard gear constraint.
-    //
-    // Repeated forward/reverse Gauss-Seidel sweeps make every gear contact
-    // satisfy zero relative tooth velocity. There is no clutch, tolerance,
-    // phase spring, or permitted tooth slip.
-    let passes = gears.len().min(24).max(VELOCITY_SOLVER_PASSES);
-    for _ in 0..passes {
-        for gear in gears {
-            solve_ideal_gear_velocity(gear, world, 0.0);
-        }
-
-        for gear in gears.iter().rev() {
-            solve_ideal_gear_velocity(gear, world, 0.0);
-        }
+    project_velocities(gears, world, 0.0);
+    for gear in gears {
+        settle_near_rest(gear, world);
     }
 }
 

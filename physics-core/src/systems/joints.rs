@@ -13,6 +13,9 @@ pub struct JointRuntime {
     pub body_b: RigidBodyHandle,
     pub mode: JointMode,
     pub local_axis_a: Vector,
+    pub local_axis_b: Vector,
+    pub motor_speed: Real,
+    pub motor_force: Real,
 }
 
 pub fn create_joint(
@@ -47,7 +50,7 @@ pub fn create_joint(
             // frame on both bodies. Supplying only each local axis lets Rapier
             // choose unrelated tangent axes, so its measured zero angle can be
             // offset even though the Cardan is initially assembled correctly.
-            let mut data = if config.angular_limit.is_some() {
+            let data = if config.angular_limit.is_some() {
                 let world_frame = Rotation::from_rotation_arc(Vector::X, world_axis_a);
                 let frame_a = Pose::from_parts(
                     anchor_a,
@@ -66,26 +69,6 @@ pub fn create_joint(
                     .local_anchor2(anchor_b)
                     .build()
             };
-            let force = if config.mode == JointMode::Motor {
-                config.motor_force
-            } else {
-                config.passive_motor_force
-            };
-            if force > 0.0 {
-                data.set_motor_velocity(
-                    JointAxis::AngX,
-                    if config.mode == JointMode::Motor {
-                        config.motor_speed
-                    } else {
-                        0.0
-                    },
-                    // Match the editor's historical Rapier control: the user
-                    // force value also controls how aggressively the motor
-                    // reaches its target instead of behaving like a soft servo.
-                    force.max(0.01),
-                )
-                .set_motor_max_force(JointAxis::AngX, force);
-            }
             data
         }
         JointMode::Linear => {
@@ -149,14 +132,20 @@ pub fn create_joint(
         body_b,
         mode: config.mode,
         local_axis_a: axis_a,
+        local_axis_b: axis_b,
+        motor_speed: if config.mode == JointMode::Motor { config.motor_speed } else { 0.0 },
+        motor_force: if config.mode == JointMode::Motor {
+            config.motor_force.max(0.0)
+        } else if config.mode == JointMode::Rotation {
+            config.passive_motor_force.max(0.0)
+        } else { 0.0 },
     })
 }
 
 pub fn update_motors(
     commands: &[PhysicsCommand],
     joint_ids: &HashMap<String, usize>,
-    joints: &[JointRuntime],
-    world: &mut PhysicsWorld,
+    joints: &mut [JointRuntime],
 ) {
     for command in commands {
         let PhysicsCommand::SetMotor {
@@ -167,19 +156,35 @@ pub fn update_motors(
         else {
             continue;
         };
-        let Some(runtime) = joint_ids.get(joint).and_then(|index| joints.get(*index)) else {
+        let Some(runtime) = joint_ids.get(joint).and_then(|index| joints.get_mut(*index)) else {
             continue;
         };
-        let Some(revolute) = world
-            .impulse_joints
-            .get_mut(runtime.handle, true)
-            .and_then(|joint| joint.data.as_revolute_mut())
-        else {
-            continue;
-        };
-        revolute
-            .set_motor_velocity(*speed, (*force).max(0.01))
-            .set_motor_max_force((*force).max(0.0));
+        if !matches!(runtime.mode, JointMode::Rotation | JointMode::Motor) { continue; }
+        runtime.motor_speed = *speed;
+        runtime.motor_force = (*force).max(0.0);
+    }
+}
+
+/// Apply finite motor torque before drivetrain projection and integration.
+/// A motor inside Rapier's later solve would rotate a blocked shaft first;
+/// cancelling its velocity afterwards cannot undo that skipped tooth.
+pub fn apply_motor_impulses(joints: &[JointRuntime], world: &mut PhysicsWorld, dt: Real) {
+    for joint in joints {
+        if joint.motor_force <= 0.0 { continue; }
+        let a = &world.bodies[joint.body_a];
+        let b = &world.bodies[joint.body_b];
+        let axis_a = a.rotation() * joint.local_axis_a;
+        let axis_b = b.rotation() * joint.local_axis_b;
+        let denominator = axis_a.dot(a.mass_properties().effective_world_inv_inertia * axis_a)
+            + axis_b.dot(b.mass_properties().effective_world_inv_inertia * axis_b);
+        if denominator <= 1.0e-8 { continue; }
+        let speed = b.angvel().dot(axis_b) - a.angvel().dot(axis_a);
+        let gain = joint.motor_force.max(0.01) * dt;
+        let delta = (joint.motor_speed - speed) * gain / (1.0 + gain);
+        let limit = joint.motor_force * dt;
+        let impulse = (delta / denominator).clamp(-limit, limit);
+        world.bodies[joint.body_a].apply_torque_impulse(-axis_a * impulse, true);
+        world.bodies[joint.body_b].apply_torque_impulse(axis_b * impulse, true);
     }
 }
 
@@ -235,6 +240,52 @@ pub fn apply_axle_friction(
             }
             if !fixed_b {
                 world.bodies[joint.body_b].apply_torque_impulse(-torque, true);
+            }
+        }
+    }
+}
+
+/// Return gear reactions to the bearing supports during drivetrain sweeps.
+/// Rapier still owns joint position correction, limits and contacts.
+pub fn project_locked_velocities(joints: &[JointRuntime], world: &mut PhysicsWorld) {
+    for joint in joints {
+        let Some(runtime) = world.impulse_joints.get(joint.handle) else { continue; };
+        let data = runtime.data;
+        let pose_a = *world.bodies[joint.body_a].position();
+        let pose_b = *world.bodies[joint.body_b].position();
+        let frame_a = pose_a * data.local_frame1;
+        let frame_b = pose_b * data.local_frame2;
+        for (index, basis) in [Vector::X, Vector::Y, Vector::Z].iter().enumerate() {
+            let axis = frame_a.rotation * *basis;
+            for angular in [false, true] {
+                let bit = 1 << (index + if angular { 3 } else { 0 });
+                if data.locked_axes.bits() & bit == 0 { continue; }
+                let a = &world.bodies[joint.body_a];
+                let b = &world.bodies[joint.body_b];
+                let ma = a.mass_properties();
+                let mb = b.mass_properties();
+                let (ja, jb, error, linear_denominator) = if angular {
+                    (axis, -axis, (a.angvel() - b.angvel()).dot(axis), 0.0)
+                } else {
+                    (
+                        (frame_a.translation - ma.world_com).cross(axis),
+                        -(frame_b.translation - mb.world_com).cross(axis),
+                        (a.velocity_at_point(frame_a.translation)
+                            - b.velocity_at_point(frame_b.translation)).dot(axis),
+                        axis.dot((ma.effective_inv_mass + mb.effective_inv_mass) * axis),
+                    )
+                };
+                let denominator = linear_denominator
+                    + ja.dot(ma.effective_world_inv_inertia * ja)
+                    + jb.dot(mb.effective_world_inv_inertia * jb);
+                if denominator <= 1.0e-8 || error.abs() <= 1.0e-6 { continue; }
+                let impulse = -error / denominator;
+                if !angular {
+                    world.bodies[joint.body_a].apply_impulse(axis * impulse, true);
+                    world.bodies[joint.body_b].apply_impulse(-axis * impulse, true);
+                }
+                world.bodies[joint.body_a].apply_torque_impulse(ja * impulse, true);
+                world.bodies[joint.body_b].apply_torque_impulse(jb * impulse, true);
             }
         }
     }

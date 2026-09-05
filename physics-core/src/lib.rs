@@ -165,6 +165,9 @@ impl PhysicsEngine {
                     .colliders
                     .insert_with_parent(collider, handle, &mut world.bodies);
             }
+            // External impulses run before Rapier's first step, so they need
+            // the final compound mass and inertia, including additional mass.
+            world.bodies[handle].recompute_mass_properties_from_colliders(&world.colliders);
         }
         ordered_bodies.sort_unstable_by_key(|entry| entry.0);
 
@@ -239,22 +242,6 @@ impl PhysicsEngine {
     pub fn step(&mut self, delta_seconds: f32, commands: JsValue) -> Result<Float32Array, JsValue> {
         let commands: Vec<PhysicsCommand> = serde_wasm_bindgen::from_value(commands)
             .map_err(|error| js_error(format!("Invalid physics commands: {error}")))?;
-        let driven_bodies: HashSet<_> = commands
-            .iter()
-            .filter_map(|command| {
-                let body = match command {
-                    PhysicsCommand::Spring { body, .. }
-                    | PhysicsCommand::Impulse { body, .. }
-                    | PhysicsCommand::TorqueImpulse { body, .. }
-                    | PhysicsCommand::SetTranslation { body, .. }
-                    | PhysicsCommand::SetRotation { body, .. }
-                    | PhysicsCommand::SetLinearVelocity { body, .. }
-                    | PhysicsCommand::SetAngularVelocity { body, .. } => *body,
-                    _ => return None,
-                };
-                self.body_ids.get(&body).copied()
-            })
-            .collect();
         let timestep = delta_seconds.clamp(1.0 / 240.0, 1.0 / 60.0);
         let substeps = if self.gears.is_empty()
             && self.differentials.is_empty()
@@ -269,7 +256,7 @@ impl PhysicsEngine {
 
         self.stats.max_spring_force =
             forces::apply_commands(&commands, &self.body_ids, &mut self.world, timestep);
-        joints::update_motors(&commands, &self.joint_ids, &self.joints, &mut self.world);
+        joints::update_motors(&commands, &self.joint_ids, &mut self.joints);
         joints::apply_axle_friction(&self.joints, &mut self.world, self.settings, timestep);
 
         let startup = self.elapsed_seconds < 0.35;
@@ -277,22 +264,17 @@ impl PhysicsEngine {
         self.world.integration_parameters.dt = substep_dt;
         self.world.integration_parameters.warmstart_coefficient = if startup { 0.0 } else { 0.65 };
         for _ in 0..substeps {
+            joints::apply_motor_impulses(&self.joints, &mut self.world, substep_dt);
             rubber::apply(&self.rubber_bands, &mut self.world, substep_dt);
-            differentials::project_velocities(
-                &self.differentials,
-                &driven_bodies,
-                substep_dt,
-                &mut self.world,
-            );
-            gears::project_velocities(&self.gears, &mut self.world, substep_dt);
+            self.project_drivetrain(substep_dt);
             self.world.step_with_events(&self.contact_filter, &());
-            differentials::project_velocities(
-                &self.differentials,
-                &driven_bodies,
-                substep_dt,
-                &mut self.world,
+            differentials::accumulate_angles(&mut self.differentials, &self.world);
+            gears::accumulate_angles(
+                &mut self.gears,
+                &mut self.previous_gear_rotations,
+                &self.world,
             );
-            gears::project_exact_no_slip(&self.gears, &mut self.world);
+            self.project_drivetrain(0.0);
         }
         gears::accumulate_angles(
             &mut self.gears,
@@ -318,13 +300,7 @@ impl PhysicsEngine {
             &mut self.previous_gear_rotations,
             &self.world,
         );
-        gears::project_exact_no_slip(&self.gears, &mut self.world);
-        differentials::project_velocities(
-            &self.differentials,
-            &driven_bodies,
-            timestep,
-            &mut self.world,
-        );
+        self.project_drivetrain(0.0);
         gears::accumulate_angles(
             &mut self.gears,
             &mut self.previous_gear_rotations,
@@ -477,6 +453,32 @@ impl PhysicsEngine {
 }
 
 impl PhysicsEngine {
+    fn project_drivetrain(&mut self, dt: Real) {
+        let count = self.gears.len() + self.differentials.len();
+        if count == 0 { return; }
+        let passes = (count * 4).clamp(32, 128);
+        let mut previous = Vec::with_capacity(self.ordered_bodies.len());
+        for pass in 0..passes {
+            previous.clear();
+            previous.extend(self.ordered_bodies.iter().map(|(_, handle)| {
+                let body = &self.world.bodies[*handle];
+                (body.linvel(), body.angvel())
+            }));
+            joints::project_locked_velocities(&self.joints, &mut self.world);
+            differentials::project_velocities(&self.differentials, dt, &mut self.world);
+            if dt > 0.0 {
+                gears::project_velocities(&self.gears, &mut self.world, dt);
+            } else {
+                gears::project_exact_no_slip(&self.gears, &mut self.world);
+            }
+            if pass >= 3 && self.ordered_bodies.iter().zip(&previous).all(|((_, handle), (v, w))| {
+                let body = &self.world.bodies[*handle];
+                (body.linvel() - *v).length_squared() < 1.0e-12
+                    && (body.angvel() - *w).length_squared() < 1.0e-12
+            }) { break; }
+        }
+    }
+
     fn clamp_motion(&mut self, elapsed_seconds: f32) {
         let release = ((elapsed_seconds - 0.35) / 0.65).clamp(0.0, 1.0);
         let linear_limit = 2.0 + 10.0 * release;
@@ -503,17 +505,14 @@ impl PhysicsEngine {
             }
         }
         let geared: HashSet<_> = graph.keys().copied().collect();
-        for (_, handle) in &self.ordered_bodies {
-            let body = &mut self.world.bodies[*handle];
-            if body.is_fixed() {
-                continue;
-            }
-            // Release startup limits gradually instead of jumping from 2 to
-            // 12 units/s in one frame. A discontinuous limit lets any residual
-            // solver correction appear as an instantaneous acceleration.
-            body.set_linvel(clamp_length(body.linvel(), linear_limit), true);
-            if !geared.contains(handle) {
-                body.set_angvel(clamp_length(body.angvel(), free_angular_limit), true);
+        for joint in &self.joints {
+            // A fixed support cannot transmit a speed, and must not merge
+            // otherwise independent drivetrains into one speed-limited group.
+            if self.world.bodies[joint.body_a].is_dynamic()
+                && self.world.bodies[joint.body_b].is_dynamic()
+            {
+                graph.entry(joint.body_a).or_default().push(joint.body_b);
+                graph.entry(joint.body_b).or_default().push(joint.body_a);
             }
         }
 
@@ -537,18 +536,27 @@ impl PhysicsEngine {
             let maximum = component
                 .iter()
                 .filter_map(|handle| self.world.bodies.get(*handle))
-                .map(|body| body.angvel().length())
-                .fold(0.0_f32, f32::max);
-            if maximum <= gear_angular_limit {
+                .filter(|body| body.is_dynamic())
+                .map(|body| (body.angvel().length() / gear_angular_limit)
+                    .max(body.linvel().length() / linear_limit))
+                .fold(1.0_f32, f32::max);
+            if maximum <= 1.0 {
                 continue;
             }
-            let scale = gear_angular_limit / maximum;
+            let scale = 1.0 / maximum;
             for handle in component {
                 let body = &mut self.world.bodies[handle];
                 if !body.is_fixed() {
+                    body.set_linvel(body.linvel() * scale, true);
                     body.set_angvel(body.angvel() * scale, true);
                 }
             }
+        }
+        for (_, handle) in &self.ordered_bodies {
+            let body = &mut self.world.bodies[*handle];
+            if body.is_fixed() || visited.contains(handle) { continue; }
+            body.set_linvel(clamp_length(body.linvel(), linear_limit), true);
+            body.set_angvel(clamp_length(body.angvel(), free_angular_limit), true);
         }
     }
 

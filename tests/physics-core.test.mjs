@@ -162,16 +162,21 @@ test("gear ratios and motor joints are solved inside Rust", () => {
   );
   assert.ok(
     Math.abs(motor) > 0.1,
-    `the native motor should rotate its body: ${JSON.stringify(Array.from(transforms))}`,
+    `the torque-limited motor should rotate its body: ${JSON.stringify(Array.from(transforms))}`,
   );
   transforms = engine.step(1 / 60, [
     { kind: "setAngularVelocity", body: 1, velocity: [0, 60, 0] },
   ]);
   const limitedA = transforms[12];
   const limitedB = transforms[stride + 12];
+  const dx = transforms[stride + 1] - transforms[1];
+  const dz = transforms[stride + 3] - transforms[3];
+  const vx = transforms[stride + 8] - transforms[8];
+  const vz = transforms[stride + 10] - transforms[10];
+  const orbit = (dz * vx - dx * vz) / (dx * dx + dz * dz);
   assert.ok(
-    Math.abs(20 * limitedA + 10 * limitedB) < 0.02,
-    `speed limiting must preserve the gear ratio: ${limitedA}, ${limitedB}`,
+    Math.abs(20 * limitedA + 10 * limitedB - 30 * orbit) < 0.02,
+    `speed limiting must preserve rolling contact on moving axles: ${limitedA}, ${limitedB}, orbit=${orbit}`,
   );
   engine.free();
 });
@@ -671,6 +676,7 @@ test("three-body differential routes motion through every free member", () => {
   };
 
   const [left, right, fixedCarrier] = run(false, false, true, 1);
+  assert.ok(Math.abs(fixedCarrier) < 1e-6);
   assert.ok(left * right < 0, `fixed carrier must invert the outputs: ${left}, ${right}`);
   assert.ok(Math.abs(left + right) < 1e-4);
 
@@ -680,13 +686,13 @@ test("three-body differential routes motion through every free member", () => {
   assert.ok(Math.abs(driven - 2 * carrier) < 1e-4);
 
   const [freeInput, restingSide, routedCarrier] = run(false, false, false, 1);
-  assert.ok(Math.abs(freeInput - 6) < 1e-4, `active side input must not be damped: ${freeInput}`);
-  assert.ok(Math.abs(restingSide) < 1e-4);
-  assert.ok(Math.abs(routedCarrier - 3) < 1e-4);
+  assert.ok(Math.abs(freeInput - 5) < 1e-4, `input must receive the load reaction: ${freeInput}`);
+  assert.ok(Math.abs(restingSide + 1) < 1e-4);
+  assert.ok(Math.abs(routedCarrier - 2) < 1e-4);
 
   const [carrierLeft, carrierRight, drivenCarrier] = run(false, false, false, 3);
-  assert.ok(Math.abs(drivenCarrier - 6) < 1e-4, `carrier input must remain easy to turn: ${drivenCarrier}`);
-  assert.ok(Math.abs(carrierLeft - 6) < 1e-4 && Math.abs(carrierRight - 6) < 1e-4);
+  assert.ok(Math.abs(drivenCarrier - 2) < 1e-4, `carrier must accelerate both output inertias: ${drivenCarrier}`);
+  assert.ok(Math.abs(carrierLeft - 2) < 1e-4 && Math.abs(carrierRight - 2) < 1e-4);
 
   const [, , blockedCarrier] = run(true, true, false, 3);
   assert.ok(Math.abs(blockedCarrier) < 1e-5, `two blocked outputs must lock the carrier: ${blockedCarrier}`);
@@ -755,15 +761,19 @@ test("a differential satellite spins with the output difference and corrects too
   ]);
   const stride = engine.transform_stride();
   const satelliteSpin = transforms[stride * 3 + 12];
-  assert.ok(Math.abs(satelliteSpin) > 2.5, `satellite must visibly spin: ${satelliteSpin}`);
+  assert.ok(Math.abs(satelliteSpin) > 0.5, `satellite must visibly spin: ${satelliteSpin}`);
+  const sideRelative = transforms[13] - transforms[stride * 2 + 13];
+  const satelliteRelative = satelliteSpin - transforms[stride * 2 + 12];
+  assert.ok(Math.abs(sideRelative + satelliteRelative) < 0.01,
+    `satellite contact must include carrier reaction: ${sideRelative}, ${satelliteRelative}`);
   engine.free();
 
   engine = new PhysicsEngine(scene([0, 0, 1]));
   transforms = engine.step(1 / 60, []);
-  const phaseCorrectionSpin = transforms[stride * 3 + 12];
+  const phaseCorrectionAngle = 2 * Math.atan2(transforms[stride * 3 + 5], transforms[stride * 3 + 7]);
   assert.ok(
-    Math.abs(phaseCorrectionSpin) > 0.5,
-    `tooth-on-tooth satellite must move toward a gap: ${phaseCorrectionSpin}`,
+    Math.abs(phaseCorrectionAngle) > 0.001,
+    `tooth-on-tooth satellite must move toward a gap: ${phaseCorrectionAngle}`,
   );
   for (let index = 0; index < 180; index++)
     transforms = engine.step(1 / 60, []);
