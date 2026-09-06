@@ -18,6 +18,7 @@ import {
   approximateCollisionPrimitives,
   approximateGearCollisionPrimitives,
   detectConnectorHoles,
+  generatePartConnectors,
   fallbackBeamConnectors,
   hybridAxlePinConnectors,
   rodConnectors,
@@ -90,10 +91,16 @@ import {
   mapLayerCounts,
   preloadedMapBundle,
   preloadedMapFingerprint,
+  preloadedMapProvenance,
   type MapFingerprintSnapshot,
   type MapUpdateLayer,
   type PartMapBundle,
 } from "./map-updates";
+import {
+  automaticMapProvenance, normalizeMapProvenance, normalizeMapProvenanceSnapshot,
+  readMapProvenance, writeMapProvenance, MAP_GENERATOR_VERSION,
+  type MapProvenance, type MapProvenanceSnapshot,
+} from "./map-provenance";
 import {
   disposeRubberBand,
   drawRubberBand,
@@ -413,9 +420,9 @@ const modelText = (p: CatalogPart) =>
 const frictionPinRefs = new Set(["2780", "6558", "32054", "43093"]);
 
 const isPinPart = (p: CatalogPart) =>
-  /^Technic (Axle )?Pin/i.test(p.name) || frictionPinRefs.has(p.part);
+  /^Technic (Axle )?Pin(?! Connector| Joiner| Hole)/i.test(p.name) || frictionPinRefs.has(p.part);
 
-const isAxlePart = (p: CatalogPart) => /^Technic Axle(?! Pin)/i.test(p.name);
+const isAxlePart = (p: CatalogPart) => /^Technic Axle\s+\d/i.test(p.name);
 
 const paletteReferenceSet = new Set([
   ...paletteParts.flatMap((part) =>
@@ -2016,6 +2023,14 @@ export default function Home() {
         packaged = correctionKeys.map((key) => packagedParts[key]).find(Boolean),
         correctionStorageKey = correctionStorageKeyFor(p),
         hasPreloadedConnectionMap = Boolean(preloadedConnections);
+      const localProvenance = readMapProvenance(localStorage, correctionStorageKey),
+        reviewedProvenance = preloadedMapProvenance(correctionStorageKey),
+        packagedProvenance = normalizeMapProvenanceSnapshot(
+          (packaged as { mapProvenance?: MapProvenanceSnapshot } | undefined)?.mapProvenance),
+        mapProvenance: MapProvenanceSnapshot = {
+          connectors: automaticMapProvenance(), colliders: automaticMapProvenance(),
+          gearColliders: automaticMapProvenance(), specialGear: automaticMapProvenance(),
+        };
       const storedSpecialGear = localStorage.getItem(
           `sim-special-gear-v1:${correctionStorageKey}`,
         ),
@@ -2028,8 +2043,10 @@ export default function Home() {
         hasSavedConnectorMap = false;
       try {
         const saved = localStorage.getItem(`sim-connectors-v4:${correctionStorageKey}`);
-        if (saved) {
+        if (saved && !(localProvenance.connectors?.origin === "automatic"
+          && localProvenance.connectors.generatorVersion !== MAP_GENERATOR_VERSION)) {
           hasSavedConnectorMap = true;
+          mapProvenance.connectors = localProvenance.connectors;
           connectors = (
             JSON.parse(saved) as {
               local: number[];
@@ -2050,62 +2067,37 @@ export default function Home() {
           }));
         }
       } catch {}
-      if (!connectors) connectors = straightAxleConnectors(p.name);
-      if (!connectors && preloadedConnections)
+      if (!connectors && preloadedConnections) {
+        mapProvenance.connectors = reviewedProvenance.connectors;
         connectors = preloadedConnections.map((connector) => ({
           ...connector,
           local: new THREE.Vector3().fromArray(connector.local),
           axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
         }));
-      if (!connectors && packaged)
+      }
+      if (!connectors) connectors = straightAxleConnectors(p.name);
+      if (!connectors && packaged) {
+        mapProvenance.connectors = packagedProvenance.connectors;
         connectors = packaged.connectors.map((connector) => ({
           ...connector,
           local: new THREE.Vector3().fromArray(connector.local),
           axis: new THREE.Vector3().fromArray(connector.axis).normalize(),
         }));
+      }
       if (!connectors)
         connectors =
           connectorCache.get(correctionStorageKey) &&
           cloneConnectors(connectorCache.get(correctionStorageKey)!);
       if (!connectors) {
-        if (isPinPart(p)) {
-          const shafts = /^Technic Axle Pin/i.test(p.name)
-              ? hybridAxlePinConnectors(wrapper)
-              : rodConnectors(wrapper, "round"),
-            sockets = detectConnectorHoles(wrapper);
-          connectors = [
-            ...shafts,
-            ...sockets.filter(
-              (socket) =>
-                !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-            ),
-          ];
-        } else if (isAxlePart(p)) {
-          const shafts = rodConnectors(wrapper, "axle"),
-            sockets = detectConnectorHoles(wrapper);
-          connectors = [
-            ...shafts,
-            ...sockets.filter(
-              (socket) =>
-                !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-            ),
-          ];
-        }
-      }
-      if (!connectors) {
-        connectors = detectConnectorHoles(wrapper);
-        if (!connectors.length) connectors = fallbackBeamConnectors(wrapper, p.name);
+        connectors = generatePartConnectors(wrapper, p.name);
+        mapProvenance.connectors = automaticMapProvenance();
         try {
           localStorage.setItem(
             `sim-connectors-v4:${correctionStorageKey}`,
-            JSON.stringify(
-              connectors.map((connector) => ({
-                ...connector,
-                local: connector.local.toArray(),
-                axis: connector.axis.toArray(),
-              })),
-            ),
+            JSON.stringify(connectors.map(connector => ({ ...connector,
+              local: connector.local.toArray(), axis: connector.axis.toArray() }))),
           );
+          writeMapProvenance(localStorage, correctionStorageKey, { connectors: automaticMapProvenance() });
         } catch {}
       }
       if (isHalfBeamPart(p))
@@ -2117,13 +2109,13 @@ export default function Home() {
               : connector.kind,
         }));
       connectorCache.set(correctionStorageKey, cloneConnectors(connectors));
-      let colliders: CollisionPrimitive[] | undefined = straightAxleCollisionPrimitives(
-        p.name,
-      );
+      let colliders: CollisionPrimitive[] | undefined;
       if (!colliders)
         try {
           const saved = localStorage.getItem(`sim-colliders-v1:${correctionStorageKey}`);
-          if (saved) {
+          if (saved && !(localProvenance.colliders?.origin === "automatic"
+            && localProvenance.colliders.generatorVersion !== MAP_GENERATOR_VERSION)) {
+            mapProvenance.colliders = localProvenance.colliders;
             const stored = JSON.parse(saved) as SavedCollisionPrimitive[];
             if (Array.isArray(stored))
               colliders = stored
@@ -2138,7 +2130,8 @@ export default function Home() {
                 .map(runtimeColliderFromStored);
           }
         } catch {}
-      if (!colliders && preloadedCollisions)
+      if (!colliders && preloadedCollisions) {
+        mapProvenance.colliders = reviewedProvenance.colliders;
         colliders = preloadedCollisions.map((primitive) => ({
           ...primitive,
           center: new THREE.Vector3().fromArray(primitive.center),
@@ -2147,6 +2140,8 @@ export default function Home() {
             : undefined,
           rotation: new THREE.Quaternion().fromArray(primitive.rotation),
         }));
+      }
+      if (!colliders) colliders = straightAxleCollisionPrimitives(p.name);
       if (!colliders)
         colliders = collisionCache.get(correctionStorageKey)?.map((primitive) => ({
           ...primitive,
@@ -2165,7 +2160,8 @@ export default function Home() {
         !/^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(p.name) &&
         !hasPreloadedConnectionMap &&
         !hasSavedConnectorMap
-      )
+      ) {
+        mapProvenance.colliders = packagedProvenance.colliders;
         colliders = packaged.colliders.map((primitive) => ({
           ...primitive,
           center: new THREE.Vector3().fromArray(primitive.center),
@@ -2174,7 +2170,9 @@ export default function Home() {
             : undefined,
           rotation: new THREE.Quaternion().fromArray(primitive.rotation),
         }));
+      }
       if (!colliders) {
+        mapProvenance.colliders = automaticMapProvenance();
         colliders = approximateCollisionPrimitives(wrapper, p.name, connectors);
         collisionCache.set(
           correctionStorageKey,
@@ -2187,6 +2185,7 @@ export default function Home() {
         );
       }
       let gearColliders: CollisionPrimitive[] = [];
+      let gearMapResolved = false;
       if (isGearPart(p)) {
         try {
           const saved = localStorage.getItem(
@@ -2194,10 +2193,16 @@ export default function Home() {
           );
           if (saved) {
             const rows = JSON.parse(saved) as SavedCollisionPrimitive[];
-            if (Array.isArray(rows)) gearColliders = rows.map(runtimeColliderFromStored);
+            if (Array.isArray(rows)) {
+              gearColliders = rows.map(runtimeColliderFromStored);
+              gearMapResolved = true;
+              mapProvenance.gearColliders = localProvenance.gearColliders;
+            }
           }
         } catch {}
-        if (!gearColliders.length && preloadedGearCollisions)
+        if (!gearMapResolved && preloadedGearCollisions) {
+          gearMapResolved = true;
+          mapProvenance.gearColliders = reviewedProvenance.gearColliders;
           gearColliders = preloadedGearCollisions.map((primitive) => ({
             ...primitive,
             center: new THREE.Vector3().fromArray(primitive.center),
@@ -2206,7 +2211,8 @@ export default function Home() {
               : undefined,
             rotation: new THREE.Quaternion().fromArray(primitive.rotation),
           }));
-        if (!gearColliders.length)
+        }
+        if (!gearMapResolved && !gearColliders.length)
           gearColliders =
             gearCollisionCache.get(correctionStorageKey)?.map((primitive) => ({
               ...primitive,
@@ -2214,7 +2220,8 @@ export default function Home() {
               size: primitive.size?.clone(),
               rotation: primitive.rotation.clone(),
             })) ?? [];
-        if (!gearColliders.length && packaged?.gearColliders)
+        if (!gearMapResolved && !gearColliders.length && packaged?.gearColliders) {
+          mapProvenance.gearColliders = packagedProvenance.gearColliders;
           gearColliders = packaged.gearColliders.map((primitive) => ({
             ...primitive,
             center: new THREE.Vector3().fromArray(primitive.center),
@@ -2223,7 +2230,9 @@ export default function Home() {
               : undefined,
             rotation: new THREE.Quaternion().fromArray(primitive.rotation),
           }));
-        if (!gearColliders.length) {
+        }
+        if (!gearMapResolved && !gearColliders.length) {
+          mapProvenance.gearColliders = automaticMapProvenance();
           gearColliders = approximateGearCollisionPrimitives(colliders);
           gearCollisionCache.set(
             correctionStorageKey,
@@ -2236,7 +2245,9 @@ export default function Home() {
           );
         }
       }
-      return { connectors, colliders, gearColliders, specialGear };
+      mapProvenance.specialGear = storedSpecialGear !== null
+        ? localProvenance.specialGear : reviewedProvenance.specialGear;
+      return { connectors, colliders, gearColliders, specialGear, mapProvenance };
     };
 
     const preloadPart = async (p: CatalogPart) => {
@@ -6073,6 +6084,7 @@ export default function Home() {
         gearMotor: piece.gearMotor,
         connectors: piece.connectors.map(cloneConnector),
         colliders: piece.colliders.map(cloneCollider),
+        mapProvenance: { ...piece.mapProvenance },
         gearColliders: piece.gearColliders.map(cloneCollider),
         specialGear: piece.specialGear,
       })),
@@ -6103,6 +6115,7 @@ export default function Home() {
               scale: THREE.Vector3;
               connectors: MeshConnector[];
               colliders: CollisionPrimitive[];
+              mapProvenance?: MapProvenanceSnapshot;
               gearColliders: CollisionPrimitive[];
               specialGear: boolean;
               fixed: boolean;
@@ -6152,6 +6165,7 @@ export default function Home() {
           piece.connectors = item.connectors.map(cloneConnector);
           piece.colliders = item.colliders.map(cloneCollider);
           piece.gearColliders = item.gearColliders.map(cloneCollider);
+          piece.mapProvenance = { ...item.mapProvenance };
           piece.specialGear = item.specialGear;
           if (piece.fixed && !piece.lockSprite) {
             piece.lockSprite = makeLock();
@@ -6364,6 +6378,7 @@ export default function Home() {
             gearMotor: piece.gearMotor,
             connectors: piece.connectors.map(saveConnector),
             colliders: piece.colliders.map(saveCollider),
+            mapProvenance: normalizeMapProvenanceSnapshot(piece.mapProvenance),
             gearColliders: piece.gearColliders.map(saveCollider),
           };
         }),
@@ -6560,6 +6575,7 @@ export default function Home() {
           piece.mesh.scale.fromArray(saved.scale);
           piece.connectors = saved.connectors.map(loadConnector);
           piece.colliders = saved.colliders.map(loadCollider);
+          piece.mapProvenance = normalizeMapProvenanceSnapshot(saved.mapProvenance);
           piece.gearColliders = saved.gearColliders.map(loadCollider);
           piece.fixed = saved.fixed;
           piece.exactCollider = saved.exactCollider ?? false;
@@ -6772,6 +6788,7 @@ export default function Home() {
           scale: piece.mesh.scale.clone(),
           connectors: piece.connectors.map(cloneConnector),
           colliders: piece.colliders.map(cloneCollider),
+          mapProvenance: { ...piece.mapProvenance },
           gearColliders: piece.gearColliders.map(cloneCollider),
           specialGear: piece.specialGear,
           fixed: piece.fixed,
@@ -6818,6 +6835,7 @@ export default function Home() {
         piece.connectors = item.connectors.map(cloneConnector);
         piece.colliders = item.colliders.map(cloneCollider);
         piece.gearColliders = item.gearColliders.map(cloneCollider);
+        piece.mapProvenance = { ...item.mapProvenance };
         piece.specialGear = item.specialGear;
         piece.fixed = item.fixed;
         piece.exactCollider = item.exactCollider;
@@ -10901,6 +10919,7 @@ export default function Home() {
     piece: Piece,
     connectors: MeshConnector[],
     notice: string,
+    provenance: MapProvenance = { origin: "manual", source: "map-editor" },
   ) => {
     const state = appRef.current;
     if (!state || running) return;
@@ -10914,6 +10933,7 @@ export default function Home() {
           : new THREE.Vector3(1, 0, 0),
     }));
     for (const instance of state.pieces.filter((item) => item.part === piece.part)) {
+      instance.mapProvenance = { ...instance.mapProvenance, connectors: provenance };
       instance.connectors = normalized.map((connector) => ({
         ...connector,
         local: connector.local.clone(),
@@ -10940,6 +10960,7 @@ export default function Home() {
       );
     } catch {}
     acknowledgeManualMapEdit(correctionStorageKeyFor(piece), ["connectors"]);
+    writeMapProvenance(localStorage, correctionStorageKeyFor(piece), { connectors: provenance });
     state.debug.connectors = true;
     setDebugViews((current) => ({ ...current, connectors: true }));
     state.refreshDebug();
@@ -11016,36 +11037,12 @@ export default function Home() {
 
   const regenerateConnectorMap = () => {
     if (!selected || running) return;
-    const sockets = detectConnectorHoles(selected.mesh);
-    let connectors: MeshConnector[];
-    if (isPinPart(selected)) {
-      const shafts = /^Technic Axle Pin/i.test(selected.name)
-        ? hybridAxlePinConnectors(selected.mesh)
-        : rodConnectors(selected.mesh, "round");
-      connectors = [
-        ...shafts,
-        ...sockets.filter(
-          (socket) =>
-            !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-        ),
-      ];
-    } else if (isAxlePart(selected)) {
-      const shafts = rodConnectors(selected.mesh, "axle");
-      connectors = [
-        ...shafts,
-        ...sockets.filter(
-          (socket) =>
-            !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-        ),
-      ];
-    } else
-      connectors = sockets.length
-        ? sockets
-        : fallbackBeamConnectors(selected.mesh, selected.name);
+    const connectors = generatePartConnectors(selected.mesh, selected.name);
     commitConnectorMap(
       selected,
       connectors,
       `Mapa ${selected.part}: ${connectors.length} conectores regenerados`,
+      automaticMapProvenance(),
     );
   };
 
@@ -11088,6 +11085,7 @@ export default function Home() {
     const payload = {
         format: "sim-studio-connect-map",
         version: 1,
+        mapProvenance: { connectors: normalizeMapProvenance(selected.mapProvenance?.connectors) },
         part: selected.part,
         name: selected.name,
         connectors: connectorData(selected),
@@ -11156,6 +11154,8 @@ export default function Home() {
         selected,
         connectors,
         `Mapa ${selected.part}: ${connectors.length} conectores importados`,
+        payload.mapProvenance?.connectors ? normalizeMapProvenance(payload.mapProvenance.connectors)
+          : { origin: "manual", source: "legacy-import" },
       );
     } catch (error) {
       setMessage(
@@ -11198,6 +11198,7 @@ export default function Home() {
     colliders: CollisionPrimitive[],
     notice: string,
     layer: "normal" | "gear" = selectedCollisionLayer,
+    provenance: MapProvenance = { origin: "manual", source: "map-editor" },
   ) => {
     const state = appRef.current;
     if (!state || running) return;
@@ -11206,6 +11207,8 @@ export default function Home() {
     state.pieces
       .filter((instance) => instance.part === piece.part)
       .forEach((instance) => {
+        instance.mapProvenance = { ...instance.mapProvenance,
+          [layer === "gear" ? "gearColliders" : "colliders"]: provenance };
         if (layer === "gear") instance.gearColliders = normalized.map(cloneCollider);
         else instance.colliders = normalized.map(cloneCollider);
       });
@@ -11225,10 +11228,24 @@ export default function Home() {
       layer === "gear" ? "gearColliders" : "colliders",
     ]);
     state.debug.colliders = true;
+    writeMapProvenance(localStorage, correctionStorageKeyFor(piece), {
+      [layer === "gear" ? "gearColliders" : "colliders"]: provenance,
+    });
     setDebugViews((current) => ({ ...current, colliders: true }));
     state.refreshDebug();
     setColliderRevision((value) => value + 1);
     setMessage(notice);
+  };
+
+  const regenerateCollisionMap = () => {
+    if (!selected || running) return;
+    const colliders = selectedCollisionLayer === "gear"
+      ? approximateGearCollisionPrimitives(selected.colliders)
+      : straightAxleCollisionPrimitives(selected.name)
+        ?? approximateCollisionPrimitives(selected.mesh, selected.name, selected.connectors);
+    commitCollisionMap(selected, colliders,
+      `Mapa ${selected.part}: ${colliders.length} colliders regenerados`,
+      selectedCollisionLayer, automaticMapProvenance());
   };
 
   const addCollider = (shape: CollisionPrimitive["shape"]) => {
@@ -11266,6 +11283,7 @@ export default function Home() {
       .filter((instance) => instance.part === selected.part)
       .forEach((instance) => {
         instance.specialGear = enabled;
+        instance.mapProvenance = { ...instance.mapProvenance, specialGear: { origin: "manual", source: "map-editor" } };
       });
     localStorage.setItem(
       `sim-special-gear-v1:${correctionStorageKeyFor(selected)}`,
@@ -11276,6 +11294,7 @@ export default function Home() {
       collisionMapRevision(correctionStorageKeyFor(selected)),
     );
     acknowledgeManualMapEdit(correctionStorageKeyFor(selected), ["specialGear"]);
+    writeMapProvenance(localStorage, correctionStorageKeyFor(selected), { specialGear: { origin: "manual", source: "map-editor" } });
     setColliderRevision((value) => value + 1);
   };
 
@@ -11428,6 +11447,7 @@ export default function Home() {
     const payload = {
         format: "sim-studio-collision-map",
         version: 1,
+        mapProvenance: normalizeMapProvenanceSnapshot(selected.mapProvenance),
         part: selected.part,
         name: selected.name,
         colliders: colliderData(selected.colliders),
@@ -11562,6 +11582,8 @@ export default function Home() {
         colliders,
         `Mapa ${selected.part}: ${colliders.length} colliders importados`,
         "normal",
+        payload.mapProvenance?.colliders ? normalizeMapProvenance(payload.mapProvenance.colliders)
+          : { origin: "manual", source: "legacy-import" },
       );
       if (selected.gear && Array.isArray(payload.gearColliders)) {
         const gearColliders = payload.gearColliders.map(collisionPrimitiveFromData);
@@ -11570,6 +11592,8 @@ export default function Home() {
           gearColliders,
           `Mapa ${selected.part}: ${colliders.length} normales y ${gearColliders.length} de engranaje importados`,
           "gear",
+          payload.mapProvenance?.gearColliders ? normalizeMapProvenance(payload.mapProvenance.gearColliders)
+            : { origin: "manual", source: "legacy-import" },
         );
       }
     } catch (error) {
@@ -13605,6 +13629,10 @@ export default function Home() {
             </button>
             {connectionMapOpen && (
               <div className="map-editor">
+                <div className="data-row"><span>{language === "es" ? "Origen" : "Origin"}</span>
+                  <b>{selected.mapProvenance?.connectors?.origin === "manual" ? "Manual"
+                    : selected.mapProvenance?.connectors?.origin === "automatic" ? (language === "es" ? "Automático" : "Automatic")
+                    : (language === "es" ? "Desconocido" : "Unknown")}</b></div>
                 <p>{t.mapHelp}</p>
                 <div className="map-actions">
                   <button onClick={addConnector}>{t.addPoint}</button>
@@ -13831,6 +13859,10 @@ export default function Home() {
             </button>
             {collisionMapOpen && (
               <div className="map-editor collision-map-editor">
+                <div className="data-row"><span>{language === "es" ? "Origen" : "Origin"}</span>
+                  <b>{selected.mapProvenance?.[selectedCollisionLayer === "gear" ? "gearColliders" : "colliders"]?.origin === "manual" ? "Manual"
+                    : selected.mapProvenance?.[selectedCollisionLayer === "gear" ? "gearColliders" : "colliders"]?.origin === "automatic" ? (language === "es" ? "Automático" : "Automatic")
+                    : (language === "es" ? "Desconocido" : "Unknown")}</b></div>
                 <p>{t.collisionMapHelp}</p>
                 {selected.gear && (
                   <>
@@ -13860,6 +13892,7 @@ export default function Home() {
                   </>
                 )}
                 <div className="map-actions collision-map-actions">
+                  <button onClick={regenerateCollisionMap}>{t.regenerateMap}</button>
                   <button onClick={() => addCollider("box")}>{t.addBox}</button>
                   <button onClick={() => addCollider("cylinder")}>{t.addCylinder}</button>
                   <button onClick={() => addCollider("sphere")}>{t.addSphere}</button>

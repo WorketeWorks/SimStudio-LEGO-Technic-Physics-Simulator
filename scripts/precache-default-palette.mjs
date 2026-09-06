@@ -8,13 +8,8 @@ import { LDrawConditionalLineMaterial } from "three/addons/materials/LDrawCondit
 import {
   approximateCollisionPrimitives,
   approximateGearCollisionPrimitives,
-  detectConnectorHoles,
-  fallbackBeamConnectors,
-  hybridAxlePinConnectors,
-  objectLocalBounds,
-  rodConnectors,
+  generatePartConnectors,
   straightAxleCollisionPrimitives,
-  straightAxleConnectors,
 } from "../app/connectors.ts";
 import { preloadedConnectionMaps } from "../app/connection-maps.ts";
 import {
@@ -23,6 +18,8 @@ import {
 } from "../app/collision-maps.ts";
 import { paletteParts } from "../app/palette.ts";
 import { flattenLDrawRenderables } from "../app/ldraw-geometry.ts";
+import { automaticMapProvenance, canRegenerateMap, normalizeMapProvenanceSnapshot } from "../app/map-provenance.ts";
+const reviewedProvenance = JSON.parse(await readFile(new URL("../app/preloaded-map-provenance.json", import.meta.url), "utf8"));
 
 globalThis.ProgressEvent ??= class ProgressEvent extends Event {
   constructor(type, init = {}) {
@@ -246,6 +243,7 @@ const modelText = (part) =>
       : { singleConnection: connector.singleConnection }),
   }),
   serializeCollider = (collider) => ({
+    ...collider,
     shape: collider.shape,
     center: collider.center.toArray(),
     ...(collider.size ? { size: collider.size.toArray() } : {}),
@@ -255,6 +253,7 @@ const modelText = (part) =>
   }),
   colliderVectors = (colliders) =>
     colliders.map((collider) => ({
+      ...collider,
       shape: collider.shape,
       center: new THREE.Vector3(...collider.center),
       ...(collider.size
@@ -268,7 +267,7 @@ const modelText = (part) =>
     }));
 
 let catalog = { version: 1, parts: {}, assets: {} };
-if (selectedReferences.size) {
+{
   try {
     catalog = JSON.parse(
       await readFile(join(repositoryRoot, "app", "preloaded-catalog.json"), "utf8"),
@@ -295,64 +294,9 @@ try {
     const wrapper = new THREE.Group();
     wrapper.add(exact);
     wrapper.updateMatrixWorld(true);
-    let connectors;
-    if (straightAxleConnectors(part.name))
-      connectors = straightAxleConnectors(part.name);
-    else if (preloadedConnectionMaps[part.part])
-      connectors = vectors(preloadedConnectionMaps[part.part]);
-    else if (isPinPart(part)) {
-      const shafts = /^Technic Axle Pin/i.test(part.name)
-          ? hybridAxlePinConnectors(wrapper)
-          : rodConnectors(wrapper, "round"),
-        sockets = detectConnectorHoles(wrapper);
-      connectors = [
-        ...shafts,
-        ...sockets.filter(
-          (socket) => !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-        ),
-      ];
-    } else if (isAxlePart(part)) {
-      const shafts = rodConnectors(wrapper, "axle"),
-        sockets = detectConnectorHoles(wrapper);
-      connectors = [
-        ...shafts,
-        ...sockets.filter(
-          (socket) => !shafts.some((shaft) => shaft.local.distanceTo(socket.local) < 0.12),
-        ),
-      ];
-    } else {
-      connectors = detectConnectorHoles(wrapper);
-      if (!connectors.length) connectors = fallbackBeamConnectors(wrapper, part.name);
-    }
-    if (!connectors.length && /gear|wheel|bush/i.test(part.name)) {
-      const bounds = objectLocalBounds(wrapper),
-        size = bounds.getSize(new THREE.Vector3()),
-        dimensions = [size.x, size.y, size.z],
-        axisIndex = dimensions.indexOf(Math.min(...dimensions)),
-        axis = new THREE.Vector3();
-      axis.setComponent(axisIndex, 1);
-      connectors = [
-        {
-          local: bounds.getCenter(new THREE.Vector3()),
-          axis,
-          kind: "axle",
-          role: "socket",
-          diameter: 0.8,
-          length: dimensions[axisIndex],
-        },
-      ];
-    }
-    if (
-      /^Technic (Beam|Panel)/i.test(part.name) &&
-      /(?:\bx\s*0\.5\b|\b0\.5\b|\bhalf\b)/i.test(part.name)
-    )
-      connectors = connectors.map((connector) => ({
-        ...connector,
-        kind:
-          connector.role === "socket" && connector.kind === "round"
-            ? "half"
-            : connector.kind,
-      }));
+    const connectors = preloadedConnectionMaps[part.part]
+      ? vectors(preloadedConnectionMaps[part.part])
+      : generatePartConnectors(wrapper, part.name);
     const colliders = preloadedCollisionMaps[part.part]
         ? colliderVectors(preloadedCollisionMaps[part.part])
         : straightAxleCollisionPrimitives(part.name) ??
@@ -364,6 +308,9 @@ try {
           : [],
       box = new THREE.Box3().setFromObject(wrapper),
       rootFile = resolvedFiles.get(`${(part.modelPart ?? part.part).toLowerCase()}.dat`);
+    const previous = catalog.parts[part.part],
+      previousProvenance = normalizeMapProvenanceSnapshot(previous?.mapProvenance),
+      mapProvenance = {};
     catalog.parts[part.part] = {
       name: part.name,
       family: part.family,
@@ -375,6 +322,17 @@ try {
       gearColliders: gearColliders.map(serializeCollider),
       bounds: { min: box.min.toArray(), max: box.max.toArray() },
     };
+    for (const [layer, reviewed] of Object.entries({ connectors: preloadedConnectionMaps, colliders: preloadedCollisionMaps, gearColliders: preloadedGearCollisionMaps })) {
+      if (reviewed[part.part] !== undefined) {
+        mapProvenance[layer] = reviewedProvenance[part.part]?.[layer] ?? { origin: "unknown" };
+      } else if (previous?.[layer] !== undefined && !canRegenerateMap(previousProvenance[layer])) {
+        catalog.parts[part.part][layer] = previous[layer];
+        mapProvenance[layer] = previousProvenance[layer];
+      } else mapProvenance[layer] = automaticMapProvenance();
+    }
+    if (previous?.specialGear !== undefined) catalog.parts[part.part].specialGear = previous.specialGear;
+    mapProvenance.specialGear = previousProvenance.specialGear;
+    catalog.parts[part.part].mapProvenance = mapProvenance;
     catalog.assets[assetKey] = {
       geometry: geometryFile,
       render: `catalog/renders/${part.modelPart ?? part.part}.png`,
@@ -385,23 +343,6 @@ try {
   await new Promise((done) => server.close(done));
 }
 
-// Keep legacy, automatically generated beam metadata in sync with the current
-// 0.45-stud radial envelope without regenerating every cached mesh. Reviewed
-// collision maps are applied at runtime and are intentionally not rewritten.
-for (const part of Object.values(catalog.parts)) {
-  if (part.family !== "beams" || !Array.isArray(part.colliders)) continue;
-  part.colliders = part.colliders.map((collider) => {
-    if (collider.shape === "cylinder" && Math.abs((collider.radius ?? 0) - 0.5) < 1e-6)
-      return { ...collider, radius: 0.45 };
-    if (
-      collider.shape === "box" &&
-      Array.isArray(collider.size) &&
-      Math.abs(collider.size[2] - 1) < 1e-6
-    )
-      return { ...collider, size: [collider.size[0], collider.size[1], 0.9] };
-    return collider;
-  });
-}
 
 await writeFile(
   join(repositoryRoot, "app", "preloaded-catalog.json"),

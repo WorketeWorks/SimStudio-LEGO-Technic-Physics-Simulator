@@ -1,5 +1,7 @@
 import { preloadedConnectionMaps } from "./connection-maps";
 import preloadedCatalog from "./preloaded-catalog.json";
+import reviewedProvenance from "./preloaded-map-provenance.json";
+import { normalizeMapProvenanceSnapshot, type MapProvenanceSnapshot } from "./map-provenance";
 import {
   preloadedCollisionMaps,
   preloadedGearCollisionMaps,
@@ -26,8 +28,16 @@ export const MAP_BASELINE_STORAGE_PREFIX = "sim-map-baseline-v1:";
 
 const packagedParts = preloadedCatalog.parts as Record<
   string,
-  { connectors?: unknown }
+  { connectors?: unknown; mapProvenance?: MapProvenanceSnapshot }
 >;
+
+export const preloadedMapProvenance = (part: string): MapProvenanceSnapshot => {
+  const key = part.toLowerCase();
+  return normalizeMapProvenanceSnapshot({
+    ...packagedParts[key]?.mapProvenance,
+    ...(reviewedProvenance as Record<string, MapProvenanceSnapshot>)[key],
+  });
+};
 
 export const preloadedMapBundle = (part: string): PartMapBundle => {
   const key = part.toLowerCase(),

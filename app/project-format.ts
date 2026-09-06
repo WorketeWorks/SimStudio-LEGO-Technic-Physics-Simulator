@@ -1,4 +1,5 @@
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
+import { normalizeMapProvenanceSnapshot, type MapProvenanceSnapshot } from "./map-provenance";
 
 export const PROJECT_EXTENSION = ".simstudio";
 export const PROJECT_MIME = "application/x-simstudio-project";
@@ -47,6 +48,7 @@ export type SavedCollisionPrimitive = {
 };
 
 export type SavedPiece = {
+  mapProvenance?: MapProvenanceSnapshot;
   id: string;
   catalog: JsonObject;
   asset: string;
@@ -397,6 +399,7 @@ const sanitizeProjectDocument = (
                   typeof piece.gearMotor.force === "number" ? piece.gearMotor.force : 20,
               }
             : undefined,
+        mapProvenance: normalizeMapProvenanceSnapshot(piece.mapProvenance),
         connectors,
         colliders: (Array.isArray(piece.colliders) ? piece.colliders : []).map(
           sanitizeCollider,

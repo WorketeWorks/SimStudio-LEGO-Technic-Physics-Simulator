@@ -1,6 +1,7 @@
 import { access, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeMapProvenance } from "../app/map-provenance.ts";
 
 const [correctionsArg, outputArg] = process.argv.slice(2);
 if (!correctionsArg || !outputArg)
@@ -13,6 +14,9 @@ const correctionsDir = resolve(correctionsArg),
   collisionMaps = {},
   gearCollisionMaps = {},
   specialGearParts = new Set();
+let mapProvenance = {};
+try { mapProvenance = JSON.parse(await readFile(resolve(outputDir, "preloaded-map-provenance.json"), "utf8")); }
+catch (error) { if (error.code !== "ENOENT") throw error; }
 
 const readExport = async (file, name, fallback) => {
   const path = resolve(outputDir, file);
@@ -72,61 +76,53 @@ for (const { file, payload, part, kind } of [...selected.values()].sort((a, b) =
   a.part.localeCompare(b.part, undefined, { numeric: true }) ||
   a.kind.localeCompare(b.kind),
 )) {
+  mapProvenance[part] ??= {};
+  const provenance = (layer) => payload.mapProvenance?.[layer]
+    ? normalizeMapProvenance(payload.mapProvenance[layer])
+    : { origin: "manual", source: file };
   if (kind === "connections") {
     if (!Array.isArray(payload.connectors))
       throw new Error(`${file} does not contain a connectors array`);
     connectionMaps[part] = payload.connectors;
+    mapProvenance[part].connectors = provenance("connectors");
   } else {
     if (!Array.isArray(payload.colliders))
       throw new Error(`${file} does not contain a colliders array`);
     collisionMaps[part] = payload.colliders.map(normalizeCollisionPrimitive);
-    if (Array.isArray(payload.gearColliders))
+    mapProvenance[part].colliders = provenance("colliders");
+    if (Array.isArray(payload.gearColliders)) {
       gearCollisionMaps[part] = payload.gearColliders.map(normalizeCollisionPrimitive);
-    else delete gearCollisionMaps[part];
+      mapProvenance[part].gearColliders = provenance("gearColliders");
+    }
     if (payload.specialGear === true || payload.especialGear === true)
       specialGearParts.add(part);
     else if (payload.specialGear === false || payload.especialGear === false)
       specialGearParts.delete(part);
+    if (typeof payload.specialGear === "boolean" || typeof payload.especialGear === "boolean")
+      mapProvenance[part].specialGear = provenance("specialGear");
   }
 }
 
-const connectionSource = `export type StoredConnector = {
-  local: [number, number, number];
-  axis: [number, number, number];
-  kind: "round" | "axle" | "half";
-  role: "socket" | "shaft";
-  diameter: number;
-  length?: number;
-  rotationOnly?: boolean;
+// Preserve the current schemas, including arcs and connector target rules.
+const typeHeader = async (file, declaration) => {
+  let source;
+  try { source = await readFile(resolve(outputDir, file), "utf8"); }
+  catch { source = await readFile(new URL(`../app/${file}`, import.meta.url), "utf8"); }
+  const index = source.indexOf(declaration);
+  if (index < 0) throw new Error(`Missing schema declaration in ${file}`);
+  return source.slice(0, index);
 };
-
-// Generated from the reviewed maps exported by Sim Studio's map editor.
-export const preloadedConnectionMaps: Record<string, StoredConnector[]> = ${JSON.stringify(connectionMaps, null, 2)};
-`;
-
-const collisionSource = `export type StoredCollisionPrimitive = {
-  shape: "box" | "cylinder";
-  center: [number, number, number];
-  size?: [number, number, number];
-  radius?: number;
-  halfHeight?: number;
-  rotation: [number, number, number, number];
-  gearCollision?: boolean;
-  gearRatio?: number;
-};
-
-// Generated from the reviewed maps exported by Sim Studio's collider editor.
-export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> = ${JSON.stringify(collisionMaps, null, 2)};
-
-// Optional second layer used exclusively for gear-to-gear contacts.
-export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive[]> = ${JSON.stringify(gearCollisionMaps, null, 2)};
-
-export const preloadedSpecialGearParts = new Set(${JSON.stringify([...specialGearParts])});
-`;
+const connectionSource = (await typeHeader("connection-maps.ts", "export const preloadedConnectionMaps"))
+  + `export const preloadedConnectionMaps: Record<string, StoredConnector[]> = ${JSON.stringify(connectionMaps, null, 2)};\n`;
+const collisionSource = (await typeHeader("collision-maps.ts", "export const preloadedCollisionMaps"))
+  + `export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> = ${JSON.stringify(collisionMaps, null, 2)};\n\n`
+  + `export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive[]> = ${JSON.stringify(gearCollisionMaps, null, 2)};\n\n`
+  + `export const preloadedSpecialGearParts = new Set(${JSON.stringify([...specialGearParts])});\n`;
 
 await Promise.all([
   writeFile(resolve(outputDir, "connection-maps.ts"), connectionSource),
   writeFile(resolve(outputDir, "collision-maps.ts"), collisionSource),
+  writeFile(resolve(outputDir, "preloaded-map-provenance.json"), JSON.stringify(mapProvenance, null, 2) + "\n"),
 ]);
 
 console.log(

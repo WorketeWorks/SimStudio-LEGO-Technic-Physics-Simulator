@@ -81,6 +81,50 @@ export function objectLocalTrimesh(root: THREE.Object3D): LocalTrimesh {
 }
 
 export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
+  const data = objectLocalTrimesh(root);
+  if (!data.vertices.length) return [];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(data.vertices, 3));
+  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const surface = new THREE.Mesh(geometry, material);
+  surface.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
+  const profile = (center: THREE.Vector3, axis: THREE.Vector3) => {
+    const u = new THREE.Vector3(Math.abs(axis.x) < 0.8 ? 1 : 0, Math.abs(axis.x) < 0.8 ? 0 : 1, 0);
+    u.addScaledVector(axis, -u.dot(axis)).normalize();
+    const v = new THREE.Vector3().crossVectors(axis, u);
+    const radii: number[] = [];
+    for (let i = 0; i < 16; i++) {
+      const angle = i * Math.PI / 8;
+      ray.set(center, u.clone().multiplyScalar(Math.cos(angle)).addScaledVector(v, Math.sin(angle)));
+      ray.near = 0.001;
+      ray.far = 0.46;
+      const hit = ray.intersectObject(surface, false)[0];
+      if (hit && hit.distance < 0.12) return undefined;
+      if (hit) radii.push(hit.distance);
+    }
+    // A ray exactly on a triangulation seam may miss one wall. Require
+    // coverage around the opening, with a small allowance for those seams.
+    if (radii.length < 14) return undefined;
+    const minimum = Math.min(...radii), maximum = Math.max(...radii);
+    // Classify the opening, not its nominal diameter. Small circular bores
+    // are common in frames and panels and are not cross-axle sockets.
+    return { kind: (minimum / maximum < 0.78 ? "axle" : "round") as MeshConnector["kind"],
+      diameter: maximum * 2 };
+  };
+  try {
+    return detectAxisAlignedHoles(root, profile);
+  } finally {
+    geometry.dispose();
+    material.dispose();
+  }
+}
+
+function detectAxisAlignedHoles(
+  root: THREE.Object3D,
+  profile: (center: THREE.Vector3, axis: THREE.Vector3) => { kind: MeshConnector["kind"]; diameter: number } | undefined,
+): MeshConnector[] {
   root.updateMatrixWorld(true);
   const inverse = root.matrixWorld.clone().invert(),
     loops: Loop[] = [];
@@ -206,7 +250,7 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
         ),
         diameter = (a.du + a.dv + b.du + b.dv) / 4,
         kind: MeshConnector["kind"] =
-          diameter < 0.75 || Math.min(a.radialRatio, b.radialRatio) < 0.78
+          Math.min(a.radialRatio, b.radialRatio) < 0.78
             ? "axle"
             : "round";
       const start = center.clone(),
@@ -233,7 +277,7 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
           (c) => c.local.distanceTo(center) < 0.12 && Math.abs(c.axis.dot(axis)) > 0.9,
         )
       )
-        result.push({ local: center, axis, kind, role: "socket", diameter });
+        result.push({ local: center, axis, kind, role: "socket", diameter, length: depth });
     }
   // Cross holes placed at the end of a beam often share edges with the outer
   // silhouette, so the line-loop pass above cannot close their contour. Probe
@@ -274,13 +318,13 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
   for (let axisIndex = 0; axisIndex < 3; axisIndex++) {
     if (dimensions[axisIndex] > 1.25) continue;
     const [uAxis, vAxis] = [0, 1, 2].filter((index) => index !== axisIndex),
-      minimumU = Math.ceil(coord(bounds.min, uAxis) - 0.001),
-      maximumU = Math.floor(coord(bounds.max, uAxis) + 0.001),
-      minimumV = Math.ceil(coord(bounds.min, vAxis) - 0.001),
-      maximumV = Math.floor(coord(bounds.max, vAxis) + 0.001),
+      minimumU = Math.ceil(coord(bounds.min, uAxis) * 2 - 0.001) / 2,
+      maximumU = Math.floor(coord(bounds.max, uAxis) * 2 + 0.001) / 2,
+      minimumV = Math.ceil(coord(bounds.min, vAxis) * 2 - 0.001) / 2,
+      maximumV = Math.floor(coord(bounds.max, vAxis) * 2 + 0.001) / 2,
       axis = new THREE.Vector3().setComponent(axisIndex, 1);
-    for (let u = minimumU; u <= maximumU; u++)
-      for (let v = minimumV; v <= maximumV; v++) {
+    for (let u = minimumU; u <= maximumU; u += 0.5)
+      for (let v = minimumV; v <= maximumV; v += 0.5) {
         const center = vector(
             axisIndex,
             (coord(bounds.min, axisIndex) + coord(bounds.max, axisIndex)) / 2,
@@ -293,6 +337,16 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
               Math.abs(connector.axis.dot(axis)) > 0.9,
           );
         if (probe(center, axisIndex, uAxis, vAxis)) continue;
+        const measured = profile(center, axis);
+        if (measured) {
+          if (existing) {
+            Object.assign(existing, measured, { length: dimensions[axisIndex] });
+            existing.local.copy(center);
+          }
+          else result.push({ local: center, axis: axis.clone(), ...measured,
+            role: "socket", length: dimensions[axisIndex] });
+          continue;
+        }
         let surroundingMaterial = 0,
           innerOpening = 0;
         for (let sample = 0; sample < 8; sample++) {
@@ -327,7 +381,10 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
           });
       }
   }
-  return result;
+  return result.flatMap((connector) => {
+    const measured = profile(connector.local, connector.axis);
+    return measured ? [{ ...connector, ...measured }] : [];
+  });
 }
 
 export function fallbackBeamConnectors(
@@ -386,6 +443,21 @@ export function hybridAxlePinConnectors(root: THREE.Object3D): MeshConnector[] {
       axis: ends[1].axis.clone(),
     },
   ];
+}
+
+export function generatePartConnectors(root: THREE.Object3D, name: string): MeshConnector[] {
+  const template = straightAxleConnectors(name);
+  if (template) return template;
+  const sockets = detectConnectorHoles(root);
+  const pin = /^Technic (Axle )?Pin(?! Connector| Joiner| Hole)/i.test(name);
+  const axle = /^Technic Axle\s+\d/i.test(name);
+  const shafts = pin ? (/^Technic Axle Pin/i.test(name)
+    ? hybridAxlePinConnectors(root) : rodConnectors(root, "round"))
+    : axle ? rodConnectors(root, "axle") : [];
+  const connectors = [...shafts, ...sockets.filter(socket => !shafts.some(shaft =>
+    shaft.local.distanceTo(socket.local) < 0.12 && Math.abs(shaft.axis.dot(socket.axis)) > 0.98))];
+  const half = /^Technic (Beam|Panel)/i.test(name) && /(?:\bx\s*0\.5\b|\bhalf\b)/i.test(name);
+  return connectors.map(c => half && c.kind === "round" && c.role === "socket" ? { ...c, kind: "half" } : c);
 }
 
 export type CollisionPrimitive = {
@@ -487,6 +559,30 @@ export function approximateCollisionPrimitives(
     beamOrPanel = /^Technic (Beam|Panel)/i.test(name),
     beamThickness = /(?:\bx\s*0\.5\b|\b0\.5\b|\bhalf\b)/i.test(name) ? 0.5 : 1;
   longAxis.setComponent(axisIndex, 1);
+  // Solid outer envelopes: connection bores belong to the connector map, not
+  // to the simplified contact geometry.
+  if (/^Technic Beam\s+\d/i.test(name) && !/bent|angle|frame|fork|steering/i.test(name)) {
+    const transverse = [0, 1, 2].filter(index => index !== axisIndex),
+      depthAxisIndex = transverse.reduce((a, b) => Math.abs(dimensions[a] - beamThickness) <= Math.abs(dimensions[b] - beamThickness) ? a : b),
+      depthAxis = new THREE.Vector3().setComponent(depthAxisIndex, 1),
+      widthAxis = new THREE.Vector3().crossVectors(longAxis, depthAxis).normalize(),
+      width = dimensions[transverse.find(index => index !== depthAxisIndex)!],
+      radius = Math.min(0.45, width / 2),
+      span = Math.max(0, dimensions[axisIndex] - width),
+      depth = Math.min(beamThickness, dimensions[depthAxisIndex]),
+      capRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), depthAxis);
+    if (span < 0.05) return [{ shape: "cylinder", center, radius, halfHeight: depth / 2, rotation: capRotation }];
+    return [
+      { shape: "box", center, size: new THREE.Vector3(span, depth, radius * 2),
+        rotation: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(longAxis, depthAxis, widthAxis)) },
+      ...[-1, 1].map(sign => ({ shape: "cylinder" as const,
+        center: center.clone().addScaledVector(longAxis, sign * span / 2),
+        radius, halfHeight: depth / 2, rotation: capRotation.clone() })),
+    ];
+  }
+  if (/^Technic Panel/i.test(name)) return [{
+    shape: "box", center, size: size.clone().multiplyScalar(0.95), rotation: new THREE.Quaternion(),
+  }];
   if (/^Technic (Axle|Pin)/i.test(name)) {
     const others = dimensions.filter((_, index) => index !== axisIndex),
       axleConnectorShell = /^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(name),
@@ -549,7 +645,7 @@ export function approximateCollisionPrimitives(
             }))
             .filter((item) => item.distance < 0.16)
             .map((item) => item.index);
-        if (indices.length < 2) continue;
+        if (indices.length < 2 || Math.abs(direction.dot(sockets[i].axis)) > 0.95) continue;
         const key = indices
           .slice()
           .sort((a, b) => a - b)
@@ -702,6 +798,7 @@ export function approximateCollisionPrimitives(
     },
   ];
 }
+
 
 /** Secondary volume used only for gear-to-gear contacts. */
 export function approximateGearCollisionPrimitives(

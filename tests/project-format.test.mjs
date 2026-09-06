@@ -4,6 +4,7 @@ import ts from "typescript";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { createRequire } from "node:module";
+import * as provenance from "../app/map-provenance.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -14,7 +15,7 @@ const javascript = ts.transpileModule(source, {
 const module = { exports: {} };
 vm.runInNewContext(
   `(function(require,exports,module){${javascript}\n})(require,module.exports,module);`,
-  { require, module, Uint8Array, ArrayBuffer, indexedDB: undefined },
+  { require: (name) => name === "./map-provenance" ? provenance : require(name), module, Uint8Array, ArrayBuffer, indexedDB: undefined },
 );
 const {
   decodeProjectFile,
@@ -35,6 +36,7 @@ const fixture = {
   pieces: [],
   connections: [],
   gearLinks: [],
+  rubberBands: [],
   importedCatalog: [],
   camera: { position: [1, 2, 3], quaternion: [0, 0, 0, 1], target: [0, 0, 0] },
   settings: {

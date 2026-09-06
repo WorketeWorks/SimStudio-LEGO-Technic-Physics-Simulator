@@ -5,6 +5,7 @@
  * the Three.js renderer, Rust physics core, connection system and project IO.
  */
 import type * as THREE from "three";
+import type { MapProvenanceSnapshot } from "../map-provenance";
 import type { CollisionPrimitive, MeshConnector } from "../connectors";
 import type { GearPair } from "../gears";
 import type { LDrawPlacement } from "../ldraw";
@@ -52,6 +53,7 @@ export type CatalogPart = {
 };
 
 export type Piece = CatalogPart & {
+  mapProvenance?: MapProvenanceSnapshot;
   id: number;
   mesh: THREE.Object3D;
   connectors: MeshConnector[];
@@ -87,6 +89,7 @@ export type Piece = CatalogPart & {
 };
 
 export type EditorPieceSnapshot = {
+  mapProvenance?: MapProvenanceSnapshot;
   piece: Piece;
   position: THREE.Vector3;
   rotation: THREE.Quaternion;

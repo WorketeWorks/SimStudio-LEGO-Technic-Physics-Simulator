@@ -1,0 +1,822 @@
+{
+  "44": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "2477": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "2736": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "2780": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "2825": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "3167": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "3648": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "3649": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "3673": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "3713": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "4159": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "4185": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "4274": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6536": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6538": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6539": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6542": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6558": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6573": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "specialGear": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6589": {
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6628": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6632": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "10197": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "10928": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "11214": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "11455": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "11478": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "15100": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "15458": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "18651": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "18654": {
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "18939": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "18947": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "22961": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "26287": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "27940": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32002": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32009": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32013": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32014": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32016": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32034": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32039": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32054": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32056": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32062": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32063": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32065": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32138": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32140": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32184": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32192": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32198": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32249": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32251": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32269": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32270": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32271": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32291": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32449": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32498": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "32556": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "35188": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "39790": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "39793": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "39794": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "41677": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "41678": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "42003": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "45590": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "46372": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "48496": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "48989": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "55615": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "60483": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "60484": {
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "62462": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "62519": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "62520": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "62821": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "63869": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "64178": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "64179": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "64782": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "67491": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "71709": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "80286": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "87082": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "87408": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "92907": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "94925": {
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "99009": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "99010": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "99021": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "99773": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "4265c": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "6538c": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  },
+  "18938u": {
+    "connectors": {
+      "origin": "manual",
+      "source": "reviewed-correction-map"
+    }
+  }
+}
