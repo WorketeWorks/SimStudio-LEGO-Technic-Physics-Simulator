@@ -20,6 +20,8 @@ import { paletteParts } from "../app/palette.ts";
 import { flattenLDrawRenderables } from "../app/ldraw-geometry.ts";
 import { automaticMapProvenance, canRegenerateMap, normalizeMapProvenanceSnapshot } from "../app/map-provenance.ts";
 const reviewedProvenance = JSON.parse(await readFile(new URL("../app/preloaded-map-provenance.json", import.meta.url), "utf8"));
+const preservedOverlay = (part, layer, maps) => maps[part] !== undefined
+  && !canRegenerateMap(reviewedProvenance[part]?.[layer]);
 
 globalThis.ProgressEvent ??= class ProgressEvent extends Event {
   constructor(type, init = {}) {
@@ -294,14 +296,14 @@ try {
     const wrapper = new THREE.Group();
     wrapper.add(exact);
     wrapper.updateMatrixWorld(true);
-    const connectors = preloadedConnectionMaps[part.part]
+    const connectors = preservedOverlay(part.part, "connectors", preloadedConnectionMaps)
       ? vectors(preloadedConnectionMaps[part.part])
       : generatePartConnectors(wrapper, part.name);
-    const colliders = preloadedCollisionMaps[part.part]
+    const colliders = preservedOverlay(part.part, "colliders", preloadedCollisionMaps)
         ? colliderVectors(preloadedCollisionMaps[part.part])
         : straightAxleCollisionPrimitives(part.name) ??
           approximateCollisionPrimitives(wrapper, part.name, connectors),
-      gearColliders = preloadedGearCollisionMaps[part.part]
+      gearColliders = preservedOverlay(part.part, "gearColliders", preloadedGearCollisionMaps)
         ? colliderVectors(preloadedGearCollisionMaps[part.part])
         : part.gear
           ? approximateGearCollisionPrimitives(colliders)
@@ -323,7 +325,7 @@ try {
       bounds: { min: box.min.toArray(), max: box.max.toArray() },
     };
     for (const [layer, reviewed] of Object.entries({ connectors: preloadedConnectionMaps, colliders: preloadedCollisionMaps, gearColliders: preloadedGearCollisionMaps })) {
-      if (reviewed[part.part] !== undefined) {
+      if (preservedOverlay(part.part, layer, reviewed)) {
         mapProvenance[layer] = reviewedProvenance[part.part]?.[layer] ?? { origin: "unknown" };
       } else if (previous?.[layer] !== undefined && !canRegenerateMap(previousProvenance[layer])) {
         catalog.parts[part.part][layer] = previous[layer];

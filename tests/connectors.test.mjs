@@ -6,6 +6,7 @@ import {
   approximateCollisionPrimitives,
   approximateGearCollisionPrimitives,
   detectConnectorHoles,
+  generatePartConnectors,
   straightAxleCollisionPrimitives,
   straightAxleConnectors,
 } from "../app/connectors.ts";
@@ -173,6 +174,8 @@ test("full beams use a 0.45 radial collision envelope", () => {
   const root = loadPart("32523-71"),
     connectors = detectConnectorHoles(root),
     colliders = approximateCollisionPrimitives(root, "Technic Beam 3", connectors);
+  assert.equal(colliders.length, 3);
+  assert.deepEqual(colliders.map(c => c.shape), ["box", "cylinder", "cylinder"]);
   colliders
     .filter((item) => item.shape === "box")
     .forEach((box) => {
@@ -194,6 +197,42 @@ test("full beams use a 0.45 radial collision envelope", () => {
   assert.equal(single.length, 1);
   assert.equal(single[0].radius, 0.45);
   assert.equal(single[0].halfHeight, 0.5);
+});
+
+test("straight beam envelopes stay compact without a connection map and under world transforms", () => {
+  const root = loadPart("32523-71");
+  const before = approximateCollisionPrimitives(root, "Technic Beam 3", []);
+  root.position.set(4, 2, -8);
+  root.rotation.set(0.4, 0.7, 1.2);
+  root.updateMatrixWorld(true);
+  const after = approximateCollisionPrimitives(root, "Technic Beam 3", []);
+  assert.equal(after.length, 3);
+  for (let i = 0; i < after.length; i++) {
+    assert.equal(after[i].shape, before[i].shape);
+    assert.ok(after[i].center.distanceTo(before[i].center) < 1e-6);
+    assert.ok(Math.abs(after[i].rotation.dot(before[i].rotation)) > 1 - 1e-6);
+    assert.equal(after[i].innerRadius, undefined);
+  }
+});
+
+test("socket connectors are not mistaken for solid pins or axles", () => {
+  const connectors = generatePartConnectors(loadPart("32013-71"), "Technic Axle and Pin Connector Angled #1");
+  assert.equal(connectors.length, 2);
+  assert.ok(connectors.every(c => c.role === "socket"));
+});
+
+test("angled connector shells use two solid cylinders meeting at the joint", () => {
+  const root = loadPart("32013-71"), name = "Technic Axle and Pin Connector Angled #1",
+    colliders = approximateCollisionPrimitives(root, name, generatePartConnectors(root, name));
+  assert.equal(colliders.length, 2);
+  assert.ok(colliders.every(c => c.shape === "cylinder" && c.radius === 0.45));
+  const axes = colliders.map(c => new THREE.Vector3(0, 1, 0).applyQuaternion(c.rotation));
+  assert.ok(Math.abs(axes[0].dot(axes[1])) < 1e-6);
+  for (let i = 0; i < colliders.length; i++) {
+    const local = colliders[i].center.clone().negate();
+    assert.ok(local.clone().cross(axes[i]).length() < 1e-6);
+    assert.ok(Math.abs(local.dot(axes[i])) <= colliders[i].halfHeight + 1e-6);
+  }
 });
 
 test("scales the reviewed cross-axle template by stud length", () => {

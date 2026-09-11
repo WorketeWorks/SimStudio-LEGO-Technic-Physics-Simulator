@@ -1,7 +1,7 @@
 import { preloadedConnectionMaps } from "./connection-maps";
 import preloadedCatalog from "./preloaded-catalog.json";
 import reviewedProvenance from "./preloaded-map-provenance.json";
-import { normalizeMapProvenanceSnapshot, type MapProvenanceSnapshot } from "./map-provenance";
+import { isStaleAutomaticMap, normalizeMapProvenanceSnapshot, type MapProvenanceSnapshot } from "./map-provenance";
 import {
   preloadedCollisionMaps,
   preloadedGearCollisionMaps,
@@ -28,24 +28,36 @@ export const MAP_BASELINE_STORAGE_PREFIX = "sim-map-baseline-v1:";
 
 const packagedParts = preloadedCatalog.parts as Record<
   string,
-  { connectors?: unknown; mapProvenance?: MapProvenanceSnapshot }
+  PartMapBundle & { mapProvenance?: MapProvenanceSnapshot }
 >;
+
+export const correctionMapProvenance = (part: string): MapProvenanceSnapshot =>
+  normalizeMapProvenanceSnapshot((reviewedProvenance as Record<string, MapProvenanceSnapshot>)[part.toLowerCase()]);
 
 export const preloadedMapProvenance = (part: string): MapProvenanceSnapshot => {
   const key = part.toLowerCase();
-  return normalizeMapProvenanceSnapshot({
-    ...packagedParts[key]?.mapProvenance,
-    ...(reviewedProvenance as Record<string, MapProvenanceSnapshot>)[key],
-  });
+  const packaged = normalizeMapProvenanceSnapshot(packagedParts[key]?.mapProvenance),
+    reviewed = normalizeMapProvenanceSnapshot((reviewedProvenance as Record<string, MapProvenanceSnapshot>)[key]);
+  for (const [layer, map] of Object.entries({ connectors: preloadedConnectionMaps[key],
+    colliders: preloadedCollisionMaps[key], gearColliders: preloadedGearCollisionMaps[key],
+    specialGear: preloadedSpecialGearParts.has(key) ? true : undefined })) {
+    const field = layer as keyof MapProvenanceSnapshot;
+    if (map !== undefined && !isStaleAutomaticMap(reviewed[field])) packaged[field] = reviewed[field];
+  }
+  return packaged;
 };
 
 export const preloadedMapBundle = (part: string): PartMapBundle => {
   const key = part.toLowerCase(),
-    connectors = preloadedConnectionMaps[key] ?? packagedParts[key]?.connectors;
+    reviewed = normalizeMapProvenanceSnapshot((reviewedProvenance as Record<string, MapProvenanceSnapshot>)[key]),
+    connectors = !isStaleAutomaticMap(reviewed.connectors)
+      ? preloadedConnectionMaps[key] ?? packagedParts[key]?.connectors : packagedParts[key]?.connectors;
   return {
     connectors,
-    colliders: preloadedCollisionMaps[key],
-    gearColliders: preloadedGearCollisionMaps[key],
+    colliders: !isStaleAutomaticMap(reviewed.colliders)
+      ? preloadedCollisionMaps[key] ?? packagedParts[key]?.colliders : packagedParts[key]?.colliders,
+    gearColliders: !isStaleAutomaticMap(reviewed.gearColliders)
+      ? preloadedGearCollisionMaps[key] ?? packagedParts[key]?.gearColliders : packagedParts[key]?.gearColliders,
     specialGear:
       connectors ||
       preloadedCollisionMaps[key] ||

@@ -561,7 +561,8 @@ export function approximateCollisionPrimitives(
   longAxis.setComponent(axisIndex, 1);
   // Solid outer envelopes: connection bores belong to the connector map, not
   // to the simplified contact geometry.
-  if (/^Technic Beam\s+\d/i.test(name) && !/bent|angle|frame|fork|steering/i.test(name)) {
+  if (/^Technic Beam \d+(?: x 0\.5)?(?: Liftarm)?(?: with Axle Holes| Alternating Holes)?$/i.test(name)
+      && !/^Technic Beam 1(?:\s|$)/i.test(name)) {
     const transverse = [0, 1, 2].filter(index => index !== axisIndex),
       depthAxisIndex = transverse.reduce((a, b) => Math.abs(dimensions[a] - beamThickness) <= Math.abs(dimensions[b] - beamThickness) ? a : b),
       depthAxis = new THREE.Vector3().setComponent(depthAxisIndex, 1),
@@ -583,6 +584,31 @@ export function approximateCollisionPrimitives(
   if (/^Technic Panel/i.test(name)) return [{
     shape: "box", center, size: size.clone().multiplyScalar(0.95), rotation: new THREE.Quaternion(),
   }];
+  const shellSockets = connectors.filter(c => c.role === "socket" && c.axis.lengthSq() > 0.5);
+  if (/^Technic (?:Axle(?: and Pin)?|Pin) (?:Connector|Joiner)/i.test(name)
+      && shellSockets.length >= 2 && shellSockets.length <= 4
+      && shellSockets.some(c => Math.abs(c.axis.dot(shellSockets[0].axis)) < 0.95)) {
+    return shellSockets.map(socket => {
+      const axis = socket.axis.clone().normalize();
+      let minimum = -(socket.length ?? 1) / 2, maximum = -minimum;
+      for (const other of shellSockets) {
+        const otherAxis = other.axis.clone().normalize(), dot = axis.dot(otherAxis);
+        if (Math.abs(dot) > 0.95) continue;
+        const delta = other.local.clone().sub(socket.local),
+          along = (delta.dot(axis) - dot * delta.dot(otherAxis)) / (1 - dot * dot),
+          joint = socket.local.clone().addScaledVector(axis, along),
+          distance = joint.clone().sub(other.local).cross(otherAxis).length();
+        if (distance < 0.15 && bounds.clone().expandByScalar(0.05).containsPoint(joint)) {
+          minimum = Math.min(minimum, along);
+          maximum = Math.max(maximum, along);
+        }
+      }
+      return { shape: "cylinder" as const,
+        center: socket.local.clone().addScaledVector(axis, (minimum + maximum) / 2),
+        radius: 0.45, halfHeight: (maximum - minimum) / 2,
+        rotation: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis) };
+    });
+  }
   if (/^Technic (Axle|Pin)/i.test(name)) {
     const others = dimensions.filter((_, index) => index !== axisIndex),
       axleConnectorShell = /^Technic Axle(?: and Pin)? (?:Joiner|Connector)/i.test(name),

@@ -28,6 +28,8 @@ export const normalizeMapProvenanceSnapshot = (value: unknown): MapProvenanceSna
 };
 export const canRegenerateMap = (provenance: MapProvenance | undefined) =>
   provenance?.origin === "automatic";
+export const isStaleAutomaticMap = (provenance: MapProvenance | undefined) =>
+  canRegenerateMap(provenance) && provenance?.generatorVersion !== MAP_GENERATOR_VERSION;
 
 export function readMapProvenance(storage: Pick<Storage, "getItem">, part: string): MapProvenanceSnapshot {
   try {

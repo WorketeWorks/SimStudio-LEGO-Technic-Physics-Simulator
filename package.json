@@ -18,12 +18,14 @@
     "test:physics": "node --test tests/physics-core.test.mjs tests/drivetrain.test.mjs",
     "test:import": "node --experimental-strip-types --test tests/ldraw-import.test.mjs",
     "test:connectors": "node --experimental-strip-types --test tests/connectors.test.mjs",
-    "test:maps": "node --experimental-strip-types --test tests/map-updates.test.mjs",
+    "test:maps": "node --experimental-strip-types --test tests/map-updates.test.mjs tests/map-provenance.test.mjs tests/project-format.test.mjs",
     "test:geometry": "node --experimental-strip-types --test tests/ldraw-geometry.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "catalog:precache": "node scripts/precache-default-palette.mjs"
+    "catalog:precache": "node scripts/precache-default-palette.mjs",
+    "catalog:regenerate": "node scripts/regenerate-automatic-maps.mjs",
+    "catalog:benchmark": "node scripts/benchmark-map-generation.mjs"
   },
   "dependencies": {
     "fflate": "^0.7.4",

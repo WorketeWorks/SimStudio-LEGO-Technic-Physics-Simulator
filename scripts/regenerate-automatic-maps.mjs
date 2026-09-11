@@ -75,7 +75,8 @@ for (const [part, data] of Object.entries(catalog.parts)) {
     // Reviewed overlays also remain authoritative when the older cache differs.
     if (reviewed[part]?.[layer]?.origin === "manual") { stats.manual++; continue; }
     if (!canRegenerateMap(metadata[layer])) { stats.unknown++; continue; }
-    const currentConnectors = vectors(preloadedConnectionMaps[part] ?? data.connectors);
+    const currentConnectors = vectors(reviewed[part]?.connectors?.origin === "manual"
+      ? preloadedConnectionMaps[part] : data.connectors ?? []);
     data[layer] = serialize(layer === "connectors" ? connectorData(generator.generatePartConnectors(object, data.name))
       : layer === "colliders" ? colliderData(generator.straightAxleCollisionPrimitives(data.name)
         ?? generator.approximateCollisionPrimitives(object, data.name, currentConnectors))

@@ -63,7 +63,7 @@ for (const file of files) {
   if (!match) continue;
   const path = resolve(correctionsDir, file),
     payload = JSON.parse(await readFile(path, "utf8")),
-    part = String(payload.part ?? match[1]),
+    part = String(payload.part ?? match[1]).toLowerCase(),
     kind = match[2].toLowerCase(),
     modified = (await stat(path)).mtimeMs,
     key = `${part.toLowerCase()}:${kind}`,
