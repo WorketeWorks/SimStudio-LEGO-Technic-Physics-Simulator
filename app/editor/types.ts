@@ -204,6 +204,10 @@ export type RuntimeGearLink = GearPair<Piece> & {
   perpendicular: boolean;
   /** Positive ratio magnitude supplied by a tagged special-gear zone. */
   ratioOverride?: number;
+  /** A same-axis four-dog clutch rather than an external tooth mesh. */
+  coaxialClutch?: boolean;
+  /** Free angular travel to either side before the dogs touch. */
+  backlash?: number;
 };
 
 /** Closed elastic loop. Guides are its initial route, never rigid links. */

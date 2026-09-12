@@ -181,6 +181,132 @@ test("gear ratios and motor joints are solved inside Rust", () => {
   engine.free();
 });
 
+test("a four-dog gearbox clutch takes up 45-degree backlash before transmitting", () => {
+  const clutchBody = (id) => ({
+    id,
+    fixed: false,
+    position: [0, 0, id],
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 4,
+    ccd: false,
+    colliders: [{
+      ownerId: id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.5, 0.5, 0.5] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [clutchBody(1), clutchBody(2)],
+    joints: [],
+    gears: [{
+      id: "driving-ring-clutch",
+      nodeA: 1,
+      nodeB: 2,
+      bodyA: 1,
+      bodyB: 2,
+      axisA: [0, 0, 1],
+      axisB: [0, 0, 1],
+      centerA: [0, 0, 1],
+      centerB: [0, 0, 2],
+      referenceA: [1, 0, 0],
+      referenceB: [1, 0, 0],
+      teethA: 1,
+      teethB: 1,
+      signB: -1,
+      phaseLock: false,
+      coaxialClutch: true,
+      backlash: Math.PI / 4,
+    }],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+  let state = engine.step(1 / 60, [
+    { kind: "setAngularVelocity", body: 1, velocity: [0, 0, 6] },
+  ]);
+  assert.ok(Math.abs(state[28]) < 1e-5, "the output must remain free inside the tab gap");
+  for (let frame = 0; frame < 30; frame++) state = engine.step(1 / 60, []);
+  assert.ok(
+    state[13] > 0.1 && state[28] > 0.1,
+    `both halves must turn after dog contact: ${state[13]}, ${state[28]}`,
+  );
+  assert.ok(
+    Math.abs(state[13] - state[28]) < 0.01,
+    `engaged clutch must transmit 1:1 rotation: ${state[13]}, ${state[28]}`,
+  );
+  engine.free();
+});
+
+test("a gearbox selector resists small forces and captures the next detent", () => {
+  const selectorBody = (id, fixed) => ({
+    id,
+    fixed,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0.1,
+    angularDamping: 0.1,
+    additionalSolverIterations: 4,
+    ccd: false,
+    colliders: [{
+      ownerId: id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [selectorBody(1, true), selectorBody(2, false)],
+    joints: [{
+      id: "three-position-selector",
+      bodyA: 1,
+      bodyB: 2,
+      mode: "linear",
+      worldAnchorA: [0, 0, 0],
+      worldAnchorB: [0, 0, 0],
+      worldAxisA: [0, 0, 1],
+      worldAxisB: [0, 0, 1],
+      travel: 1,
+      motorSpeed: 0,
+      motorForce: 0,
+      passiveMotorForce: 0,
+      dynamicAxle: false,
+      linearDetents: [-0.5, 0, 0.5],
+      detentForce: 18,
+    }],
+    gears: [],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+  let state = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, 0.2] },
+  ]);
+  for (let frame = 0; frame < 90; frame++) state = engine.step(1 / 60, []);
+  assert.ok(Math.abs(state[18]) < 0.03, `small input escaped neutral: ${state[18]}`);
+
+  state = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, 4] },
+  ]);
+  for (let frame = 0; frame < 120; frame++) state = engine.step(1 / 60, []);
+  assert.ok(Math.abs(state[18] - 0.5) < 0.03, `selector missed right detent: ${state[18]}`);
+  engine.free();
+});
+
 test("orbiting a meshed gear through a carrier produces axial rotation", () => {
   const body = (id, fixed, position) => ({
     id,

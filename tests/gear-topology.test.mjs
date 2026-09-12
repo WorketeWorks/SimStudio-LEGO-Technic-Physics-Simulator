@@ -14,6 +14,25 @@ const js = ts.transpile(source, {
   target: ts.ScriptTarget.ES2022,
 });
 const module = { exports: {} };
+const gearboxSource = readFileSync(
+  new URL("../app/physics/gearbox.ts", import.meta.url),
+  "utf8",
+);
+const gearboxJs = ts.transpile(gearboxSource, {
+  module: ts.ModuleKind.CommonJS,
+  target: ts.ScriptTarget.ES2022,
+});
+const gearboxModule = { exports: {} };
+vm.runInNewContext(
+  `(function(exports,module,require){${gearboxJs}\n})(module.exports,module,require);`,
+  {
+    module: gearboxModule,
+    require: (request) => {
+      if (request === "three") return THREE;
+      throw new Error(`Unexpected gearbox dependency: ${request}`);
+    },
+  },
+);
 const gearSpecFor = (part) => {
   if (part === "6573") return { teeth: 24, kind: "bevel", pitchRadius: 1.5 };
   if (part === "94925") return { teeth: 16, kind: "spur", pitchRadius: 1 };
@@ -24,6 +43,7 @@ const customRequire = (request) => {
   if (request === "../gears") return { gearSpecFor };
   if (request === "../physics-contact-filter")
     return { contactPairKey: (a, b) => [a.id, b.id].sort().join(":") };
+  if (request === "./gearbox") return gearboxModule.exports;
   throw new Error(`Unexpected dependency: ${request}`);
 };
 vm.runInNewContext(
@@ -32,6 +52,10 @@ vm.runInNewContext(
 );
 
 const { detectGearLinks } = module.exports;
+const {
+  detectGearboxSelectorPairs,
+  gearboxContactExclusionPairs,
+} = gearboxModule.exports;
 const sceneBuilderSource = readFileSync(
   new URL("../app/physics/rust-scene-builder.ts", import.meta.url),
   "utf8",
@@ -43,6 +67,8 @@ const sceneBuilderJs = ts.transpile(sceneBuilderSource, {
 const sceneBuilderModule = { exports: {} };
 const sceneBuilderRequire = (request) => {
   if (request === "three") return THREE;
+  if (request === "../collision-primitives")
+    return { annularCollisionSegments: () => [] };
   if (request === "./exact-collider") return { exactTriangleMeshForPiece: () => undefined };
   if (request === "./settings") return {
     COLLISION_GROUP_GEAR_MESH: 1,
@@ -52,6 +78,7 @@ const sceneBuilderRequire = (request) => {
     CONTACT_FRICTION: { gearMesh: 0, piece: 0 },
   };
   if (request === "./rubber-band") return { sampleRubberBand: () => [] };
+  if (request === "./gearbox") return gearboxModule.exports;
   throw new Error(`Unexpected scene-builder dependency: ${request}`);
 };
 vm.runInNewContext(
@@ -73,6 +100,122 @@ const cylinder = (center, radius, ratio) => ({
     Math.PI / 2,
   ),
   gearRatio: ratio,
+});
+
+const gearboxPiece = (id, part, z) => {
+  const mesh = new THREE.Object3D();
+  mesh.position.set(0, 0, z);
+  mesh.updateMatrixWorld(true);
+  return {
+    id,
+    part,
+    name: part,
+    gear: part === "35185" || part === "6542",
+    specialGear: false,
+    mesh,
+    connectors: [{
+      role: part === "6538" || part === "26287" ? "shaft" : "socket",
+      kind: "axle",
+      local: new THREE.Vector3(),
+      axis: new THREE.Vector3(0, 0, 1),
+    }],
+    colliders: [cylinder([0, 0, 0], 0.5)],
+    gearColliders: [],
+    dynamicAxleConnections: false,
+    frictionPin: false,
+  };
+};
+
+test("6539 and 18947 engage only the clutch on their selected side", () => {
+  for (const [ringRef, carrierRef, targetRef, targetDistance] of [
+    ["6539", "6538", "6542", 1.5],
+    ["18947", "26287", "35185", 2],
+  ]) {
+    const carrier = gearboxPiece(`${ringRef}-carrier`, carrierRef, 0),
+      ring = gearboxPiece(`${ringRef}-ring`, ringRef, 0.5),
+      right = gearboxPiece(`${ringRef}-right`, targetRef, targetDistance),
+      left = gearboxPiece(`${ringRef}-left`, targetRef, -targetDistance);
+    const excludedContacts = gearboxContactExclusionPairs([
+      carrier,
+      ring,
+      right,
+      left,
+    ]);
+    assert.equal(excludedContacts.length, 2);
+    assert.ok(
+      excludedContacts.some(([first, second]) => first === ring && second === right),
+    );
+    assert.ok(
+      excludedContacts.some(([first, second]) => first === ring && second === left),
+    );
+    const links = detectGearLinks([carrier, ring, right, left]);
+    assert.equal(links.length, 1);
+    assert.equal(links[0].a.value, ring);
+    assert.equal(links[0].b.value, right);
+    assert.equal(links[0].coaxialClutch, true);
+    assert.equal(links[0].backlash, Math.PI / 4);
+
+    ring.mesh.position.z = 0;
+    ring.mesh.updateMatrixWorld(true);
+    assert.equal(detectGearLinks([carrier, ring, right, left]).length, 0);
+    assert.equal(
+      gearboxContactExclusionPairs([carrier, ring, right, left]).length,
+      2,
+    );
+  }
+});
+
+test("a driving ring joint exports three force-loaded selector positions", () => {
+  const ring = gearboxPiece("ring", "6539", 0),
+    carrier = gearboxPiece("carrier", "6538", 0),
+    connector = (role) => ({
+      role,
+      kind: "axle",
+      local: new THREE.Vector3(),
+      axis: new THREE.Vector3(0, 0, 1),
+    }),
+    connection = {
+      id: "gearbox-selector",
+      a: ring,
+      b: carrier,
+      mode: "linear",
+      profile: "axle-cross",
+      point: new THREE.Vector3(),
+      axis: new THREE.Vector3(0, 0, 1),
+      socket: connector("socket"),
+      shaft: connector("shaft"),
+      travel: 2,
+      motorSpeed: 0,
+      motorForce: 0,
+    };
+  const config = buildRustJointConfig(
+    connection,
+    new Map([[ring, 1], [carrier, 2]]),
+    { frictionlessPinRotation: 0 },
+  );
+  assert.deepEqual(Array.from(config.linearDetents), [0.5, 0, -0.5]);
+  assert.equal(config.detentForce, 18);
+  assert.equal(config.travel, 1);
+});
+
+test("35188 wave selectors register their non-rigid contact with 18947 rings", () => {
+  const ring = gearboxPiece("ring", "18947", 0),
+    selector = gearboxPiece("selector", "35188", 1.5),
+    carrier = gearboxPiece("carrier", "26287", 0);
+  const pairs = detectGearboxSelectorPairs([ring, selector, carrier]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0].ring, ring);
+  assert.equal(pairs[0].selector, selector);
+  assert.equal(pairs[0].layout, "coaxial");
+  assert.ok(
+    gearboxContactExclusionPairs([ring, selector, carrier]).some(
+      ([first, second]) => first === ring && second === selector,
+    ),
+  );
+
+  selector.mesh.position.set(4, 0, 1.5);
+  selector.mesh.updateMatrixWorld(true);
+  assert.equal(detectGearboxSelectorPairs([ring, selector, carrier]).length, 0);
 });
 
 test("6573 large 1.5-radius zone meshes with a 24-tooth gear at 3 studs", () => {

@@ -16,6 +16,10 @@ pub struct JointRuntime {
     pub local_axis_b: Vector,
     pub motor_speed: Real,
     pub motor_force: Real,
+    pub linear_detents: Vec<Real>,
+    pub detent_force: Real,
+    pub local_anchor_a: Vector,
+    pub local_anchor_b: Vector,
 }
 
 pub fn create_joint(
@@ -79,8 +83,22 @@ pub fn create_joint(
                 .set_local_anchor2(anchor_b)
                 .set_contacts_enabled(true);
             if !config.dynamic_axle {
-                let limit = (config.travel * 0.5).max(0.15);
-                joint.set_limits([-limit, limit]);
+                if config.linear_detents.is_empty() {
+                    let limit = (config.travel * 0.5).max(0.15);
+                    joint.set_limits([-limit, limit]);
+                } else {
+                    let minimum = config
+                        .linear_detents
+                        .iter()
+                        .copied()
+                        .fold(Real::INFINITY, Real::min);
+                    let maximum = config
+                        .linear_detents
+                        .iter()
+                        .copied()
+                        .fold(Real::NEG_INFINITY, Real::max);
+                    joint.set_limits([minimum, maximum]);
+                }
             }
             joint.data
         }
@@ -139,6 +157,10 @@ pub fn create_joint(
         } else if config.mode == JointMode::Rotation {
             config.passive_motor_force.max(0.0)
         } else { 0.0 },
+        linear_detents: config.linear_detents.clone(),
+        detent_force: config.detent_force.max(0.0),
+        local_anchor_a: anchor_a,
+        local_anchor_b: anchor_b,
     })
 }
 
@@ -223,11 +245,43 @@ pub fn apply_axle_friction(
                 0.375
             };
         let impulse = axis * (relative_speed * damping).clamp(-0.35, 0.35) * timestep;
+        let detent_impulse = if !joint.linear_detents.is_empty() && joint.detent_force > 0.0 {
+            let anchor_a = body_a.position().transform_point(joint.local_anchor_a);
+            let anchor_b = body_b.position().transform_point(joint.local_anchor_b);
+            let position = (anchor_b - anchor_a).dot(axis);
+            let target = joint
+                .linear_detents
+                .iter()
+                .copied()
+                .min_by(|left, right| {
+                    (position - *left)
+                        .abs()
+                        .total_cmp(&(position - *right).abs())
+                })
+                .unwrap_or(0.0);
+            // A finite spring creates the tactile force barrier between the
+            // three selector positions. Once the midpoint is crossed, the
+            // next well captures the ring without teleporting it.
+            let restoring_force = ((target - position) * 72.0 - relative_speed * 4.0)
+                .clamp(-joint.detent_force, joint.detent_force);
+            Some(axis * restoring_force * timestep)
+        } else {
+            None
+        };
         if !fixed_a {
             world.bodies[joint.body_a].apply_impulse(impulse, true);
         }
         if !fixed_b {
             world.bodies[joint.body_b].apply_impulse(-impulse, true);
+        }
+
+        if let Some(detent_impulse) = detent_impulse {
+            if !fixed_a {
+                world.bodies[joint.body_a].apply_impulse(-detent_impulse, true);
+            }
+            if !fixed_b {
+                world.bodies[joint.body_b].apply_impulse(detent_impulse, true);
+            }
         }
 
         if joint.mode == JointMode::RotationLinear && settings.axle_rotation_friction > 0.0 {
@@ -316,6 +370,8 @@ mod tests {
             passive_motor_force: 0.0,
             dynamic_axle: false,
             angular_limit: None,
+            linear_detents: vec![],
+            detent_force: 0.0,
         };
 
         let runtime = create_joint(&config, &body_ids, &mut world).unwrap();

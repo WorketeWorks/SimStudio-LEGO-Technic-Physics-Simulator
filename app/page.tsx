@@ -125,6 +125,13 @@ import {
   differentialCarrierGearExclusions,
   gearLinkKey,
 } from "./physics/gear-topology";
+import {
+  detectGearboxLinks,
+  detectGearboxSelectorPairs,
+  gearboxContactExclusionPairs,
+  hasGearboxRing,
+  isGearboxCarrierPair,
+} from "./physics/gearbox";
 import { DEFAULT_PHYSICS_SETTINGS } from "./physics/settings";
 import { createProjectId, uniqueProjectName } from "./projects/naming";
 import { DeferredNumberInput } from "./components/DeferredNumberInput";
@@ -461,6 +468,7 @@ const editorTransformPivot = (
 const nonPhysicalGearParts = new Set([
   "6539",
   "18947",
+  "32187",
   "35186",
   "35188",
   "3584",
@@ -473,6 +481,13 @@ const nonPhysicalGearParts = new Set([
   "99009",
   "18939",
 ]);
+
+const isConcealedGearboxGuide = (connector: MeshConnector) =>
+  connector.role === "shaft" &&
+  connector.kind === "axle" &&
+  ["6539", "18947"].includes(
+    connector.connectionTarget?.partId.toLowerCase() ?? "",
+  );
 const turntableCounterpart: Record<string, string> = {
   "99009": "99010",
   "18938u": "18939",
@@ -911,7 +926,9 @@ const allowedModes = (profile: ConnectionProfile): JointMode[] =>
       : ["rotation", "linear", "rotation-linear", "motor"];
 
 const allowedModesForConnection = (connection: Connection): JointMode[] =>
-  isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
+  isGearboxCarrierPair(connection.a, connection.b)
+    ? ["linear"]
+    : isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
     ? ["rotation"]
     : allowedModes(connection.profile);
 
@@ -947,7 +964,8 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
   });
   connections.forEach((connection) => {
     if (connection.userConfigured) return;
-    if (
+    if (isGearboxCarrierPair(connection.a, connection.b)) connection.mode = "linear";
+    else if (
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft)
     )
@@ -964,6 +982,7 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
   connections.forEach((connection) => {
     if (
       connection.userConfigured ||
+      isGearboxCarrierPair(connection.a, connection.b) ||
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft) ||
       connection.profile === "axle-cross" ||
@@ -2763,6 +2782,7 @@ export default function Home() {
           for (const connector of piece.connectors) {
             const manual = state.manualConnect,
               selectedNode = manual?.piece === piece && manual.connector === connector;
+            if (!manual && isConcealedGearboxGuide(connector)) continue;
             if (
               manual &&
               ((piece === manual.piece && !selectedNode) ||
@@ -4087,12 +4107,17 @@ export default function Home() {
         saved = state.connectionModes.get(id),
         rotationOnlyConnection =
           isRotationOnlyConnector(socket) || isRotationOnlyConnector(shaft),
-        validModes = rotationOnlyConnection
-          ? (["rotation"] as JointMode[])
-          : allowedModes(profile),
+        gearboxConnection = isGearboxCarrierPair(host, rod),
+        validModes = gearboxConnection
+          ? (["linear"] as JointMode[])
+          : rotationOnlyConnection
+            ? (["rotation"] as JointMode[])
+            : allowedModes(profile),
         mode =
           saved && validModes.includes(saved.mode)
             ? saved.mode
+            : gearboxConnection
+              ? "linear"
             : rotationOnlyConnection
               ? "rotation"
               : defaultMode(profile),
@@ -4623,6 +4648,7 @@ export default function Home() {
       missedGearContactFrames.clear();
       pendingGearContactChanges.clear();
       links.forEach((link) => {
+        if (link.coaxialClutch) return;
         const key = gearLinkKey(link),
           existing = activeGearContacts.get(key);
         if (existing) existing.links.push(link);
@@ -4643,7 +4669,9 @@ export default function Home() {
         ),
         changedGearPairs = new Set(pendingGearContactChanges.keys()),
         detectedGearLinks = state.gearLinks.filter(
-          (link) => !changedGearPairs.has(contactPairKey(link.a.value, link.b.value)),
+          (link) =>
+            !link.coaxialClutch &&
+            !changedGearPairs.has(contactPairKey(link.a.value, link.b.value)),
         ),
         excludedGearPairs = differentialCarrierGearExclusions(
           state.pieces,
@@ -4657,6 +4685,9 @@ export default function Home() {
         detectedGearLinks.push(...links);
       });
       pendingGearContactChanges.clear();
+      detectedGearLinks.push(
+        ...detectGearboxLinks(state.pieces, state.rigidIslandByPiece),
+      );
       // Dynamic overlap scans must not redefine the reference axes or the
       // transmission direction of a pair that is already engaged. On bevel
       // gears a numerically ambiguous tangent can otherwise flip sign between
@@ -4689,10 +4720,11 @@ export default function Home() {
           ? -link.ratioOverride / link.signB
           : -link.a.spec.teeth / (link.signB * link.b.spec.teeth);
       });
-      const gearTopologyChanged =
-        changedGearPairs.size > 0 &&
-        (previousGearLinks !== detectedGearLinks.length ||
-          detectedGearLinks.some((link) => !previousLinksByKey.has(gearLinkKey(link))));
+      const detectedKeys = new Set(detectedGearLinks.map(gearLinkKey)),
+        gearTopologyChanged =
+          previousGearLinks !== detectedGearLinks.length ||
+          detectedGearLinks.some((link) => !previousLinksByKey.has(gearLinkKey(link))) ||
+          state.gearLinks.some((link) => !detectedKeys.has(gearLinkKey(link)));
       state.gearLinks = detectedGearLinks;
       if (state.world && gearTopologyChanged) {
         const bodyIds = new Map(
@@ -4894,7 +4926,9 @@ export default function Home() {
     };
 
     const dynamicMechanismsNeedScan = () =>
-      pendingGearContactChanges.size > 0 || state.contactCandidates.size > 0;
+      pendingGearContactChanges.size > 0 ||
+      state.contactCandidates.size > 0 ||
+      hasGearboxRing(state.pieces);
 
     const connect = (piece: Piece) => {
       if (!AUTO_CONNECTIONS_ENABLED) return;
@@ -5421,6 +5455,7 @@ export default function Home() {
       return pieces
         .flatMap((member) =>
           member.connectors.flatMap((connector) => {
+            if (!state.manualConnect && isConcealedGearboxGuide(connector)) return [];
             const internallyOccupied = state.connections.some(
               (connection) =>
                 pieceSet.has(connection.a) &&
@@ -5448,7 +5483,15 @@ export default function Home() {
             });
           }),
         )
-        .sort((a, b) => a.distance - b.distance)[0];
+        .sort((a, b) => {
+          const distanceDelta = a.distance - b.distance;
+          if (Math.abs(distanceDelta) > 3) return distanceDelta;
+          const aIsDedicatedGuide = Boolean(a.connector.connectionTarget),
+            bIsDedicatedGuide = Boolean(b.connector.connectionTarget);
+          if (aIsDedicatedGuide !== bIsDedicatedGuide)
+            return aIsDedicatedGuide ? 1 : -1;
+          return distanceDelta;
+        })[0];
     };
 
     const nearestConnectedPivot = (
@@ -9759,6 +9802,9 @@ export default function Home() {
           detectionIslandByPiece,
           traversedConnectorPairs,
         );
+        gearboxContactExclusionPairs(s.pieces).forEach(([ring, target]) =>
+          excludedPairs.add(contactPairKey(ring, target)),
+        );
         s.contactExclusions.clear();
         excludedPairs.forEach((key) => s.contactExclusions.add(key));
 
@@ -10715,6 +10761,11 @@ export default function Home() {
     ? (appRef.current?.connections.filter(
         (connection) => connection.a === selected || connection.b === selected,
       ) ?? [])
+    : [];
+  const selectedGearboxSelectorPairs = selected
+    ? detectGearboxSelectorPairs(appRef.current?.pieces ?? []).filter(
+        ({ ring, selector }) => ring === selected || selector === selected,
+      )
     : [];
   const selectedGearSpec = selected
       ? gearSpecFor(selected.modelPart ?? selected.part, selected.name)
@@ -13546,11 +13597,11 @@ export default function Home() {
                 )}
               </div>
             )}
-            {selectedConnections.length > 0 && (
+            {(selectedConnections.length > 0 ||
+              selectedGearboxSelectorPairs.length > 0) && (
               <div className="connection-editor">
                 <label>{t.pieceJoints}</label>
-                {selectedConnections.length ? (
-                  selectedConnections.map((connection, index) => {
+                {selectedConnections.map((connection, index) => {
                     const other = connection.a === selected ? connection.b : connection.a;
                     return (
                       <div className="connection-card" key={connection.id}>
@@ -13618,10 +13669,33 @@ export default function Home() {
                         )}
                       </div>
                     );
-                  })
-                ) : (
-                  <p className="no-connections">{t.noJoints}</p>
-                )}
+                  })}
+                {selectedGearboxSelectorPairs.map(({ ring, selector, layout }) => {
+                  const other = selected === ring ? selector : ring;
+                  return (
+                    <div
+                      className="connection-card"
+                      key={`gearbox-selector:${ring.id}:${selector.id}`}
+                    >
+                      <div>
+                        <b>
+                          {language === "es" ? "Selector especial" : "Special selector"}
+                          {" · "}
+                          {other.part}
+                        </b>
+                        <span>
+                          {language === "es"
+                            ? `Contacto de leva con el anillo · ${
+                                layout === "coaxial" ? "en línea" : "ejes paralelos"
+                              }`
+                            : `Cam contact with driving ring · ${
+                                layout === "coaxial" ? "in-line" : "parallel axles"
+                              }`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="data-row">

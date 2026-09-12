@@ -31,6 +31,8 @@ pub struct GearRuntime {
     pub teeth_a: Real,
     pub signed_teeth_b: Real,
     pub phase_lock: bool,
+    pub coaxial_clutch: bool,
+    pub backlash: Real,
     pub initial_phase: Real,
     pub phase_target: Real,
     pub angle_a: Real,
@@ -152,6 +154,8 @@ pub fn build_gears(
                 teeth_a: config.teeth_a.max(1.0),
                 signed_teeth_b: config.sign_b * config.teeth_b.max(1.0),
                 phase_lock: config.phase_lock,
+                coaxial_clutch: config.coaxial_clutch,
+                backlash: config.backlash.clamp(0.0, std::f32::consts::PI),
                 initial_phase,
                 phase_target,
                 angle_a: initial_angle_a,
@@ -220,6 +224,10 @@ fn solve_ideal_gear_velocity(
     world: &mut PhysicsWorld,
     phase_bias: Real,
 ) {
+    if gear.coaxial_clutch {
+        solve_coaxial_clutch_velocity(gear, world, phase_bias);
+        return;
+    }
     if gear.carrier_body.is_some() && gear.local_carrier_axis.is_some() {
         solve_differential_impulse(gear, world);
         return;
@@ -294,6 +302,72 @@ fn solve_ideal_gear_velocity(
     world.bodies[gear.body_b].apply_impulse(-linear * lambda, true);
     world.bodies[gear.body_a].apply_torque_impulse(angular_a * lambda, true);
     world.bodies[gear.body_b].apply_torque_impulse(angular_b * lambda, true);
+}
+
+/** Four equally spaced dogs transmit torque only at either backlash stop. */
+fn solve_coaxial_clutch_velocity(
+    gear: &GearRuntime,
+    world: &mut PhysicsWorld,
+    phase_bias: Real,
+) {
+    let (axis_a, axis_b, relative_speed, phase, inverse_a, inverse_b, fixed_a, fixed_b) = {
+        let (Some(body_a), Some(body_b)) = (
+            world.bodies.get(gear.body_a),
+            world.bodies.get(gear.body_b),
+        ) else {
+            return;
+        };
+        let axis_a = (body_a.position().rotation * gear.local_axis_a).normalize();
+        let mut axis_b = (body_b.position().rotation * gear.local_axis_b).normalize();
+        if axis_a.dot(axis_b) < 0.0 {
+            axis_b = -axis_b;
+        }
+        let reference_a = body_a.position().rotation * gear.local_reference_a;
+        let reference_b = body_b.position().rotation * gear.local_reference_b;
+        let reference_a = reference_a - axis_a * reference_a.dot(axis_a);
+        let reference_b = reference_b - axis_a * reference_b.dot(axis_a);
+        if reference_a.length_squared() <= GEOMETRY_EPSILON
+            || reference_b.length_squared() <= GEOMETRY_EPSILON
+        {
+            return;
+        }
+        let raw_phase = signed_angle_around_axis(
+            reference_b.normalize(),
+            reference_a.normalize(),
+            axis_a,
+        );
+        let period = (gear.backlash * 2.0).max(1.0e-4);
+        let phase = (raw_phase + gear.backlash).rem_euclid(period) - gear.backlash;
+        (
+            axis_a,
+            axis_b,
+            body_a.angvel().dot(axis_a) - body_b.angvel().dot(axis_b),
+            phase,
+            axis_a.dot(body_a.mass_properties().effective_world_inv_inertia * axis_a),
+            axis_b.dot(body_b.mass_properties().effective_world_inv_inertia * axis_b),
+            body_a.is_fixed(),
+            body_b.is_fixed(),
+        )
+    };
+    let contact_margin = 0.045;
+    let pushing_positive = relative_speed > VELOCITY_EPSILON
+        && phase >= gear.backlash - contact_margin;
+    let pushing_negative = relative_speed < -VELOCITY_EPSILON
+        && phase <= -gear.backlash + contact_margin;
+    if !pushing_positive && !pushing_negative && phase_bias.abs() <= VELOCITY_EPSILON {
+        return;
+    }
+    let denominator = inverse_a + inverse_b;
+    if denominator <= GEOMETRY_EPSILON {
+        return;
+    }
+    let impulse = -(relative_speed - phase_bias) / denominator;
+    if !fixed_a {
+        world.bodies[gear.body_a].apply_torque_impulse(axis_a * impulse, true);
+    }
+    if !fixed_b {
+        world.bodies[gear.body_b].apply_torque_impulse(-axis_b * impulse, true);
+    }
 }
 
 fn point_impulse_denominator(

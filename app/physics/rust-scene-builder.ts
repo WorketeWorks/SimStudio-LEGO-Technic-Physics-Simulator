@@ -30,6 +30,7 @@ import type {
   RustQuat,
   RustVec3,
 } from "./rust-protocol";
+import { gearboxDetentForConnection } from "./gearbox";
 import { sampleRubberBand } from "./rubber-band";
 
 const frictionlessPinRefs = new Set(["3749", "3673", "32556"]);
@@ -205,6 +206,7 @@ export function buildRustJointConfig(
       : connection.mode === "rotation" && frictionlessPinRefs.has(connection.b.part)
         ? physicsSettings.frictionlessPinRotation
         : 0;
+  const gearboxDetent = gearboxDetentForConnection(connection);
   return {
     id: connection.id,
     bodyA,
@@ -214,11 +216,17 @@ export function buildRustJointConfig(
     worldAnchorB: vec3(anchorB),
     worldAxisA: vec3(worldAxisA),
     worldAxisB: vec3(worldAxisB),
-    travel: connection.travel,
+    travel: gearboxDetent ? 1 : connection.travel,
     motorSpeed: connection.motorSpeed,
     motorForce: connection.motorForce,
     passiveMotorForce,
     dynamicAxle,
+    ...(gearboxDetent
+      ? {
+          linearDetents: gearboxDetent.positions,
+          detentForce: gearboxDetent.force,
+        }
+      : {}),
   };
 }
 
@@ -332,6 +340,7 @@ export function buildRustGearConfigs(
 
     const phaseLock =
       !link.perpendicular &&
+      !link.coaxialClutch &&
       link.ratioOverride === undefined &&
       Number.isInteger(link.a.spec.teeth) &&
       Number.isInteger(link.b.spec.teeth) &&
@@ -355,6 +364,12 @@ export function buildRustGearConfigs(
         teethB: link.ratioOverride ? 1 : link.b.spec.teeth,
         signB: link.signB,
         phaseLock,
+        ...(link.coaxialClutch
+          ? {
+              coaxialClutch: true,
+              backlash: link.backlash ?? Math.PI / 4,
+            }
+          : {}),
       },
     ];
   });

@@ -61,6 +61,10 @@ export type RustJointConfig = {
   dynamicAxle: boolean;
   /** Symmetric angular travel for a revolute joint, in radians. */
   angularLimit?: number;
+  /** Axial offsets, relative to the starting pose, that act as gearbox detents. */
+  linearDetents?: number[];
+  /** Maximum restoring force of a gearbox detent. */
+  detentForce?: number;
 };
 
 export type RustGearConfig = {
@@ -88,6 +92,10 @@ export type RustGearConfig = {
   signB: number;
   /** Enables tooth/gap phase locking for ordinary even-tooth gears. */
   phaseLock: boolean;
+  /** Solves same-axis driving dogs instead of an external gear mesh. */
+  coaxialClutch?: boolean;
+  /** Free relative rotation to either side before the dogs transmit torque. */
+  backlash?: number;
 };
 
 export type RustDifferentialConfig = {

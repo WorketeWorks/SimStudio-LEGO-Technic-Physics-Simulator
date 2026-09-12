@@ -124,6 +124,10 @@ pub struct JointConfig {
     pub dynamic_axle: bool,
     #[serde(default)]
     pub angular_limit: Option<f32>,
+    #[serde(default)]
+    pub linear_detents: Vec<f32>,
+    #[serde(default)]
+    pub detent_force: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -151,6 +155,10 @@ pub struct GearConfig {
     pub sign_b: f32,
     #[serde(default)]
     pub phase_lock: bool,
+    #[serde(default)]
+    pub coaxial_clutch: bool,
+    #[serde(default)]
+    pub backlash: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

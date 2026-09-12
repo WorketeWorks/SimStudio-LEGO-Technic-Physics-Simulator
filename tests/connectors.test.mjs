@@ -343,13 +343,76 @@ test("loads the downloaded connection corrections", () => {
       role: "socket",
       diameter: 0.8,
       length: 1,
+      connectionTarget: { partId: "26287" },
     },
   ]);
-  assert.deepEqual(preloadedConnectionMaps["35188"], preloadedConnectionMaps["18947"]);
-  assert.deepEqual(preloadedConnectionMaps["6539"], preloadedConnectionMaps["18947"]);
+  assert.deepEqual(preloadedConnectionMaps["35188"], [
+    {
+      local: [0, 0, 0],
+      axis: [0, 0, 1],
+      kind: "axle",
+      role: "socket",
+      diameter: 0.8,
+      length: 1,
+    },
+  ]);
+  assert.deepEqual(preloadedConnectionMaps["6539"][0].connectionTarget, {
+    partId: "6538",
+  });
   assert.equal(preloadedConnectionMaps["4159"].length, 3);
-  assert.equal(preloadedConnectionMaps["6538"].length, 2);
+  assert.equal(preloadedConnectionMaps["6538"].length, 3);
+  assert.equal(preloadedConnectionMaps["6538"][0].role, "shaft");
+  assert.deepEqual(preloadedConnectionMaps["6538"][0].connectionTarget, {
+    partId: "6539",
+  });
+  assert.equal(preloadedConnectionMaps["26287"][0].role, "shaft");
+  assert.deepEqual(preloadedConnectionMaps["26287"][0].connectionTarget, {
+    partId: "18947",
+  });
   assert.equal(preloadedConnectionMaps["6542"][0].kind, "round");
+});
+
+test("gearbox guide connectors cannot be mistaken for ordinary axle connections", () => {
+  const piece = (part, connector) => ({ part, connectors: [connector] }),
+    ordinaryShaft = {
+      local: new THREE.Vector3(),
+      axis: new THREE.Vector3(0, 0, 1),
+      kind: "axle",
+      role: "shaft",
+      diameter: 0.8,
+    },
+    ring18947 = piece("18947", preloadedConnectionMaps["18947"][0]),
+    carrier26287 = piece("26287", preloadedConnectionMaps["26287"][0]),
+    selector35188 = piece("35188", preloadedConnectionMaps["35188"][0]),
+    axle = piece("3707", ordinaryShaft);
+
+  assert.equal(
+    connectorPoliciesCompatible(
+      ring18947,
+      ring18947.connectors[0],
+      carrier26287,
+      carrier26287.connectors[0],
+    ),
+    true,
+  );
+  assert.equal(
+    connectorPoliciesCompatible(
+      ring18947,
+      ring18947.connectors[0],
+      axle,
+      ordinaryShaft,
+    ),
+    false,
+  );
+  assert.equal(
+    connectorPoliciesCompatible(
+      selector35188,
+      selector35188.connectors[0],
+      axle,
+      ordinaryShaft,
+    ),
+    true,
+  );
 });
 
 test("loads the downloaded 6589 gear collision correction", () => {

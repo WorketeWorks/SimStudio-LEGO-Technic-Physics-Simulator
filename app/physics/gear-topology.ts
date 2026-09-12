@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { gearSpecFor, type GearPair, type GearPose } from "../gears";
 import { contactPairKey } from "../physics-contact-filter";
+import { detectGearboxLinks } from "./gearbox";
 import type {
   CatalogPart,
   Connection,
@@ -240,7 +241,7 @@ export const detectGearLinks = (
         ratioMagnitude,
       });
     }
-  return pairs.flatMap((pair) => {
+  const ordinaryLinks = pairs.flatMap((pair) => {
     if (
       rigidIslandByPiece &&
       rigidIslandByPiece.get(pair.a.value) === rigidIslandByPiece.get(pair.b.value)
@@ -293,6 +294,7 @@ export const detectGearLinks = (
       },
     ];
   });
+  return [...ordinaryLinks, ...detectGearboxLinks(pieces, rigidIslandByPiece)];
 };
 
 /**
