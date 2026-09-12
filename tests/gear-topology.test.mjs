@@ -55,6 +55,7 @@ const { detectGearLinks } = module.exports;
 const {
   detectGearboxSelectorPairs,
   gearboxContactExclusionPairs,
+  isGearboxRigidExtensionPair,
 } = gearboxModule.exports;
 const sceneBuilderSource = readFileSync(
   new URL("../app/physics/rust-scene-builder.ts", import.meta.url),
@@ -216,6 +217,39 @@ test("35188 wave selectors register their non-rigid contact with 18947 rings", (
   selector.mesh.position.set(4, 0, 1.5);
   selector.mesh.updateMatrixWorld(true);
   assert.equal(detectGearboxSelectorPairs([ring, selector, carrier]).length, 0);
+});
+
+test("35186 extension interfaces use eight-tab backlash while 35186 pairs are rigid", () => {
+  const extension = gearboxPiece("extension", "35186", 0),
+    oldOutput = gearboxPiece("old-output", "32187", 1),
+    clutchGear = gearboxPiece("clutch-gear", "6542", -0.7),
+    secondExtension = gearboxPiece("second-extension", "35186", 1);
+  const links = detectGearLinks([extension, oldOutput, clutchGear]);
+  assert.equal(links.length, 2);
+  assert.ok(links.every((link) => link.coaxialClutch));
+  assert.ok(links.every((link) => link.backlash === Math.PI / 8));
+  assert.equal(isGearboxRigidExtensionPair(extension, secondExtension), true);
+  assert.equal(
+    detectGearLinks([extension, secondExtension]).length,
+    0,
+    "a solid 35186-to-35186 connection must not add rotational freedom",
+  );
+});
+
+test("32187 is a clutch target for 6539 but not for 18947", () => {
+  const oldCarrier = gearboxPiece("old-carrier", "6538", 0),
+    oldRing = gearboxPiece("old-ring", "6539", 0.5),
+    modernCarrier = gearboxPiece("modern-carrier", "26287", 0),
+    modernRing = gearboxPiece("modern-ring", "18947", 0.5),
+    extension = gearboxPiece("extension", "32187", 1.5);
+  const oldLinks = detectGearLinks([oldCarrier, oldRing, extension]);
+  assert.equal(oldLinks.length, 1);
+  assert.equal(oldLinks[0].b.value, extension);
+  assert.equal(oldLinks[0].backlash, Math.PI / 4);
+  assert.equal(
+    detectGearLinks([modernCarrier, modernRing, extension]).length,
+    0,
+  );
 });
 
 test("6573 large 1.5-radius zone meshes with a 24-tooth gear at 3 studs", () => {

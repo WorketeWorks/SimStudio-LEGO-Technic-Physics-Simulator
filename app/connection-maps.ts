@@ -8158,6 +8158,26 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "connectionTarget": { "partId": "26287" }
     }
   ],
+  "32187": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
+  "35186": [
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
+    }
+  ],
   "35188": [
     {
       "local": [0, 0, 0],

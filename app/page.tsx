@@ -131,6 +131,7 @@ import {
   gearboxContactExclusionPairs,
   hasGearboxRing,
   isGearboxCarrierPair,
+  isGearboxRigidExtensionPair,
 } from "./physics/gearbox";
 import { DEFAULT_PHYSICS_SETTINGS } from "./physics/settings";
 import { createProjectId, uniqueProjectName } from "./projects/naming";
@@ -928,6 +929,8 @@ const allowedModes = (profile: ConnectionProfile): JointMode[] =>
 const allowedModesForConnection = (connection: Connection): JointMode[] =>
   isGearboxCarrierPair(connection.a, connection.b)
     ? ["linear"]
+    : isGearboxRigidExtensionPair(connection.a, connection.b)
+      ? ["fixed"]
     : isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
     ? ["rotation"]
     : allowedModes(connection.profile);
@@ -954,7 +957,9 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
   connections.forEach((connection) => {
     if (!allowedModesForConnection(connection).includes(connection.mode)) {
       connection.mode =
-        isRotationOnlyConnector(connection.socket) ||
+        isGearboxRigidExtensionPair(connection.a, connection.b)
+          ? "fixed"
+          : isRotationOnlyConnector(connection.socket) ||
         isRotationOnlyConnector(connection.shaft)
           ? "rotation"
           : defaultMode(connection.profile);
@@ -965,6 +970,8 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
   connections.forEach((connection) => {
     if (connection.userConfigured) return;
     if (isGearboxCarrierPair(connection.a, connection.b)) connection.mode = "linear";
+    else if (isGearboxRigidExtensionPair(connection.a, connection.b))
+      connection.mode = "fixed";
     else if (
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft)
@@ -983,6 +990,7 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
     if (
       connection.userConfigured ||
       isGearboxCarrierPair(connection.a, connection.b) ||
+      isGearboxRigidExtensionPair(connection.a, connection.b) ||
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft) ||
       connection.profile === "axle-cross" ||
@@ -4108,8 +4116,11 @@ export default function Home() {
         rotationOnlyConnection =
           isRotationOnlyConnector(socket) || isRotationOnlyConnector(shaft),
         gearboxConnection = isGearboxCarrierPair(host, rod),
+        rigidExtensionConnection = isGearboxRigidExtensionPair(host, rod),
         validModes = gearboxConnection
           ? (["linear"] as JointMode[])
+          : rigidExtensionConnection
+            ? (["fixed"] as JointMode[])
           : rotationOnlyConnection
             ? (["rotation"] as JointMode[])
             : allowedModes(profile),
@@ -4118,6 +4129,8 @@ export default function Home() {
             ? saved.mode
             : gearboxConnection
               ? "linear"
+            : rigidExtensionConnection
+              ? "fixed"
             : rotationOnlyConnection
               ? "rotation"
               : defaultMode(profile),

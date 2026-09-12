@@ -30,7 +30,7 @@ const gearboxSpecs: readonly GearboxSpec[] = [
   {
     rings: ["18947"],
     carriers: ["26287"],
-    targets: ["32187", "6542", "6542a", "35185"],
+    targets: ["6542", "6542a", "35185"],
     targetDistance: 2,
   },
 ];
@@ -67,6 +67,17 @@ export const isGearboxCarrierPair = (left: Piece, right: Piece) =>
       (hasReference(left, spec.rings) && hasReference(right, spec.carriers)) ||
       (hasReference(right, spec.rings) && hasReference(left, spec.carriers)),
   );
+
+export const isGearboxRigidExtensionPair = (left: Piece, right: Piece) =>
+  hasReference(left, ["35186"]) && hasReference(right, ["35186"]);
+
+export const isGearboxRotatingExtensionPair = (left: Piece, right: Piece) =>
+  (hasReference(left, ["32187"]) && hasReference(right, ["35186"])) ||
+  (hasReference(right, ["32187"]) && hasReference(left, ["35186"])) ||
+  (hasReference(left, ["35186"]) &&
+    hasReference(right, ["6542", "6542a", "35185"])) ||
+  (hasReference(right, ["35186"]) &&
+    hasReference(left, ["6542", "6542a", "35185"]));
 
 export type GearboxSelectorPair = {
   ring: Piece;
@@ -195,6 +206,74 @@ const gearboxTargets = (pieces: Piece[], assembly: GearboxAssembly) =>
       : [];
   });
 
+const extensionCouplingPairs = (pieces: Piece[]) => {
+  const pairs: { a: Piece; b: Piece; expectedDistance: number }[] = [];
+  for (let index = 0; index < pieces.length; index++)
+    for (let otherIndex = index + 1; otherIndex < pieces.length; otherIndex++) {
+      const a = pieces[index],
+        b = pieces[otherIndex];
+      if (!isGearboxRotatingExtensionPair(a, b)) continue;
+      const extension = hasReference(a, ["35186"]) ? a : b,
+        other = extension === a ? b : a,
+        expectedDistance = hasReference(other, ["32187"]) ? 1 : 0.7,
+        extensionCenter = centre(extension),
+        extensionAxis = axleAxis(extension),
+        otherCenter = centre(other),
+        otherAxis = axleAxis(other),
+        offset = alignedAxialOffset(extensionCenter, extensionAxis, otherCenter);
+      if (
+        Math.abs(extensionAxis.dot(otherAxis)) >= 0.985 &&
+        offset.radial <= 0.12 &&
+        Math.abs(Math.abs(offset.along) - expectedDistance) <= 0.2
+      )
+        pairs.push({ a: extension, b: other, expectedDistance });
+    }
+  return pairs;
+};
+
+const extensionCouplingLink = (
+  a: Piece,
+  b: Piece,
+  expectedDistance: number,
+): RuntimeGearLink => {
+  const centerA = centre(a),
+    centerB = centre(b),
+    axisA = axleAxis(a),
+    axisB = axleAxis(b);
+  if (axisA.dot(axisB) < 0) axisB.negate();
+  const inverseA = a.mesh.matrixWorld.clone().invert(),
+    inverseB = b.mesh.matrixWorld.clone().invert();
+  return {
+    a: {
+      value: a,
+      spec: { teeth: 1, kind: "spur", pitchRadius: 0 },
+      center: centerA.toArray(),
+      axis: axisA.toArray(),
+    },
+    b: {
+      value: b,
+      spec: { teeth: 1, kind: "spur", pitchRadius: 0 },
+      center: centerB.toArray(),
+      axis: axisB.toArray(),
+    },
+    ratio: 1,
+    centerDistance: centerA.distanceTo(centerB),
+    expectedDistance,
+    distanceError: Math.abs(centerA.distanceTo(centerB) - expectedDistance),
+    axisA,
+    axisB,
+    localCenterA: centerA.clone().applyMatrix4(inverseA),
+    localCenterB: centerB.clone().applyMatrix4(inverseB),
+    localAxisA: axisA.clone().transformDirection(inverseA),
+    localAxisB: axisB.clone().transformDirection(inverseB),
+    signB: -1,
+    perpendicular: false,
+    coaxialClutch: true,
+    // Eight equally-spaced tabs leave half the angular freedom of 6539.
+    backlash: Math.PI / 8,
+  };
+};
+
 /**
  * Collider pairs that overlap by design while a driving ring enters a clutch.
  * Their rotational contact is represented by the dog-clutch constraint, not
@@ -212,6 +291,9 @@ export const gearboxContactExclusionPairs = (pieces: Piece[]): [Piece, Piece][] 
     }),
     ...detectGearboxSelectorPairs(pieces).map(
       ({ ring, selector }) => [ring, selector] as [Piece, Piece],
+    ),
+    ...extensionCouplingPairs(pieces).map(
+      ({ a, b }) => [a, b] as [Piece, Piece],
     ),
   ];
 
@@ -279,6 +361,11 @@ export const detectGearboxLinks = (
         backlash: Math.PI / 4,
       });
     }
+  }
+  for (const { a, b, expectedDistance } of extensionCouplingPairs(pieces)) {
+    if (rigidIslandByPiece && rigidIslandByPiece.get(a) === rigidIslandByPiece.get(b))
+      continue;
+    links.push(extensionCouplingLink(a, b, expectedDistance));
   }
   return links;
 };

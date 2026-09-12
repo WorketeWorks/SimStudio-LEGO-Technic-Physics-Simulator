@@ -111,22 +111,81 @@
       "source": "reviewed-correction-map"
     }
   },
+  "32187": {
+    "colliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "gearColliders": {
+      "origin": "automatic",
+      "generatorVersion": "geometry-v3-solid"
+    },
+    "specialGear": {
+      "origin": "unknown"
+    }
+  },
+  "35186": {
+    "colliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "gearColliders": {
+      "origin": "automatic",
+      "generatorVersion": "geometry-v3-solid"
+    },
+    "specialGear": {
+      "origin": "unknown"
+    }
+  },
   "6538": {
     "connectors": {
       "origin": "manual",
       "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "gearColliders": {
+      "origin": "automatic",
+      "generatorVersion": "geometry-v3-solid"
+    },
+    "specialGear": {
+      "origin": "unknown"
     }
   },
   "6539": {
     "connectors": {
       "origin": "manual",
       "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "gearColliders": {
+      "origin": "automatic",
+      "generatorVersion": "geometry-v3-solid"
+    },
+    "specialGear": {
+      "origin": "unknown"
     }
   },
   "6542": {
     "connectors": {
       "origin": "manual",
       "source": "reviewed-correction-map"
+    },
+    "colliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "gearColliders": {
+      "origin": "manual",
+      "source": "map-editor"
+    },
+    "specialGear": {
+      "origin": "unknown"
     }
   },
   "6558": {
