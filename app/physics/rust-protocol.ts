@@ -133,6 +133,19 @@ export type RustAxialStopConfig = {
   minimumDistance: number;
 };
 
+export type RustCamFollowerConfig = {
+  guideJoint: string;
+  selectorBody: number;
+  followerBody: number;
+  selectorCenter: RustVec3;
+  followerPoint: RustVec3;
+  worldAxis: RustVec3;
+  /** Material direction corresponding to sample zero on the selector. */
+  worldReference: RustVec3;
+  /** Periodic axial groove centre, sampled uniformly over one revolution. */
+  profile: number[];
+};
+
 export type RustPhysicsScene = {
   gravity: RustVec3;
   settings: {
@@ -149,6 +162,7 @@ export type RustPhysicsScene = {
   gears: RustGearConfig[];
   differentials: RustDifferentialConfig[];
   axialStops: RustAxialStopConfig[];
+  camFollowers: RustCamFollowerConfig[];
   rubberBands: RustRubberBandConfig[];
   excludedColliderPairs: [number, number][];
 };

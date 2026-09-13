@@ -53,6 +53,7 @@ vm.runInNewContext(
 
 const { detectGearLinks } = module.exports;
 const {
+  detectGearboxGrooveFollowers,
   detectGearboxSelectorPairs,
   gearboxContactExclusionPairs,
   gearboxExtensionMinimumDistance,
@@ -165,8 +166,8 @@ test("6539 and 18947 engage only the clutch on their selected side", () => {
     ring.mesh.updateMatrixWorld(true);
     assert.equal(
       detectGearLinks([carrier, ring, right, left]).length,
-      0,
-      "the four-tab ring must enter the clutch before transmitting",
+      1,
+      "the 6539 must retain its original capture margin while shifting",
     );
     assert.equal(
       gearboxContactExclusionPairs([carrier, ring, right, left]).length,
@@ -226,6 +227,53 @@ test("35188 wave selectors register their non-rigid contact with 18947 rings", (
   selector.mesh.position.set(4, 0, 1.5);
   selector.mesh.updateMatrixWorld(true);
   assert.equal(detectGearboxSelectorPairs([ring, selector, carrier]).length, 0);
+});
+
+test("6628 follows each authored selector groove only when linearly guided", () => {
+  const selector = gearboxPiece("selector", "3584", 0),
+    guide = gearboxPiece("guide", "3708", 0),
+    fork = gearboxPiece("fork", "4159", 0),
+    pin = gearboxPiece("pin", "6628", 0);
+  pin.mesh.position.set(2, 0, 0);
+  pin.mesh.updateMatrixWorld(true);
+  const fixedPin = {
+      a: fork,
+      b: pin,
+      mode: "fixed",
+      axis: new THREE.Vector3(1, 0, 0),
+    },
+    connection = {
+    a: guide,
+    b: fork,
+    mode: "linear",
+    axis: new THREE.Vector3(0, 0, 1),
+  };
+
+  assert.equal(
+    detectGearboxGrooveFollowers([selector, pin, fork, guide], [fixedPin]).length,
+    0,
+  );
+  const followers = detectGearboxGrooveFollowers(
+    [selector, pin, fork, guide],
+    [fixedPin, connection],
+  );
+  assert.equal(followers.length, 1);
+  assert.equal(followers[0].selector, selector);
+  assert.equal(followers[0].pin, pin);
+  assert.equal(followers[0].follower, fork);
+  assert.equal(followers[0].profile.length, 36);
+  assert.ok(Math.max(...followers[0].profile) >= 0.5);
+  assert.ok(Math.min(...followers[0].profile) <= -0.5);
+
+  connection.axis.set(1, 0, 0);
+  assert.equal(
+    detectGearboxGrooveFollowers(
+      [selector, pin, fork, guide],
+      [fixedPin, connection],
+    ).length,
+    0,
+    "a non-axial guide must not be commandeered by the selector",
+  );
 });
 
 test("35186 extension interfaces use eight-tab backlash while 35186 pairs are rigid", () => {

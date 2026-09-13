@@ -8,9 +8,142 @@ const referencesFor = (piece: Piece) =>
       .map((reference) => reference!.toLowerCase().replace(/\.dat$/, "")),
   );
 
+const grooveProfiles: Readonly<Record<string, readonly number[]>> = {
+  // Groove centre lines measured from the authored LDraw surface every 10°.
+  // LDraw units are converted to editor studs (20 LDU = 1 stud).
+  "3584": [
+    0, 0, 0, 0, 0, 0.025, 0.125, 0.294, 0.438, 0.5, 0.438, 0.294,
+    0.125, 0.025, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.025, -0.125, -0.294,
+    -0.438, -0.5, -0.438, -0.294, -0.125, -0.025, 0, 0, 0, 0,
+  ],
+  "4158": [
+    -0.006, -0.031, -0.044, -0.05, -0.025, 0.056, 0.181, 0.319, 0.444,
+    0.506, 0.444, 0.319, 0.169, 0.05, -0.019, -0.019, 0.006, 0.019, 0,
+    -0.106, -0.238, -0.375, -0.481, -0.488, -0.388, -0.256, -0.125,
+    -0.019, 0.025, 0.044, 0.031, 0.019, 0.006, 0.006, 0, -0.006,
+  ],
+  "7446": [
+    -0.325, -0.188, -0.081, -0.025, 0.006, 0.006, 0.006, 0.006, 0.006,
+    0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006,
+    0.006, 0.006, 0.006, 0.006, 0.006, -0.031, -0.156, -0.294, -0.406,
+    -0.481, -0.5, -0.494, -0.494, -0.488, -0.488, -0.494, -0.494, -0.444,
+  ],
+};
+
 const hasReference = (piece: Piece, references: readonly string[]) => {
   const available = referencesFor(piece);
   return references.some((reference) => available.has(reference));
+};
+
+export const gearboxGrooveProfile = (piece: Piece): readonly number[] | undefined => {
+  const references = referencesFor(piece);
+  return Object.entries(grooveProfiles).find(([reference]) =>
+    references.has(reference),
+  )?.[1];
+};
+
+export type GearboxGrooveFollower = {
+  selector: Piece;
+  pin: Piece;
+  follower: Piece;
+  guide: Connection;
+  selectorCenter: THREE.Vector3;
+  followerPoint: THREE.Vector3;
+  axis: THREE.Vector3;
+  reference: THREE.Vector3;
+  profile: readonly number[];
+};
+
+/**
+ * Finds a 6628 towball sitting in a selector groove. The cam becomes active
+ * only when the pin's rigid group already has a linear guide parallel to the
+ * selector axis; the groove chooses the position but never invents a free
+ * sliding degree of freedom.
+ */
+export const detectGearboxGrooveFollowers = (
+  pieces: Piece[],
+  connections: Connection[],
+  rigidIslandByPiece?: Map<Piece, Piece[]>,
+): GearboxGrooveFollower[] => {
+  const islandFor = (piece: Piece) => rigidIslandByPiece?.get(piece) ?? [piece],
+    fixedNeighbours = new Map<Piece, Piece[]>();
+  for (const connection of connections) {
+    if (connection.mode !== "fixed") continue;
+    fixedNeighbours.set(connection.a, [
+      ...(fixedNeighbours.get(connection.a) ?? []),
+      connection.b,
+    ]);
+    fixedNeighbours.set(connection.b, [
+      ...(fixedNeighbours.get(connection.b) ?? []),
+      connection.a,
+    ]);
+  }
+  const rigidGroupFor = (piece: Piece) => {
+    const group = new Set<Piece>(),
+      pending = [...islandFor(piece)];
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (group.has(current)) continue;
+      for (const islandPiece of islandFor(current)) group.add(islandPiece);
+      for (const islandPiece of islandFor(current))
+        for (const neighbour of fixedNeighbours.get(islandPiece) ?? [])
+          if (!group.has(neighbour)) pending.push(neighbour);
+    }
+    return group;
+  };
+  return pieces
+    .filter((selector) => gearboxGrooveProfile(selector))
+    .flatMap((selector) => {
+      const selectorCenter = centre(selector),
+        axis = axleAxis(selector),
+        profile = gearboxGrooveProfile(selector)!;
+      let reference = new THREE.Vector3(1, 0, 0)
+        .transformDirection(selector.mesh.matrixWorld);
+      reference.addScaledVector(axis, -reference.dot(axis));
+      if (reference.lengthSq() < 1e-6) {
+        reference = new THREE.Vector3(0, 1, 0)
+          .transformDirection(selector.mesh.matrixWorld);
+        reference.addScaledVector(axis, -reference.dot(axis));
+      }
+      reference.normalize();
+      return pieces.flatMap((pin) => {
+        if (!hasReference(pin, ["6628"])) return [];
+        pin.mesh.updateMatrixWorld(true);
+        // The 6628 origin is at the pin shoulder; its towball centre is 10 LDU
+        // toward local -X, i.e. half a stud in prepared editor coordinates.
+        const followerPoint = pin.mesh.localToWorld(new THREE.Vector3(-0.5, 0, 0)),
+          offset = alignedAxialOffset(selectorCenter, axis, followerPoint);
+        if (offset.radial < 1.28 || offset.radial > 1.78 || Math.abs(offset.along) > 0.65)
+          return [];
+        const pinGroup = rigidGroupFor(pin),
+          guide = connections.find((connection) => {
+            if (connection.mode !== "linear" && connection.mode !== "rotation-linear")
+              return false;
+            const containsA = pinGroup.has(connection.a),
+              containsB = pinGroup.has(connection.b);
+            if (containsA === containsB) return false;
+            return Math.abs(connection.axis.clone().normalize().dot(axis)) >= 0.985;
+          });
+        const follower = guide
+          ? pinGroup.has(guide.a)
+            ? guide.a
+            : guide.b
+          : undefined;
+        return guide
+          ? [{
+              selector,
+              pin,
+              follower: follower!,
+              guide,
+              selectorCenter,
+              followerPoint,
+              axis,
+              reference,
+              profile,
+            }]
+          : [];
+      });
+    });
 };
 
 type GearboxSpec = {
@@ -355,9 +488,9 @@ export const detectGearboxLinks = (
   const links: RuntimeGearLink[] = [];
   for (const ring of pieces.filter(isGearboxRing)) {
     const assembly = gearboxAssemblyForRing(pieces, ring);
-    // The red ring must be almost at its ±0.5 detent before its dogs can
-    // transmit. Proximity around the carrier centre is not engagement.
-    if (!assembly || Math.abs(assembly.offset) < 0.44) continue;
+    // Preserve the original capture margin around the ±0.5 detents so the
+    // four tabs remain engaged while the 6539 is being shifted under load.
+    if (!assembly || Math.abs(assembly.offset) < 0.3) continue;
     const side = Math.sign(assembly.offset),
       axis = assembly.carrierAxis.clone();
     if (axis.dot(assembly.ringAxis) < 0) axis.negate();

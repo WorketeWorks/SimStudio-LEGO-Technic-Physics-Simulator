@@ -19,6 +19,8 @@ pub struct SceneConfig {
     #[serde(default)]
     pub axial_stops: Vec<AxialStopConfig>,
     #[serde(default)]
+    pub cam_followers: Vec<CamFollowerConfig>,
+    #[serde(default)]
     pub rubber_bands: Vec<RubberBandConfig>,
     #[serde(default)]
     // JavaScript sends editor ids as Number values. Some legacy ids include a
@@ -201,6 +203,19 @@ pub struct AxialStopConfig {
     pub world_axis: Vec3,
     pub side: f32,
     pub minimum_distance: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CamFollowerConfig {
+    pub guide_joint: String,
+    pub selector_body: u32,
+    pub follower_body: u32,
+    pub selector_center: Vec3,
+    pub follower_point: Vec3,
+    pub world_axis: Vec3,
+    pub world_reference: Vec3,
+    pub profile: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

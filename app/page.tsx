@@ -32,6 +32,7 @@ import {
   automaticConnectorMatchIsBetter,
   connectorAcceptsAdditionalConnection,
   connectorPoliciesCompatible,
+  isChangeoverForkRingConnection,
 } from "./connector-policy";
 import {
   cardanAssemblyLayout,
@@ -4061,7 +4062,9 @@ export default function Home() {
       b: MeshConnector,
       ignoredPiece?: Piece,
     ) => {
-      const sharedClutchSocket = gearboxExtensionSeatingGap(aPiece, bPiece) > 0;
+      const sharedClutchSocket =
+        gearboxExtensionSeatingGap(aPiece, bPiece) > 0 ||
+        isChangeoverForkRingConnection(aPiece, a, bPiece, b);
       return (
         connectorPoliciesCompatible(aPiece, a, bPiece, b) &&
         (connectorAvailable(aPiece, a, ignoredPiece) ||

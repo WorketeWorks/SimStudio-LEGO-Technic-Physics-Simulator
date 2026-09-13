@@ -307,6 +307,146 @@ test("a gearbox selector resists small forces and captures the next detent", () 
   engine.free();
 });
 
+test("a rotating selector groove drives its linearly guided follower", () => {
+  const body = (id, fixed, position) => ({
+    id,
+    fixed,
+    position,
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 4,
+    ccd: false,
+    colliders: [{
+      ownerId: id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [body(1, true, [0, 0, 0]), body(2, false, [1.5, 0, 0])],
+    joints: [],
+    gears: [],
+    differentials: [],
+    axialStops: [],
+    camFollowers: [{
+      guideJoint: "",
+      selectorBody: 1,
+      followerBody: 2,
+      selectorCenter: [0, 0, 0],
+      followerPoint: [1.5, 0, 0],
+      worldAxis: [0, 0, 1],
+      worldReference: [1, 0, 0],
+      profile: [0, 0.5, 0, -0.5],
+    }],
+    rubberBands: [],
+    excludedColliderPairs: [],
+  });
+  const half = Math.SQRT1_2;
+  let state = engine.step(1 / 60, [
+    { kind: "setRotation", body: 1, rotation: [0, 0, half, half] },
+  ]);
+  for (let frame = 0; frame < 30; frame++) state = engine.step(1 / 60, []);
+  assert.ok(
+    Math.abs(state[18] + 0.5) < 0.07,
+    `positive selector quarter-turn missed the negative groove: ${state[18]}`,
+  );
+
+  state = engine.step(1 / 60, [
+    { kind: "setRotation", body: 1, rotation: [0, 0, -half, half] },
+  ]);
+  for (let frame = 0; frame < 45; frame++) state = engine.step(1 / 60, []);
+  assert.ok(
+    Math.abs(state[18] - 0.5) < 0.07,
+    `negative selector quarter-turn missed the positive groove: ${state[18]}`,
+  );
+  engine.free();
+});
+
+test("a blocked groove follower returns its load as selector resistance", () => {
+  const body = (id, fixed, position) => ({
+    id,
+    fixed,
+    position,
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    additionalSolverIterations: 4,
+    ccd: false,
+    colliders: [{
+      ownerId: id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [
+      body(1, false, [0, 0, 0]),
+      body(2, true, [1.5, 0, 0]),
+      body(3, true, [0, 0, 0]),
+    ],
+    joints: [{
+      id: "selector-bearing",
+      bodyA: 3,
+      bodyB: 1,
+      mode: "rotation",
+      worldAnchorA: [0, 0, 0],
+      worldAnchorB: [0, 0, 0],
+      worldAxisA: [0, 0, 1],
+      worldAxisB: [0, 0, 1],
+      travel: 0,
+      motorSpeed: 0,
+      motorForce: 0,
+      passiveMotorForce: 0,
+      dynamicAxle: false,
+    }],
+    gears: [],
+    differentials: [],
+    axialStops: [],
+    camFollowers: [{
+      guideJoint: "",
+      selectorBody: 1,
+      followerBody: 2,
+      selectorCenter: [0, 0, 0],
+      followerPoint: [1.5, 0, 0],
+      worldAxis: [0, 0, 1],
+      worldReference: [1, 0, 0],
+      profile: [0, 0.5, 0, -0.5],
+    }],
+    rubberBands: [],
+    excludedColliderPairs: [],
+  });
+  let state = engine.step(1 / 60, [
+    { kind: "setAngularVelocity", body: 1, velocity: [0, 0, 5] },
+  ]);
+  for (let frame = 0; frame < 10; frame++) state = engine.step(1 / 60, []);
+  assert.ok(
+    Math.abs(state[13]) < 0.05,
+    `the blocked follower failed to stall the selector: ${state[13]}`,
+  );
+  assert.ok(
+    Math.abs(state[18]) < 0.005,
+    `the fixed follower was overwritten by the cam: ${state[18]}`,
+  );
+  engine.free();
+});
+
 test("a zero-tolerance extension latch blocks insertion and releases outward under force", () => {
   const latchBody = (id, fixed) => ({
     id,

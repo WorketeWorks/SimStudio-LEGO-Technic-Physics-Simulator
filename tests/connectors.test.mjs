@@ -346,7 +346,18 @@ test("loads the downloaded connection corrections", () => {
       length: 1,
     },
   ]);
-  assert.equal(preloadedConnectionMaps["4159"].length, 3);
+  assert.equal(preloadedConnectionMaps["4159"].length, 4);
+  assert.deepEqual(preloadedConnectionMaps["4159"][3], {
+    local: [1, 2, 0],
+    axis: [0, 0, 1],
+    kind: "axle",
+    role: "shaft",
+    diameter: 0.8,
+    length: 0.6,
+    rotationOnly: true,
+    connectionTarget: { partId: "6539", connectorId: 1 },
+    singleConnection: true,
+  });
   assert.equal(preloadedConnectionMaps["6538"].length, 3);
   assert.equal(preloadedConnectionMaps["6538"][0].role, "shaft");
   assert.deepEqual(preloadedConnectionMaps["32187"], [
@@ -437,6 +448,18 @@ test("gearbox guide connectors cannot be mistaken for ordinary axle connections"
     ),
     true,
   );
+  const ring6539 = piece("6539", preloadedConnectionMaps["6539"][0]),
+    fork4159 = piece("4159", preloadedConnectionMaps["4159"][3]);
+  assert.equal(
+    connectorPoliciesCompatible(
+      ring6539,
+      ring6539.connectors[0],
+      fork4159,
+      fork4159.connectors[0],
+    ),
+    true,
+  );
+  assert.equal(fork4159.connectors[0].rotationOnly, true);
   assert.equal(
     connectorPoliciesCompatible(
       ring18947,

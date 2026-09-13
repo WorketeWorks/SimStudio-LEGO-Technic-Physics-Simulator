@@ -21,6 +21,7 @@ import type {
 import type {
   RustBodyConfig,
   RustAxialStopConfig,
+  RustCamFollowerConfig,
   RustColliderConfig,
   RustDifferentialConfig,
   RustGearConfig,
@@ -31,6 +32,7 @@ import type {
   RustVec3,
 } from "./rust-protocol";
 import {
+  detectGearboxGrooveFollowers,
   gearboxDetentForConnection,
   gearboxExtensionLatchForConnection,
   gearboxExtensionMinimumDistance,
@@ -894,6 +896,28 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   // buildRustGearConfigs applies the same exclusion during dynamic rescans.
   const gears = buildRustGearConfigs(gearLinks, bodyIdByPiece, physicalConnections);
 
+  const grooveFollowers = detectGearboxGrooveFollowers(
+    physicalPieces,
+    physicalConnections,
+    rigidIslandByPiece,
+  );
+  const camFollowers: RustCamFollowerConfig[] = grooveFollowers.flatMap((follower) => {
+    const selectorBody = bodyIdByPiece.get(follower.selector),
+      followerBody = bodyIdByPiece.get(follower.follower);
+    return selectorBody && followerBody && selectorBody !== followerBody
+      ? [{
+          guideJoint: follower.guide.id,
+          selectorBody,
+          followerBody,
+          selectorCenter: vec3(follower.selectorCenter),
+          followerPoint: vec3(follower.followerPoint),
+          worldAxis: vec3(follower.axis),
+          worldReference: vec3(follower.reference),
+          profile: [...follower.profile],
+        }]
+      : [];
+  });
+
   // Bushes/nuts touching a socket act as axial hard stops. Their correction
   // is encoded once here and enforced every frame by Rust, avoiding a second
   // TypeScript pose solver after Rapier.
@@ -982,6 +1006,9 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   const excludedColliderPairs = [
     ...excludedPairs,
     ...rubberExcludedColliderPairs,
+    ...grooveFollowers.map(({ selector, pin }) =>
+      `${Math.min(selector.id, pin.id)}:${Math.max(selector.id, pin.id)}`,
+    ),
   ].flatMap((key) => {
     const [left, right] = key.split(":").map(Number);
     return Number.isFinite(left) && Number.isFinite(right)
@@ -1006,6 +1033,7 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
       gears,
       differentials,
       axialStops,
+      camFollowers,
       rubberBands: rubberConfigs,
       excludedColliderPairs,
     },

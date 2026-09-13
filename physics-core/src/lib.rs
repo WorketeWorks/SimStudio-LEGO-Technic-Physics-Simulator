@@ -13,7 +13,7 @@ use math::{clamp_length, pose, rotation_to_array, vector};
 use model::{
     ColliderConfig, ColliderShape, GearConfig, JointConfig, PhysicsCommand, SceneConfig, StepStats,
 };
-use systems::{differentials, forces, gears, joints, rubber, stops};
+use systems::{cams, differentials, forces, gears, joints, rubber, stops};
 
 const TRANSFORM_STRIDE: usize = 15;
 
@@ -82,6 +82,7 @@ pub struct PhysicsEngine {
     gears: Vec<gears::GearRuntime>,
     differentials: Vec<differentials::DifferentialRuntime>,
     axial_stops: Vec<stops::AxialStopRuntime>,
+    cam_followers: Vec<cams::CamFollowerRuntime>,
     rubber_bands: Vec<rubber::RubberBand>,
     previous_gear_rotations: HashMap<RigidBodyHandle, Rotation>,
     contact_filter: ContactFilter,
@@ -192,6 +193,7 @@ impl PhysicsEngine {
         let runtime_differentials =
             differentials::build(&config.differentials, &body_ids, &world);
         let axial_stops = stops::build(&config.axial_stops, &body_ids, &world);
+        let cam_followers = cams::build(&config.cam_followers, &body_ids, &world);
         let rubber_bands = rubber::build(&config.rubber_bands, &body_ids);
         rubber::configure_bodies(&rubber_bands, &mut world);
         let previous_gear_rotations = ordered_bodies
@@ -226,6 +228,7 @@ impl PhysicsEngine {
             gears: runtime_gears,
             differentials: runtime_differentials,
             axial_stops,
+            cam_followers,
             rubber_bands,
             previous_gear_rotations,
             contact_filter,
@@ -246,6 +249,7 @@ impl PhysicsEngine {
         let substeps = if self.gears.is_empty()
             && self.differentials.is_empty()
             && self.rubber_bands.is_empty()
+            && self.cam_followers.is_empty()
         {
             1
         } else if self.settings.large_simulation {
@@ -454,7 +458,7 @@ impl PhysicsEngine {
 
 impl PhysicsEngine {
     fn project_drivetrain(&mut self, dt: Real) {
-        let count = self.gears.len() + self.differentials.len();
+        let count = self.gears.len() + self.differentials.len() + self.cam_followers.len();
         if count == 0 { return; }
         let passes = (count * 4).clamp(32, 128);
         let mut previous = Vec::with_capacity(self.ordered_bodies.len());
@@ -465,6 +469,12 @@ impl PhysicsEngine {
                 (body.linvel(), body.angvel())
             }));
             joints::project_locked_velocities(&self.joints, &mut self.world);
+            cams::project_velocities(
+                &self.cam_followers,
+                &self.joint_ids,
+                &mut self.world,
+                dt,
+            );
             differentials::project_velocities(&self.differentials, dt, &mut self.world);
             if dt > 0.0 {
                 gears::project_velocities(&self.gears, &mut self.world, dt);

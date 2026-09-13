@@ -8,6 +8,36 @@ export type ConnectorOwner = {
   connectors: MeshConnector[];
 };
 
+const ownerHasReference = (owner: ConnectorOwner, expected: string) =>
+  [owner.part, owner.modelPart, owner.resolvedPart, owner.requestedPart]
+    .filter((reference): reference is string => Boolean(reference))
+    .some(
+      (reference) =>
+        reference.toLowerCase().replace(/\.dat$/, "") === expected,
+    );
+
+/** The 4159 fork occupies the outer groove of 6539, not its 6538 axle guide. */
+export const isChangeoverForkRingConnection = (
+  aPiece: ConnectorOwner,
+  a: MeshConnector,
+  bPiece: ConnectorOwner,
+  b: MeshConnector,
+) => {
+  const matches = (
+    forkPiece: ConnectorOwner,
+    fork: MeshConnector,
+    ringPiece: ConnectorOwner,
+    ring: MeshConnector,
+  ) =>
+    ownerHasReference(forkPiece, "4159") &&
+    ownerHasReference(ringPiece, "6539") &&
+    fork.role === "shaft" &&
+    fork.rotationOnly === true &&
+    fork.connectionTarget?.partId.toLowerCase() === "6539" &&
+    ring.role === "socket";
+  return matches(aPiece, a, bPiece, b) || matches(bPiece, b, aPiece, a);
+};
+
 const connectorAllowsTarget = (
   sourceConnector: MeshConnector,
   targetPiece: ConnectorOwner,
@@ -37,8 +67,9 @@ export const connectorPoliciesCompatible = (
   bPiece: ConnectorOwner,
   b: MeshConnector,
 ) =>
-  connectorAllowsTarget(a, bPiece, b) &&
-  connectorAllowsTarget(b, aPiece, a);
+  isChangeoverForkRingConnection(aPiece, a, bPiece, b) ||
+  (connectorAllowsTarget(a, bPiece, b) &&
+    connectorAllowsTarget(b, aPiece, a));
 
 export const connectorAcceptsAdditionalConnection = (
   connector: MeshConnector,
