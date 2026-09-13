@@ -57,6 +57,10 @@ export type RustJointConfig = {
   travel: number;
   motorSpeed: number;
   motorForce: number;
+  /** Radians advanced per pulse. Zero disables pulse positioning. */
+  motorPulseAngle: number;
+  /** Simulated seconds between pulses. */
+  motorPulseInterval: number;
   passiveMotorForce: number;
   dynamicAxle: boolean;
   /** Symmetric angular travel for a revolute joint, in radians. */
@@ -185,7 +189,14 @@ export type RustPhysicsCommand =
   | { kind: "setLinearVelocity"; body: number; velocity: RustVec3 }
   | { kind: "setAngularVelocity"; body: number; velocity: RustVec3 }
   | { kind: "setDamping"; body: number; linear: number; angular: number }
-  | { kind: "setMotor"; joint: string; speed: number; force: number };
+  | {
+      kind: "setMotor";
+      joint: string;
+      speed: number;
+      force: number;
+      motorPulseAngle?: number;
+      motorPulseInterval?: number;
+    };
 
 export type RustStepStats = {
   bodies: number;

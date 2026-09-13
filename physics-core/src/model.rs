@@ -122,6 +122,10 @@ pub struct JointConfig {
     pub travel: f32,
     pub motor_speed: f32,
     pub motor_force: f32,
+    #[serde(default)]
+    pub motor_pulse_angle: f32,
+    #[serde(default)]
+    pub motor_pulse_interval: f32,
     pub passive_motor_force: f32,
     pub dynamic_axle: bool,
     #[serde(default)]
@@ -280,6 +284,10 @@ pub enum PhysicsCommand {
         joint: String,
         speed: f32,
         force: f32,
+        #[serde(default)]
+        motor_pulse_angle: Option<f32>,
+        #[serde(default)]
+        motor_pulse_interval: Option<f32>,
     },
 }
 

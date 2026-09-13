@@ -186,8 +186,20 @@ export class RustJointProxy {
     readonly id: string,
   ) {}
 
-  configureMotorVelocity(speed: number, force: number) {
-    this.runtime.enqueue({ kind: "setMotor", joint: this.id, speed, force });
+  configureMotorVelocity(
+    speed: number,
+    force: number,
+    motorPulseAngle?: number,
+    motorPulseInterval?: number,
+  ) {
+    this.runtime.enqueue({
+      kind: "setMotor",
+      joint: this.id,
+      speed,
+      force,
+      motorPulseAngle,
+      motorPulseInterval,
+    });
   }
 }
 

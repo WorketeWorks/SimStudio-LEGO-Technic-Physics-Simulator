@@ -85,6 +85,9 @@ export type SavedConnection = {
   travel: number;
   motorSpeed: number;
   motorForce: number;
+  motorPulse: boolean;
+  motorPulseAngle: number;
+  motorPulseInterval: number;
   userConfigured: boolean;
   forced?: boolean;
   forcedOffset?: number;
@@ -466,6 +469,15 @@ const sanitizeProjectDocument = (
         travel: positiveNumber(connection.travel, 0.5, 0.01),
         motorSpeed: finiteNumber(connection.motorSpeed, 0),
         motorForce: Math.max(0, finiteNumber(connection.motorForce, 30)),
+        motorPulse: connection.motorPulse === true,
+        motorPulseAngle: Math.min(
+          360,
+          positiveNumber(connection.motorPulseAngle, 90, 1),
+        ),
+        motorPulseInterval: Math.min(
+          60,
+          positiveNumber(connection.motorPulseInterval, 1, 0.05),
+        ),
         userConfigured: connection.userConfigured === true,
         forced: connection.forced === true,
         forcedOffset:

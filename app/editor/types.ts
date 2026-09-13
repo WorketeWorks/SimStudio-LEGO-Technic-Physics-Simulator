@@ -178,6 +178,12 @@ export type Connection = {
   travel: number;
   motorSpeed: number;
   motorForce: number;
+  /** Advances by a fixed angle at a fixed interval instead of rotating continuously. */
+  motorPulse: boolean;
+  /** Positive angular increment in degrees; direction follows motorSpeed. */
+  motorPulseAngle: number;
+  /** Simulated seconds between angular increments. */
+  motorPulseInterval: number;
   userConfigured: boolean;
   forced?: boolean;
   forcedOffset?: number;
@@ -378,6 +384,9 @@ export type AppState = {
       mode: JointMode;
       motorSpeed: number;
       motorForce: number;
+      motorPulse: boolean;
+      motorPulseAngle: number;
+      motorPulseInterval: number;
       userConfigured: boolean;
     }
   >;

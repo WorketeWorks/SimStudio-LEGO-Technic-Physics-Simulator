@@ -1094,6 +1094,17 @@ footer {
   font-size: 7px !important;
   margin: 8px 0 1px !important;
 }
+.motor-pulse-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px !important;
+  font-size: 8px !important;
+  font-weight: 700;
+}
+.motor-pulse-toggle input {
+  accent-color: #1768e5;
+}
 .angle-head {
   display: flex;
   align-items: center;

@@ -268,7 +268,7 @@ impl PhysicsEngine {
         self.world.integration_parameters.dt = substep_dt;
         self.world.integration_parameters.warmstart_coefficient = if startup { 0.0 } else { 0.65 };
         for _ in 0..substeps {
-            joints::apply_motor_impulses(&self.joints, &mut self.world, substep_dt);
+            joints::apply_motor_impulses(&mut self.joints, &mut self.world, substep_dt);
             rubber::apply(&self.rubber_bands, &mut self.world, substep_dt);
             self.project_drivetrain(substep_dt);
             self.world.step_with_events(&self.contact_filter, &());

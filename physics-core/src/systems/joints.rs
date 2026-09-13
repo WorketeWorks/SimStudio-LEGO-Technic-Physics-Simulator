@@ -16,6 +16,15 @@ pub struct JointRuntime {
     pub local_axis_b: Vector,
     pub motor_speed: Real,
     pub motor_force: Real,
+    pub motor_pulse_angle: Real,
+    pub motor_pulse_interval: Real,
+    pub motor_pulse_elapsed: Real,
+    pub motor_pulse_position: Real,
+    pub motor_pulse_target: Real,
+    pub motor_pulse_started: bool,
+    pub motor_pulse_reference_a: Vector,
+    pub motor_pulse_reference_b: Vector,
+    pub motor_pulse_last_angle: Real,
     pub linear_detents: Vec<Real>,
     pub detent_force: Real,
     pub local_anchor_a: Vector,
@@ -45,6 +54,16 @@ pub fn create_joint(
     let world_axis_b = normalized(config.world_axis_b);
     let axis_a = rigid_a.position().inverse_transform_vector(world_axis_a);
     let axis_b = rigid_b.position().inverse_transform_vector(world_axis_b);
+    let reference_seed = if world_axis_a.x.abs() < 0.8 {
+        Vector::X
+    } else {
+        Vector::Y
+    };
+    let world_reference = world_axis_a.cross(reference_seed).normalize();
+    let motor_pulse_reference_a =
+        rigid_a.position().inverse_transform_vector(world_reference);
+    let motor_pulse_reference_b =
+        rigid_b.position().inverse_transform_vector(world_reference);
 
     let mut data = match config.mode {
         JointMode::Rotation | JointMode::Motor => {
@@ -164,6 +183,19 @@ pub fn create_joint(
         } else if config.mode == JointMode::Rotation {
             config.passive_motor_force.max(0.0)
         } else { 0.0 },
+        motor_pulse_angle: if config.mode == JointMode::Motor {
+            config.motor_pulse_angle.abs()
+        } else { 0.0 },
+        motor_pulse_interval: if config.mode == JointMode::Motor {
+            config.motor_pulse_interval.max(0.0)
+        } else { 0.0 },
+        motor_pulse_elapsed: 0.0,
+        motor_pulse_position: 0.0,
+        motor_pulse_target: 0.0,
+        motor_pulse_started: false,
+        motor_pulse_reference_a,
+        motor_pulse_reference_b,
+        motor_pulse_last_angle: 0.0,
         linear_detents: config.linear_detents.clone(),
         detent_force: config.detent_force.max(0.0),
         local_anchor_a: anchor_a,
@@ -181,6 +213,8 @@ pub fn update_motors(
             joint,
             speed,
             force,
+            motor_pulse_angle,
+            motor_pulse_interval,
         } = command
         else {
             continue;
@@ -191,25 +225,78 @@ pub fn update_motors(
         if !matches!(runtime.mode, JointMode::Rotation | JointMode::Motor) { continue; }
         runtime.motor_speed = *speed;
         runtime.motor_force = (*force).max(0.0);
+        let next_angle = motor_pulse_angle
+            .unwrap_or(runtime.motor_pulse_angle)
+            .abs();
+        let next_interval = motor_pulse_interval
+            .unwrap_or(runtime.motor_pulse_interval)
+            .max(0.0);
+        if (next_angle - runtime.motor_pulse_angle).abs() > 1.0e-6
+            || (next_interval - runtime.motor_pulse_interval).abs() > 1.0e-6
+        {
+            runtime.motor_pulse_elapsed = 0.0;
+            runtime.motor_pulse_position = 0.0;
+            runtime.motor_pulse_target = 0.0;
+            runtime.motor_pulse_started = false;
+        }
+        runtime.motor_pulse_angle = next_angle;
+        runtime.motor_pulse_interval = next_interval;
     }
 }
 
 /// Apply finite motor torque before drivetrain projection and integration.
 /// A motor inside Rapier's later solve would rotate a blocked shaft first;
 /// cancelling its velocity afterwards cannot undo that skipped tooth.
-pub fn apply_motor_impulses(joints: &[JointRuntime], world: &mut PhysicsWorld, dt: Real) {
+pub fn apply_motor_impulses(joints: &mut [JointRuntime], world: &mut PhysicsWorld, dt: Real) {
     for joint in joints {
         if joint.motor_force <= 0.0 { continue; }
-        let a = &world.bodies[joint.body_a];
-        let b = &world.bodies[joint.body_b];
-        let axis_a = a.rotation() * joint.local_axis_a;
-        let axis_b = b.rotation() * joint.local_axis_b;
-        let denominator = axis_a.dot(a.mass_properties().effective_world_inv_inertia * axis_a)
-            + axis_b.dot(b.mass_properties().effective_world_inv_inertia * axis_b);
+        let (axis_a, axis_b, denominator, speed, pulse_angle) = {
+            let a = &world.bodies[joint.body_a];
+            let b = &world.bodies[joint.body_b];
+            let axis_a = a.rotation() * joint.local_axis_a;
+            let axis_b = b.rotation() * joint.local_axis_b;
+            let reference_a = a.rotation() * joint.motor_pulse_reference_a;
+            let reference_b = b.rotation() * joint.motor_pulse_reference_b;
+            let denominator = axis_a.dot(a.mass_properties().effective_world_inv_inertia * axis_a)
+                + axis_b.dot(b.mass_properties().effective_world_inv_inertia * axis_b);
+            let speed = b.angvel().dot(axis_b) - a.angvel().dot(axis_a);
+            let pulse_angle = axis_a
+                .dot(reference_a.cross(reference_b))
+                .atan2(reference_a.dot(reference_b));
+            (axis_a, axis_b, denominator, speed, pulse_angle)
+        };
         if denominator <= 1.0e-8 { continue; }
-        let speed = b.angvel().dot(axis_b) - a.angvel().dot(axis_a);
+        let pulse_enabled = joint.motor_pulse_angle > 1.0e-6
+            && joint.motor_pulse_interval >= 0.01;
+        let desired_speed = if pulse_enabled {
+            // Measure actual relative rotation, including any later safety
+            // clamp or drivetrain correction. A blocked mechanism therefore
+            // cannot be teleported to the next pulse angle.
+            let delta = (pulse_angle - joint.motor_pulse_last_angle
+                + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            joint.motor_pulse_position += delta;
+            joint.motor_pulse_last_angle = pulse_angle;
+            if !joint.motor_pulse_started {
+                let direction = if joint.motor_speed < 0.0 { -1.0 } else { 1.0 };
+                joint.motor_pulse_target += direction * joint.motor_pulse_angle;
+                joint.motor_pulse_started = true;
+            } else {
+                joint.motor_pulse_elapsed += dt;
+                while joint.motor_pulse_elapsed >= joint.motor_pulse_interval {
+                    let direction = if joint.motor_speed < 0.0 { -1.0 } else { 1.0 };
+                    joint.motor_pulse_target += direction * joint.motor_pulse_angle;
+                    joint.motor_pulse_elapsed -= joint.motor_pulse_interval;
+                }
+            }
+            let error = joint.motor_pulse_target - joint.motor_pulse_position;
+            (error * 8.0).clamp(-joint.motor_speed.abs(), joint.motor_speed.abs())
+        } else {
+            joint.motor_speed
+        };
         let gain = joint.motor_force.max(0.01) * dt;
-        let delta = (joint.motor_speed - speed) * gain / (1.0 + gain);
+        let delta = (desired_speed - speed) * gain / (1.0 + gain);
         let limit = joint.motor_force * dt;
         let impulse = (delta / denominator).clamp(-limit, limit);
         world.bodies[joint.body_a].apply_torque_impulse(-axis_a * impulse, true);
@@ -374,6 +461,8 @@ mod tests {
             travel: 0.0,
             motor_speed: 0.0,
             motor_force: 0.0,
+            motor_pulse_angle: 0.0,
+            motor_pulse_interval: 0.0,
             passive_motor_force: 0.0,
             dynamic_axle: false,
             angular_limit: None,

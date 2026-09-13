@@ -231,6 +231,10 @@ export function buildRustJointConfig(
     travel: gearboxDetent ? 1 : connection.travel,
     motorSpeed: connection.motorSpeed,
     motorForce: connection.motorForce,
+    motorPulseAngle: connection.motorPulse
+      ? THREE.MathUtils.degToRad(connection.motorPulseAngle)
+      : 0,
+    motorPulseInterval: connection.motorPulse ? connection.motorPulseInterval : 0,
     passiveMotorForce,
     dynamicAxle,
     ...(gearboxDetent

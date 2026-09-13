@@ -3883,6 +3883,9 @@ export default function Home() {
           mode: JointMode;
           motorSpeed: number;
           motorForce: number;
+          motorPulse: boolean;
+          motorPulseAngle: number;
+          motorPulseInterval: number;
           userConfigured: boolean;
         }
       >(),
@@ -4192,6 +4195,9 @@ export default function Home() {
               : defaultMode(profile),
         motorSpeed = saved?.motorSpeed ?? 3,
         motorForce = saved?.motorForce ?? 80,
+        motorPulse = saved?.motorPulse ?? false,
+        motorPulseAngle = saved?.motorPulseAngle ?? 90,
+        motorPulseInterval = saved?.motorPulseInterval ?? 1,
         userConfigured = saved?.userConfigured ?? false;
       const addedConnection: Connection = {
         id,
@@ -4214,6 +4220,9 @@ export default function Home() {
         travel: shaft.length ?? 0.5,
         motorSpeed,
         motorForce,
+        motorPulse,
+        motorPulseAngle,
+        motorPulseInterval,
         userConfigured,
         forced: !!forcedAnchors,
         forcedOffset: forcedAnchors?.pointA.distanceTo(forcedAnchors.pointB),
@@ -4869,6 +4878,9 @@ export default function Home() {
           mode: connection.mode,
           motorSpeed: connection.motorSpeed,
           motorForce: connection.motorForce,
+          motorPulse: connection.motorPulse,
+          motorPulseAngle: connection.motorPulseAngle,
+          motorPulseInterval: connection.motorPulseInterval,
           userConfigured: connection.userConfigured,
         });
         changed = true;
@@ -6549,6 +6561,9 @@ export default function Home() {
           travel: connection.travel,
           motorSpeed: connection.motorSpeed,
           motorForce: connection.motorForce,
+          motorPulse: connection.motorPulse,
+          motorPulseAngle: connection.motorPulseAngle,
+          motorPulseInterval: connection.motorPulseInterval,
           userConfigured: connection.userConfigured,
           forced: connection.forced,
           forcedOffset: connection.forcedOffset,
@@ -6816,6 +6831,9 @@ export default function Home() {
             travel: saved.travel,
             motorSpeed: saved.motorSpeed,
             motorForce: saved.motorForce,
+            motorPulse: saved.motorPulse,
+            motorPulseAngle: saved.motorPulseAngle,
+            motorPulseInterval: saved.motorPulseInterval,
             userConfigured: saved.userConfigured,
             forced: saved.forced,
             forcedOffset: saved.forcedOffset,
@@ -6830,6 +6848,9 @@ export default function Home() {
             mode: connection.mode,
             motorSpeed: connection.motorSpeed,
             motorForce: connection.motorForce,
+            motorPulse: connection.motorPulse,
+            motorPulseAngle: connection.motorPulseAngle,
+            motorPulseInterval: connection.motorPulseInterval,
             userConfigured: connection.userConfigured,
           });
           return [connection];
@@ -10034,6 +10055,11 @@ export default function Home() {
               mode: configured?.mode ?? connection.mode,
               motorSpeed: configured?.motorSpeed ?? connection.motorSpeed,
               motorForce: configured?.motorForce ?? connection.motorForce,
+              motorPulse: configured?.motorPulse ?? connection.motorPulse,
+              motorPulseAngle:
+                configured?.motorPulseAngle ?? connection.motorPulseAngle,
+              motorPulseInterval:
+                configured?.motorPulseInterval ?? connection.motorPulseInterval,
               userConfigured: configured?.userConfigured ?? connection.userConfigured,
             };
           });
@@ -11018,6 +11044,9 @@ export default function Home() {
       mode,
       motorSpeed: connection.motorSpeed,
       motorForce: connection.motorForce,
+      motorPulse: connection.motorPulse,
+      motorPulseAngle: connection.motorPulseAngle,
+      motorPulseInterval: connection.motorPulseInterval,
       userConfigured: true,
     });
     rebalanceSmartDefaults(state, connection.b);
@@ -11036,11 +11065,21 @@ export default function Home() {
       mode: connection.mode,
       motorSpeed,
       motorForce: connection.motorForce,
+      motorPulse: connection.motorPulse,
+      motorPulseAngle: connection.motorPulseAngle,
+      motorPulseInterval: connection.motorPulseInterval,
       userConfigured: connection.userConfigured,
     });
     const activeJoint = state.physicsJoints.get(id);
     if (running && activeJoint)
-      activeJoint.configureMotorVelocity(motorSpeed, connection.motorForce);
+      activeJoint.configureMotorVelocity(
+        motorSpeed,
+        connection.motorForce,
+        connection.motorPulse
+          ? THREE.MathUtils.degToRad(connection.motorPulseAngle)
+          : 0,
+        connection.motorPulse ? connection.motorPulseInterval : 0,
+      );
     setConnectionRevision((value) => value + 1);
     setMessage(`Motor ${motorSpeed.toFixed(1)} rad/s`);
   };
@@ -11055,13 +11094,64 @@ export default function Home() {
       mode: connection.mode,
       motorSpeed: connection.motorSpeed,
       motorForce,
+      motorPulse: connection.motorPulse,
+      motorPulseAngle: connection.motorPulseAngle,
+      motorPulseInterval: connection.motorPulseInterval,
       userConfigured: connection.userConfigured,
     });
     const activeJoint = state.physicsJoints.get(id);
     if (running && activeJoint)
-      activeJoint.configureMotorVelocity(connection.motorSpeed, motorForce);
+      activeJoint.configureMotorVelocity(
+        connection.motorSpeed,
+        motorForce,
+        connection.motorPulse
+          ? THREE.MathUtils.degToRad(connection.motorPulseAngle)
+          : 0,
+        connection.motorPulse ? connection.motorPulseInterval : 0,
+      );
     setConnectionRevision((value) => value + 1);
     setMessage(`Fuerza del motor ${motorForce.toFixed(0)}`);
+  };
+
+  const setMotorPulse = (
+    id: string,
+    update: Partial<
+      Pick<Connection, "motorPulse" | "motorPulseAngle" | "motorPulseInterval">
+    >,
+  ) => {
+    const state = appRef.current,
+      connection = state?.connections.find((item) => item.id === id);
+    if (!state || !connection || running) return;
+    state.recordHistory();
+    if (update.motorPulse !== undefined) connection.motorPulse = update.motorPulse;
+    if (update.motorPulseAngle !== undefined)
+      connection.motorPulseAngle = THREE.MathUtils.clamp(
+        update.motorPulseAngle,
+        1,
+        360,
+      );
+    if (update.motorPulseInterval !== undefined)
+      connection.motorPulseInterval = THREE.MathUtils.clamp(
+        update.motorPulseInterval,
+        0.05,
+        60,
+      );
+    state.connectionModes.set(id, {
+      mode: connection.mode,
+      motorSpeed: connection.motorSpeed,
+      motorForce: connection.motorForce,
+      motorPulse: connection.motorPulse,
+      motorPulseAngle: connection.motorPulseAngle,
+      motorPulseInterval: connection.motorPulseInterval,
+      userConfigured: connection.userConfigured,
+    });
+    state.scheduleRecoverySave();
+    setConnectionRevision((value) => value + 1);
+    setMessage(
+      connection.motorPulse
+        ? `Motor por pulsos · ${connection.motorPulseAngle.toFixed(0)}° cada ${connection.motorPulseInterval.toFixed(2)} s`
+        : "Motor continuo",
+    );
   };
 
   // --- Connection-map editor -----------------------------------------------
@@ -13765,15 +13855,85 @@ export default function Home() {
                                 aria-label="Fuerza del motor"
                                 type="range"
                                 min="5"
-                                max="400"
-                                step="5"
+                                max="10000"
+                                step="25"
                                 value={connection.motorForce}
                                 onChange={(event) =>
                                   setMotorForce(connection.id, +event.target.value)
                                 }
                               />
-                              <b>{connection.motorForce.toFixed(0)}</b>
+                              <b>{connection.motorForce.toFixed(0)} N·m</b>
                             </div>
+                            <label className="motor-pulse-toggle">
+                              <input
+                                aria-label="Activar motor por pulsos"
+                                type="checkbox"
+                                checked={connection.motorPulse}
+                                disabled={running}
+                                onChange={(event) =>
+                                  setMotorPulse(connection.id, {
+                                    motorPulse: event.target.checked,
+                                  })
+                                }
+                              />
+                              <span>
+                                {language === "es"
+                                  ? "Motor por pulsos"
+                                  : "Pulse motor"}
+                              </span>
+                            </label>
+                            {connection.motorPulse && (
+                              <>
+                                <label className="motor-label">
+                                  {language === "es"
+                                    ? "Ángulo por pulso"
+                                    : "Angle per pulse"}
+                                </label>
+                                <div className="motor-control">
+                                  <input
+                                    aria-label="Ángulo por pulso"
+                                    type="number"
+                                    min="1"
+                                    max="360"
+                                    step="1"
+                                    value={connection.motorPulseAngle}
+                                    disabled={running}
+                                    onChange={(event) =>
+                                      setMotorPulse(connection.id, {
+                                        motorPulseAngle:
+                                          Number(event.target.value) || 1,
+                                      })
+                                    }
+                                  />
+                                  <b>{connection.motorPulseAngle.toFixed(0)}°</b>
+                                </div>
+                                <label className="motor-label">
+                                  {language === "es"
+                                    ? "Tiempo entre pulsos"
+                                    : "Pulse interval"}
+                                </label>
+                                <div className="motor-control">
+                                  <input
+                                    aria-label="Tiempo entre pulsos"
+                                    type="number"
+                                    min="0.05"
+                                    max="60"
+                                    step="0.05"
+                                    value={connection.motorPulseInterval}
+                                    disabled={running}
+                                    onChange={(event) =>
+                                      setMotorPulse(connection.id, {
+                                        motorPulseInterval:
+                                          Number(event.target.value) || 0.05,
+                                      })
+                                    }
+                                  />
+                                  <b>
+                                    {connection.motorPulseInterval.toFixed(2)} s
+                                  </b>
+                                </div>
+                              </>
+                            )}
                           </>
                         )}
                       </div>

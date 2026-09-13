@@ -203,6 +203,31 @@ test("a motor applies finite torque and responds to changed commands", () => {
   } finally { engine.free(); }
 });
 
+test("a pulse motor advances one requested angle per interval and waits", () => {
+  const engine = new PhysicsEngine(scene({
+    bodies: [body(1), body(10, true)],
+    joints: [{
+      ...pivot(1, 10, "motor"),
+      motorSpeed: 8,
+      motorForce: 2_000,
+      motorPulseAngle: Math.PI / 2,
+      motorPulseInterval: 1,
+    }],
+    gears: [], differentials: [],
+  }));
+  try {
+    let state;
+    for (let frame = 0; frame < 45; frame++) state = engine.step(1 / 60, []);
+    const firstAngle = 2 * Math.atan2(state[6], state[7]);
+    close(firstAngle, Math.PI / 2, "first 90-degree pulse", 0.03);
+    assert.ok(Math.abs(state[13]) < 0.05, `motor must wait at its target: ${state[13]}`);
+
+    for (let frame = 0; frame < 45; frame++) state = engine.step(1 / 60, []);
+    const secondAngle = Math.abs(2 * Math.atan2(state[6], state[7]));
+    close(secondAngle, Math.PI, "second 90-degree pulse", 0.04);
+  } finally { engine.free(); }
+});
+
 test("a remote blocked shaft stops a powered train without cumulative tooth slip", () => {
   const count = 12;
   const engine = new PhysicsEngine(scene({
