@@ -7462,6 +7462,96 @@
         }
       }
     },
+    "18946": {
+      "name": "Technic Gear 16 Tooth with Clutch on Both Sides",
+      "family": "gears",
+      "modelPart": "18946",
+      "modelFile": "parts/18946.dat",
+      "connectors": [
+        {
+          "local": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "kind": "round",
+          "role": "socket",
+          "diameter": 0.6000142643617549,
+          "length": 1.0000000000000002
+        }
+      ],
+      "colliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 1.0340750217437744,
+          "halfHeight": 0.4750000000000001,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "gear": true,
+      "gearColliders": [
+        {
+          "shape": "cylinder",
+          "center": [
+            0,
+            0,
+            0
+          ],
+          "radius": 0.9099860191345215,
+          "halfHeight": 0.45600000000000007,
+          "rotation": [
+            0.7071067811865475,
+            0,
+            0,
+            0.7071067811865475
+          ]
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1.0885000228881836,
+          -1.0885000228881836,
+          -0.5000000000000001
+        ],
+        "max": [
+          1.0885000228881836,
+          1.0885000228881836,
+          0.5000000000000001
+        ]
+      },
+      "mapProvenance": {
+        "connectors": {
+          "origin": "automatic",
+          "generatorVersion": "geometry-v3-solid"
+        },
+        "colliders": {
+          "origin": "automatic",
+          "generatorVersion": "geometry-v3-solid"
+        },
+        "gearColliders": {
+          "origin": "automatic",
+          "generatorVersion": "geometry-v3-solid"
+        },
+        "specialGear": {
+          "origin": "unknown"
+        }
+      }
+    },
     "18947": {
       "name": "Technic Transmission Driving Ring 3L",
       "family": "gears",
@@ -34192,6 +34282,11 @@
       "geometry": "catalog/geometry/32187-71.json",
       "render": "catalog/renders/32187.png",
       "color": 71
+    },
+    "18946-72": {
+      "geometry": "catalog/geometry/18946-72.json",
+      "render": "catalog/renders/18946.png",
+      "color": 72
     }
   }
 }
