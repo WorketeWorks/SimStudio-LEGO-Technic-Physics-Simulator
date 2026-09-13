@@ -1908,6 +1908,91 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
       "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
     }
   ],
+  "4159": [
+    {
+      "shape": "arc",
+      "center": [1, 2.25, 0],
+      "radius": 0.6,
+      "innerRadius": 0.35,
+      "halfHeight": 0.25,
+      "startAngle": 0,
+      "arcAngle": 90,
+      "arcPoints": [[0, 0.7], [1, 0], [2.9085361479749636e-17, -0.7]],
+      "arcThickness": 0.25,
+      "segments": 16,
+      "rotation": [0.5, -0.5, -0.4999999999999999, 0.5000000000000001]
+    },
+    {
+      "shape": "cylinder",
+      "center": [1, 0, 0],
+      "radius": 0.45,
+      "halfHeight": 0.5,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    },
+    {
+      "shape": "cylinder",
+      "center": [-1, 0, 0],
+      "radius": 0.45,
+      "halfHeight": 0.5,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    },
+    {
+      "shape": "cylinder",
+      "center": [0, 0.45, 0],
+      "radius": 0.45,
+      "halfHeight": 0.45,
+      "rotation": [0, 0, 0, 1]
+    },
+    {
+      "shape": "box",
+      "center": [0, 0.225, 0],
+      "size": [2, 0.45, 1],
+      "rotation": [0, 0, 0, 1]
+    },
+    {
+      "shape": "box",
+      "center": [1.45, 1, 0],
+      "size": [0.25, 1.5, 0.45],
+      "rotation": [-6.7146814663928614e-18, 2.6931116400174995e-17, -0.24192189559966773, 0.9702957262759965]
+    },
+    {
+      "shape": "box",
+      "center": [1, 0.8, 0],
+      "size": [0.5, 0.8, 0.45],
+      "rotation": [0, 0, 0, 1]
+    }
+  ],
+  "6628": [
+    {
+      "shape": "cylinder",
+      "center": [0.5, 0, 0],
+      "radius": 0.3,
+      "halfHeight": 0.5,
+      "rotation": [0, 0, -0.7071067811865475, 0.7071067811865476]
+    },
+    {
+      "shape": "sphere",
+      "center": [-0.5, 0, 0],
+      "radius": 0.4,
+      "rotation": [0, 0, 0, 1]
+    },
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 0.2,
+      "halfHeight": 0.5,
+      "rotation": [0, 0, -0.7071067811865475, 0.7071067811865476]
+    }
+  ],
+  "3584": [
+    {
+      "shape": "cylinder",
+      "center": [0, 0, 0],
+      "radius": 1.5,
+      "halfHeight": 1,
+      "rotation": [0.7071067811865475, 0, 0, 0.7071067811865476]
+    }
+  ],
   "6538": [
     {
       "shape": "cylinder",
@@ -2026,6 +2111,9 @@ export const preloadedCollisionMaps: Record<string, StoredCollisionPrimitive[]> 
 
 // Optional second layer used exclusively for gear-to-gear contacts.
 export const preloadedGearCollisionMaps: Record<string, StoredCollisionPrimitive[]> = {
+  "3584": [],
+  "4159": [],
+  "6628": [],
   "6538": [],
   "32187": [],
   "35186": [],

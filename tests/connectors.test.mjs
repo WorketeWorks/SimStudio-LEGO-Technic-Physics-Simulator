@@ -425,6 +425,44 @@ test("loads the five reviewed gearbox collision maps", () => {
   assert.equal(preloadedCollisionMaps["6542"][2].radius, 1.1);
 });
 
+test("loads the reviewed 4159, 6628 and 3584 collision maps", () => {
+  assert.deepEqual(
+    ["4159", "6628", "3584"].map((part) =>
+      preloadedCollisionMaps[part].length,
+    ),
+    [7, 3, 1],
+  );
+  assert.deepEqual(
+    preloadedCollisionMaps["4159"][0],
+    {
+      shape: "arc",
+      center: [1, 2.25, 0],
+      radius: 0.6,
+      innerRadius: 0.35,
+      halfHeight: 0.25,
+      startAngle: 0,
+      arcAngle: 90,
+      arcPoints: [[0, 0.7], [1, 0], [2.9085361479749636e-17, -0.7]],
+      arcThickness: 0.25,
+      segments: 16,
+      rotation: [0.5, -0.5, -0.4999999999999999, 0.5000000000000001],
+    },
+  );
+  assert.deepEqual(
+    preloadedCollisionMaps["6628"].map(({ shape }) => shape),
+    ["cylinder", "sphere", "cylinder"],
+  );
+  assert.deepEqual(preloadedCollisionMaps["6628"][1].center, [-0.5, 0, 0]);
+  assert.equal(preloadedCollisionMaps["6628"][1].radius, 0.4);
+  assert.equal(preloadedCollisionMaps["3584"][0].radius, 1.5);
+  assert.equal(preloadedCollisionMaps["3584"][0].halfHeight, 1);
+  assert.ok(
+    ["4159", "6628", "3584"].every(
+      (part) => preloadedGearCollisionMaps[part].length === 0,
+    ),
+  );
+});
+
 test("gearbox guide connectors cannot be mistaken for ordinary axle connections", () => {
   const piece = (part, connector) => ({ part, connectors: [connector] }),
     ordinaryShaft = {
