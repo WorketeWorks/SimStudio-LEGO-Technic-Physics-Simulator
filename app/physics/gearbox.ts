@@ -85,20 +85,42 @@ export const isGearboxRotatingExtensionPair = (left: Piece, right: Piece) =>
   (hasReference(right, ["35186"]) &&
     hasReference(left, ["6542", "6542a", "35185"]));
 
-/** A zero-position snap that resists removal but only permits outward travel. */
+/** Extra axial space needed to seat the yellow eight-tab extension at a gear face. */
+export const gearboxExtensionSeatingGap = (left: Piece, right: Piece) =>
+  (hasReference(left, ["35186"]) &&
+    hasReference(right, ["6542", "6542a", "35185"])) ||
+  (hasReference(right, ["35186"]) &&
+    hasReference(left, ["6542", "6542a", "35185"]))
+    ? 0.3
+    : 0;
+
+/** Centre distance at the physical inward stop of an extension coupling. */
+export const gearboxExtensionMinimumDistance = (left: Piece, right: Piece) =>
+  isGearboxRigidExtensionPair(left, right) ||
+  ((hasReference(left, ["32187"]) && hasReference(right, ["35186"])) ||
+    (hasReference(right, ["32187"]) && hasReference(left, ["35186"])))
+    ? 1
+    : gearboxExtensionSeatingGap(left, right)
+      ? 1
+      : undefined;
+
+/** An inward stop with outward travel; only two yellow extensions retain a detent. */
 export const gearboxExtensionLatchForConnection = (connection: Connection) => {
-  if (
-    !isGearboxRigidExtensionPair(connection.a, connection.b) &&
-    !isGearboxRotatingExtensionPair(connection.a, connection.b)
-  )
+  const rigidPair = isGearboxRigidExtensionPair(connection.a, connection.b);
+  if (!rigidPair && !isGearboxRotatingExtensionPair(connection.a, connection.b))
     return undefined;
   const axis = axleAxis(connection.a),
     side = Math.sign(centre(connection.b).sub(centre(connection.a)).dot(axis)) || 1,
-    separation = 1.1;
+    separation = 1.1,
+    seatingGap = gearboxExtensionSeatingGap(connection.a, connection.b),
+    seatedPosition = seatingGap ? side * seatingGap : 0;
   return {
+    // The joint anchors are shifted to the seated pose, so zero is the hard
+    // inward stop and the permitted interval points only out of the coupling.
+    anchorOffset: seatedPosition,
     limits: (side > 0 ? [0, separation] : [-separation, 0]) as [number, number],
-    positions: [0],
-    force: 24,
+    positions: rigidPair ? [0] : [],
+    force: rigidPair ? 24 : 0,
   };
 };
 
@@ -238,7 +260,7 @@ const extensionCouplingPairs = (pieces: Piece[]) => {
       if (!isGearboxRotatingExtensionPair(a, b)) continue;
       const extension = hasReference(a, ["35186"]) ? a : b,
         other = extension === a ? b : a,
-        expectedDistance = hasReference(other, ["32187"]) ? 1.5 : 0.9,
+        expectedDistance = gearboxExtensionMinimumDistance(extension, other)!,
         extensionCenter = centre(extension),
         extensionAxis = axleAxis(extension),
         otherCenter = centre(other),
@@ -247,7 +269,9 @@ const extensionCouplingPairs = (pieces: Piece[]) => {
       if (
         Math.abs(extensionAxis.dot(otherAxis)) >= 0.985 &&
         offset.radial <= 0.12 &&
-        Math.abs(Math.abs(offset.along) - expectedDistance) <= 0.2
+        Math.abs(offset.along) >= expectedDistance - 0.08 &&
+        Math.abs(offset.along) <=
+          expectedDistance + (hasReference(other, ["32187"]) ? 0.55 : 0.32)
       )
         pairs.push({ a: extension, b: other, expectedDistance });
     }
@@ -331,7 +355,9 @@ export const detectGearboxLinks = (
   const links: RuntimeGearLink[] = [];
   for (const ring of pieces.filter(isGearboxRing)) {
     const assembly = gearboxAssemblyForRing(pieces, ring);
-    if (!assembly || Math.abs(assembly.offset) < 0.3) continue;
+    // The red ring must be almost at its ±0.5 detent before its dogs can
+    // transmit. Proximity around the carrier centre is not engagement.
+    if (!assembly || Math.abs(assembly.offset) < 0.44) continue;
     const side = Math.sign(assembly.offset),
       axis = assembly.carrierAxis.clone();
     if (axis.dot(assembly.ringAxis) < 0) axis.negate();

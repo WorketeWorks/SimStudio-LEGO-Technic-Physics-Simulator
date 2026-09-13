@@ -129,6 +129,7 @@ import {
   detectGearboxLinks,
   detectGearboxSelectorPairs,
   gearboxContactExclusionPairs,
+  gearboxExtensionSeatingGap,
   hasGearboxExtension,
   hasGearboxRing,
   isGearboxCarrierPair,
@@ -873,7 +874,10 @@ const detectShaftTraversals = (pieces: Piece[]) => {
   pieces.forEach((shaftPiece) => {
     shaftPiece.mesh.updateMatrixWorld(true);
     shaftPiece.connectors.forEach((shaft) => {
-      if (shaft.role !== "shaft") return;
+      // Dedicated gearbox guides describe a mating face, not an axle passing
+      // through a hole. Excluding their collision before a real connection
+      // exists lets the clutch gear tunnel through the extension.
+      if (shaft.role !== "shaft" || shaft.connectionTarget) return;
       const shaftPose = worldPose(shaftPiece, shaft),
         halfLength = Math.max(0.08, (shaft.length ?? 0.5) / 2),
         searchHalfLength = halfLength + 0.18,
@@ -899,6 +903,7 @@ const detectShaftTraversals = (pieces: Piece[]) => {
       candidates.forEach((candidate) => {
         if (
           candidate.host === shaftPiece ||
+          candidate.connector.connectionTarget ||
           !connectorProfile(shaft, candidate.connector) ||
           Math.abs(candidate.axis.dot(shaftPose.axis)) < 0.94
         )
@@ -4055,10 +4060,34 @@ export default function Home() {
       bPiece: Piece,
       b: MeshConnector,
       ignoredPiece?: Piece,
-    ) =>
-      connectorPoliciesCompatible(aPiece, a, bPiece, b) &&
-      connectorAvailable(aPiece, a, ignoredPiece) &&
-      connectorAvailable(bPiece, b, ignoredPiece);
+    ) => {
+      const sharedClutchSocket = gearboxExtensionSeatingGap(aPiece, bPiece) > 0;
+      return (
+        connectorPoliciesCompatible(aPiece, a, bPiece, b) &&
+        (connectorAvailable(aPiece, a, ignoredPiece) ||
+          (sharedClutchSocket && a.role === "socket")) &&
+        (connectorAvailable(bPiece, b, ignoredPiece) ||
+          (sharedClutchSocket && b.role === "socket"))
+      );
+    };
+
+    const gearboxSeatingOffset = (
+      shaftPiece: Piece,
+      socketPiece: Piece,
+      shaftPoint: THREE.Vector3,
+      socketPoint: THREE.Vector3,
+      axis: THREE.Vector3,
+    ) => {
+      const gap = gearboxExtensionSeatingGap(shaftPiece, socketPiece);
+      if (!gap) return undefined;
+      const connectorSide = shaftPoint.clone().sub(socketPoint).dot(axis),
+        centreSide = shaftPiece.mesh
+          .getWorldPosition(new THREE.Vector3())
+          .sub(socketPiece.mesh.getWorldPosition(new THREE.Vector3()))
+          .dot(axis),
+        side = Math.sign(Math.abs(connectorSide) > 1e-4 ? connectorSide : centreSide) || 1;
+      return side * gap;
+    };
 
     const nearestAxleSnapWorld = (
       host: Piece,
@@ -4229,6 +4258,10 @@ export default function Home() {
         )
       )
         return false;
+      const socketPiece =
+          sourceConnector.role === "socket" ? sourcePiece : targetPiece,
+        shaftPiece =
+          sourceConnector.role === "shaft" ? sourcePiece : targetPiece;
       sourcePiece.mesh.updateMatrix();
       const sourceMatrixBefore = sourcePiece.mesh.matrix.clone();
       const sourceWorld = worldConnector(sourcePiece, sourceConnector),
@@ -4258,13 +4291,21 @@ export default function Home() {
           sourceConnector.role === "socket"
             ? { ...alignedSourceWorld, point: alignedSourcePoint }
             : targetWorld,
-        offset = closestConnectorOffset(
-          shaft,
-          socket,
-          shaftWorld.point,
-          socketWorld.point,
-          targetAxis,
-        ),
+        offset =
+          gearboxSeatingOffset(
+            shaftPiece,
+            socketPiece,
+            shaftWorld.point,
+            socketWorld.point,
+            targetAxis,
+          ) ??
+          closestConnectorOffset(
+            shaft,
+            socket,
+            shaftWorld.point,
+            socketWorld.point,
+            targetAxis,
+          ),
         sourceTarget = targetWorld.point
           .clone()
           .addScaledVector(
@@ -4303,10 +4344,8 @@ export default function Home() {
           sourceGroupSet.has(connection.a) === sourceGroupSet.has(connection.b),
       );
       rebalanceAllSmartDefaults(state);
-      const socketPiece = sourceConnector.role === "socket" ? sourcePiece : targetPiece,
-        socketConnector =
+      const socketConnector =
           sourceConnector.role === "socket" ? sourceConnector : targetConnector,
-        shaftPiece = sourceConnector.role === "shaft" ? sourcePiece : targetPiece,
         shaftConnector =
           sourceConnector.role === "shaft" ? sourceConnector : targetConnector;
       return addConnection(socketPiece, shaftPiece, socketConnector, shaftConnector);
@@ -5047,9 +5086,21 @@ export default function Home() {
           piece.mesh.quaternion.premultiply(alignment).normalize();
           piece.mesh.updateMatrixWorld(true);
           const socketPoint = worldConnector(best.host, best.socket).point;
-          if (best.shaft.kind !== "axle") {
-            const shaftPoint = worldConnector(piece, best.shaft).point,
-              offset = closestConnectorOffset(
+          const shaftPoint = worldConnector(piece, best.shaft).point,
+            seatingOffset = gearboxSeatingOffset(
+              piece,
+              best.host,
+              shaftPoint,
+              socketPoint,
+              targetAxis,
+            );
+          if (seatingOffset !== undefined) {
+            const targetShaftPoint = socketPoint
+              .clone()
+              .addScaledVector(targetAxis, seatingOffset);
+            piece.mesh.position.add(targetShaftPoint.sub(shaftPoint));
+          } else if (best.shaft.kind !== "axle") {
+            const offset = closestConnectorOffset(
                 best.shaft,
                 best.socket,
                 shaftPoint,
@@ -5127,9 +5178,21 @@ export default function Home() {
       piece.mesh.quaternion.premultiply(alignment).normalize();
       piece.mesh.updateMatrixWorld(true);
       const socketPoint = worldConnector(piece, best.socket).point;
-      if (best.shaft.kind !== "axle") {
-        const shaftPoint = worldConnector(best.rod, best.shaft).point,
-          offset = closestConnectorOffset(
+      const shaftPoint = worldConnector(best.rod, best.shaft).point,
+        seatingOffset = gearboxSeatingOffset(
+          best.rod,
+          piece,
+          shaftPoint,
+          socketPoint,
+          targetAxis,
+        );
+      if (seatingOffset !== undefined) {
+        const targetSocketPoint = shaftPoint
+          .clone()
+          .addScaledVector(targetAxis, -seatingOffset);
+        piece.mesh.position.add(targetSocketPoint.sub(socketPoint));
+      } else if (best.shaft.kind !== "axle") {
+        const offset = closestConnectorOffset(
             best.shaft,
             best.socket,
             shaftPoint,
@@ -8915,6 +8978,7 @@ export default function Home() {
           state.dynamicConnectionFrame++;
           if (
             pendingGearContactChanges.size > 0 ||
+            state.contactCandidates.size > 0 ||
             (state.dynamicConnectionFrame % 8 === 0 && dynamicMechanismsNeedScan())
           )
             updateDynamicMechanisms();

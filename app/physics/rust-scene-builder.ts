@@ -33,6 +33,7 @@ import type {
 import {
   gearboxDetentForConnection,
   gearboxExtensionLatchForConnection,
+  gearboxExtensionMinimumDistance,
 } from "./gearbox";
 import { sampleRubberBand } from "./rubber-band";
 
@@ -200,7 +201,10 @@ export function buildRustJointConfig(
     anchorA = connection.a.mesh.localToWorld(connection.socket.local.clone());
 
     const shaftCenter = connection.b.mesh.localToWorld(connection.shaft.local.clone());
-    if (extensionLatch) anchorB = shaftCenter;
+    if (extensionLatch)
+      anchorB = shaftCenter
+        .clone()
+        .addScaledVector(worldAxisB, -extensionLatch.anchorOffset);
     else {
       const along = anchorA.clone().sub(shaftCenter).dot(worldAxisB);
       anchorB = shaftCenter.clone().addScaledVector(worldAxisB, along);
@@ -895,10 +899,32 @@ export function buildRustPhysicsScene(options: RustSceneBuildOptions): RustScene
   // TypeScript pose solver after Rapier.
   const axialStops: RustAxialStopConfig[] = [];
   for (const connection of physicalConnections) {
-    if (connection.mode !== "rotation-linear") continue;
     const bodyA = bodyIdByPiece.get(connection.a);
     const bodyB = bodyIdByPiece.get(connection.b);
     if (!bodyA || !bodyB || bodyA === bodyB) continue;
+    const extensionMinimumDistance = gearboxExtensionMinimumDistance(
+      connection.a,
+      connection.b,
+    );
+    if (extensionMinimumDistance !== undefined) {
+      connection.a.mesh.updateMatrixWorld(true);
+      connection.b.mesh.updateMatrixWorld(true);
+      const hostPoint = connection.a.mesh.localToWorld(new THREE.Vector3()),
+        stopPoint = connection.b.mesh.localToWorld(new THREE.Vector3()),
+        axis = connection.axis.clone().normalize(),
+        distance = stopPoint.clone().sub(hostPoint).dot(axis);
+      axialStops.push({
+        bodyA,
+        bodyB,
+        hostPoint: vec3(hostPoint),
+        stopPoint: vec3(stopPoint),
+        worldAxis: vec3(axis),
+        side: distance >= 0 ? 1 : -1,
+        minimumDistance: extensionMinimumDistance,
+      });
+      continue;
+    }
+    if (connection.mode !== "rotation-linear") continue;
     connection.a.mesh.updateMatrixWorld(true);
     const hostPoint = connection.a.mesh.localToWorld(connection.socket.local.clone());
     const axis = connection.socket.axis

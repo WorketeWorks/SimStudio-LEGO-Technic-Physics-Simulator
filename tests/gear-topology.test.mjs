@@ -55,6 +55,8 @@ const { detectGearLinks } = module.exports;
 const {
   detectGearboxSelectorPairs,
   gearboxContactExclusionPairs,
+  gearboxExtensionMinimumDistance,
+  gearboxExtensionSeatingGap,
   isGearboxRigidExtensionPair,
 } = gearboxModule.exports;
 const sceneBuilderSource = readFileSync(
@@ -159,6 +161,13 @@ test("6539 and 18947 engage only the clutch on their selected side", () => {
     ring.mesh.position.z = 0;
     ring.mesh.updateMatrixWorld(true);
     assert.equal(detectGearLinks([carrier, ring, right, left]).length, 0);
+    ring.mesh.position.z = 0.4;
+    ring.mesh.updateMatrixWorld(true);
+    assert.equal(
+      detectGearLinks([carrier, ring, right, left]).length,
+      0,
+      "the four-tab ring must enter the clutch before transmitting",
+    );
     assert.equal(
       gearboxContactExclusionPairs([carrier, ring, right, left]).length,
       2,
@@ -221,34 +230,47 @@ test("35188 wave selectors register their non-rigid contact with 18947 rings", (
 
 test("35186 extension interfaces use eight-tab backlash while 35186 pairs are rigid", () => {
   const extension = gearboxPiece("extension", "35186", 0),
-    oldOutput = gearboxPiece("old-output", "32187", 1.5),
-    clutchGear = gearboxPiece("clutch-gear", "6542", -0.9),
-    secondExtension = gearboxPiece("second-extension", "35186", 1.4);
+    oldOutput = gearboxPiece("old-output", "32187", 1),
+    clutchGear = gearboxPiece("clutch-gear", "6542", -1),
+    secondExtension = gearboxPiece("second-extension", "35186", 1);
   const links = detectGearLinks([extension, oldOutput, clutchGear]);
   assert.equal(links.length, 2);
   assert.ok(links.every((link) => link.coaxialClutch));
   assert.ok(links.every((link) => link.backlash === Math.PI / 8));
+  assert.equal(gearboxExtensionSeatingGap(extension, clutchGear), 0.3);
+  assert.equal(gearboxExtensionMinimumDistance(extension, clutchGear), 1);
   assert.equal(isGearboxRigidExtensionPair(extension, secondExtension), true);
   assert.equal(
     detectGearLinks([extension, secondExtension]).length,
     0,
     "a solid 35186-to-35186 connection must not add rotational freedom",
   );
+
+  oldOutput.mesh.position.z = 1.5;
+  oldOutput.mesh.updateMatrixWorld(true);
+  assert.equal(
+    detectGearLinks([extension, oldOutput]).length,
+    1,
+    "32187 must keep transmitting while its tabs remain inside 35186",
+  );
+  oldOutput.mesh.position.z = 1.65;
+  oldOutput.mesh.updateMatrixWorld(true);
+  assert.equal(detectGearLinks([extension, oldOutput]).length, 0);
 });
 
-test("extension joints latch at zero, stop inward travel and require force to pull out", () => {
+test("32187 slides against 35186 without attraction while retaining its inward stop", () => {
   const extension = gearboxPiece("extension", "35186", 0),
-    output = gearboxPiece("output", "32187", -1.5),
+    output = gearboxPiece("output", "32187", -1),
     socket = {
       role: "socket",
       kind: "axle",
-      local: new THREE.Vector3(0, 0, -0.5),
+      local: new THREE.Vector3(0, 0, -0.3),
       axis: new THREE.Vector3(0, 0, 1),
     },
     shaft = {
       role: "shaft",
       kind: "axle",
-      local: new THREE.Vector3(0, 0, 1),
+      local: new THREE.Vector3(0, 0, 0.7),
       axis: new THREE.Vector3(0, 0, 1),
     },
     connection = {
@@ -257,7 +279,7 @@ test("extension joints latch at zero, stop inward travel and require force to pu
       b: output,
       mode: "rotation-linear",
       profile: "axle-cross",
-      point: new THREE.Vector3(0, 0, -0.5),
+      point: new THREE.Vector3(0, 0, -0.3),
       axis: new THREE.Vector3(0, 0, 1),
       socket,
       shaft,
@@ -270,12 +292,54 @@ test("extension joints latch at zero, stop inward travel and require force to pu
     new Map([[extension, 1], [output, 2]]),
     { frictionlessPinRotation: 0 },
   );
-  assert.deepEqual(Array.from(config.linearDetents), [0]);
+  assert.deepEqual(Array.from(config.linearDetents), []);
   assert.deepEqual(Array.from(config.linearLimits), [-1.1, 0]);
-  assert.equal(config.detentForce, 24);
+  assert.equal(config.detentForce, 0);
   assert.equal(config.mode, "rotation-linear");
-  assert.deepEqual(Array.from(config.worldAnchorA), [0, 0, -0.5]);
-  assert.deepEqual(Array.from(config.worldAnchorB), [0, 0, -0.5]);
+  assert.deepEqual(Array.from(config.worldAnchorA), [0, 0, -0.3]);
+  assert.ok(Math.abs(config.worldAnchorB[2] + 0.3) < 1e-6);
+});
+
+test("35186 seats outside a clutch gear with eight-tab freedom and no attraction", () => {
+  const gear = gearboxPiece("gear", "6542", 0),
+    extension = gearboxPiece("extension", "35186", -1),
+    connection = {
+      id: "extension-gear-seat",
+      a: gear,
+      b: extension,
+      mode: "rotation-linear",
+      profile: "axle-round",
+      point: new THREE.Vector3(),
+      axis: new THREE.Vector3(0, 0, 1),
+      socket: {
+        role: "socket",
+        kind: "round",
+        local: new THREE.Vector3(),
+        axis: new THREE.Vector3(0, 0, 1),
+      },
+      shaft: {
+        role: "shaft",
+        kind: "axle",
+        local: new THREE.Vector3(0, 0, 0.7),
+        axis: new THREE.Vector3(0, 0, 1),
+      },
+      travel: 0.6,
+      motorSpeed: 0,
+      motorForce: 0,
+    };
+  const config = buildRustJointConfig(
+    connection,
+    new Map([[gear, 1], [extension, 2]]),
+    { frictionlessPinRotation: 0 },
+  );
+  const [link] = detectGearLinks([gear, extension]);
+  assert.deepEqual(Array.from(config.linearDetents), []);
+  assert.deepEqual(Array.from(config.linearLimits), [-1.1, 0]);
+  assert.equal(config.detentForce, 0);
+  assert.deepEqual(Array.from(config.worldAnchorA), [0, 0, 0]);
+  assert.ok(Math.abs(config.worldAnchorB[2]) < 1e-6);
+  assert.equal(link.expectedDistance, 1);
+  assert.equal(link.backlash, Math.PI / 8);
 });
 
 test("32187 is a clutch target for 6539 but not for 18947", () => {

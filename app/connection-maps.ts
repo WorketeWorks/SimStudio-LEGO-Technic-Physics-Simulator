@@ -8160,7 +8160,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
   ],
   "32187": [
     {
-      "local": [0, 0, 1],
+      "local": [0, 0, 0.7],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "shaft",
@@ -8169,11 +8169,19 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "rotationOnly": true,
       "connectionTarget": { "partId": "35186", "connectorId": 1 },
       "singleConnection": true
+    },
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1
     }
   ],
   "35186": [
     {
-      "local": [0, 0, -0.5],
+      "local": [0, 0, -0.3],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "socket",
@@ -8183,7 +8191,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "connectionTarget": { "partId": "32187", "connectorId": 1 }
     },
     {
-      "local": [0, 0, -0.5],
+      "local": [0, 0, -0.3],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "socket",
@@ -8192,7 +8200,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "connectionTarget": { "partId": "35186", "connectorId": 3 }
     },
     {
-      "local": [0, 0, 0.9],
+      "local": [0, 0, 0.7],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "shaft",
@@ -8202,7 +8210,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "singleConnection": true
     },
     {
-      "local": [0, 0, 0.9],
+      "local": [0, 0, 0.7],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "shaft",
@@ -8213,7 +8221,7 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "singleConnection": true
     },
     {
-      "local": [0, 0, 0.9],
+      "local": [0, 0, 0.7],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "shaft",
@@ -8222,6 +8230,14 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "rotationOnly": true,
       "connectionTarget": { "partId": "35185" },
       "singleConnection": true
+    },
+    {
+      "local": [0, 0, 0],
+      "axis": [0, 0, 1],
+      "kind": "round",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 1.4
     }
   ],
   "35188": [

@@ -376,6 +376,89 @@ test("a zero-tolerance extension latch blocks insertion and releases outward und
   assert.ok(state[18] < -0.25, `strong pull did not separate the latch: ${state[18]}`);
   assert.ok(state[18] >= -1.12, `the latch exceeded its outward travel: ${state[18]}`);
   engine.free();
+
+  const rotatingEngine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [latchBody(1, true), latchBody(2, false)],
+    joints: [{
+      id: "rotating-extension-stop",
+      bodyA: 1,
+      bodyB: 2,
+      mode: "rotation-linear",
+      worldAnchorA: [0, 0, 0],
+      worldAnchorB: [0, 0, 0],
+      worldAxisA: [0, 0, 1],
+      worldAxisB: [0, 0, 1],
+      travel: 1.1,
+      motorSpeed: 0,
+      motorForce: 0,
+      passiveMotorForce: 0,
+      dynamicAxle: false,
+      linearDetents: [],
+      linearLimits: [-1.1, 0],
+      detentForce: 0,
+    }],
+    gears: [],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+  let rotatingState = rotatingEngine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, 4] },
+    { kind: "setAngularVelocity", body: 2, velocity: [0, 0, 6] },
+  ]);
+  for (let frame = 0; frame < 45; frame++)
+    rotatingState = rotatingEngine.step(1 / 60, []);
+  assert.ok(
+    rotatingState[18] <= 0.01,
+    `the rotating extension crossed its inward stop: ${rotatingState[18]}`,
+  );
+  assert.ok(
+    Math.abs(rotatingState[28]) > 0.1,
+    `the eight-tab coupling lost its rotational freedom: ${rotatingState[28]}`,
+  );
+  rotatingEngine.free();
+
+  const axialStopScene = (fixedA, fixedB) => ({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [
+      { ...latchBody(1, fixedA), position: [0, 0, 0] },
+      { ...latchBody(2, fixedB), position: [0, 0, 1.2] },
+    ],
+    joints: [],
+    gears: [],
+    differentials: [],
+    axialStops: [{
+      bodyA: 1,
+      bodyB: 2,
+      hostPoint: [0, 0, 0],
+      stopPoint: [0, 0, 1.2],
+      worldAxis: [0, 0, 1],
+      side: 1,
+      minimumDistance: 1.2,
+    }],
+    excludedColliderPairs: [[1, 2]],
+  });
+  const movableGear = new PhysicsEngine(axialStopScene(true, false));
+  let stoppedGear = movableGear.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, -5] },
+  ]);
+  for (let frame = 0; frame < 30; frame++) stoppedGear = movableGear.step(1 / 60, []);
+  assert.ok(stoppedGear[18] >= 1.19, `the movable gear crossed the seat: ${stoppedGear[18]}`);
+  movableGear.free();
+
+  const fixedGear = new PhysicsEngine(axialStopScene(false, true));
+  let stoppedExtension = fixedGear.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 1, velocity: [0, 0, 5] },
+  ]);
+  for (let frame = 0; frame < 30; frame++)
+    stoppedExtension = fixedGear.step(1 / 60, []);
+  assert.ok(
+    stoppedExtension[3] <= 0.01,
+    `the movable extension crossed the fixed gear: ${stoppedExtension[3]}`,
+  );
+  fixedGear.free();
 });
 
 test("orbiting a meshed gear through a carrier produces axial rotation", () => {

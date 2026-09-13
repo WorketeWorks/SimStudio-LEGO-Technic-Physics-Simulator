@@ -50,13 +50,16 @@ pub fn build(
         .collect()
 }
 
-/// Prevents a bush or nut from being numerically pulled through the socket it
-/// is resting against. This is a hard one-sided axial constraint.
+/// Prevents two seated parts from numerically passing through their one-sided
+/// axial stop. The correction works whichever body is fixed, or is shared
+/// equally when both bodies are mobile.
 pub fn enforce(stops: &[AxialStopRuntime], world: &mut PhysicsWorld) {
     for stop in stops {
         let body_a = &world.bodies[stop.body_a];
         let body_b = &world.bodies[stop.body_b];
-        if body_b.is_fixed() {
+        let fixed_a = body_a.is_fixed();
+        let fixed_b = body_b.is_fixed();
+        if fixed_a && fixed_b {
             continue;
         }
         let host_point = body_a.position().transform_point(stop.local_host_point);
@@ -68,15 +71,27 @@ pub fn enforce(stops: &[AxialStopRuntime], world: &mut PhysicsWorld) {
         }
 
         let correction = axis * (stop.side * (stop.minimum_distance - signed_distance));
-        let next_translation = body_b.translation() + correction;
+        let translation_a = body_a.translation();
+        let translation_b = body_b.translation();
         let velocity_a = body_a.linvel();
         let velocity_b = body_b.linvel();
         let relative_axial = (velocity_b - velocity_a).dot(axis);
 
-        let body_b = &mut world.bodies[stop.body_b];
-        body_b.set_translation(next_translation, true);
-        if relative_axial * stop.side < 0.0 {
-            body_b.set_linvel(velocity_b - axis * relative_axial, true);
+        let share_a = if fixed_a { 0.0 } else if fixed_b { 1.0 } else { 0.5 };
+        let share_b = if fixed_b { 0.0 } else if fixed_a { 1.0 } else { 0.5 };
+        if !fixed_a {
+            let body_a = &mut world.bodies[stop.body_a];
+            body_a.set_translation(translation_a - correction * share_a, true);
+            if relative_axial * stop.side < 0.0 {
+                body_a.set_linvel(velocity_a + axis * (relative_axial * share_a), true);
+            }
+        }
+        if !fixed_b {
+            let body_b = &mut world.bodies[stop.body_b];
+            body_b.set_translation(translation_b + correction * share_b, true);
+            if relative_axial * stop.side < 0.0 {
+                body_b.set_linvel(velocity_b - axis * (relative_axial * share_b), true);
+            }
         }
     }
 }
