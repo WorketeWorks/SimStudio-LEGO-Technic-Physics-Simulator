@@ -79,8 +79,8 @@
   },
   "3584": {
     "connectors": {
-      "origin": "automatic",
-      "generatorVersion": "geometry-v3-solid"
+      "origin": "manual",
+      "source": "map-editor"
     },
     "colliders": {
       "origin": "manual",

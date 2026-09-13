@@ -336,6 +336,16 @@ test("keeps every restored correction map preloaded", () => {
 
 test("loads the downloaded connection corrections", () => {
   assert.deepEqual(preloadedConnectionMaps["18947"][0].kind, "axle");
+  assert.deepEqual(preloadedConnectionMaps["3584"], [
+    {
+      local: [0, 5.551115123125783e-17, 0],
+      axis: [0, 0, 1],
+      kind: "axle",
+      role: "socket",
+      diameter: 0.600000023841858,
+      length: 0.98,
+    },
+  ]);
   assert.deepEqual(preloadedConnectionMaps["35188"], [
     {
       local: [0, 0, 0],
