@@ -127,6 +127,8 @@ pub struct JointConfig {
     #[serde(default)]
     pub linear_detents: Vec<f32>,
     #[serde(default)]
+    pub linear_limits: Option<[f32; 2]>,
+    #[serde(default)]
     pub detent_force: f32,
 }
 

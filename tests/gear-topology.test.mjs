@@ -221,9 +221,9 @@ test("35188 wave selectors register their non-rigid contact with 18947 rings", (
 
 test("35186 extension interfaces use eight-tab backlash while 35186 pairs are rigid", () => {
   const extension = gearboxPiece("extension", "35186", 0),
-    oldOutput = gearboxPiece("old-output", "32187", 1),
-    clutchGear = gearboxPiece("clutch-gear", "6542", -0.7),
-    secondExtension = gearboxPiece("second-extension", "35186", 1);
+    oldOutput = gearboxPiece("old-output", "32187", 1.5),
+    clutchGear = gearboxPiece("clutch-gear", "6542", -0.9),
+    secondExtension = gearboxPiece("second-extension", "35186", 1.4);
   const links = detectGearLinks([extension, oldOutput, clutchGear]);
   assert.equal(links.length, 2);
   assert.ok(links.every((link) => link.coaxialClutch));
@@ -234,6 +234,48 @@ test("35186 extension interfaces use eight-tab backlash while 35186 pairs are ri
     0,
     "a solid 35186-to-35186 connection must not add rotational freedom",
   );
+});
+
+test("extension joints latch at zero, stop inward travel and require force to pull out", () => {
+  const extension = gearboxPiece("extension", "35186", 0),
+    output = gearboxPiece("output", "32187", -1.5),
+    socket = {
+      role: "socket",
+      kind: "axle",
+      local: new THREE.Vector3(0, 0, -0.5),
+      axis: new THREE.Vector3(0, 0, 1),
+    },
+    shaft = {
+      role: "shaft",
+      kind: "axle",
+      local: new THREE.Vector3(0, 0, 1),
+      axis: new THREE.Vector3(0, 0, 1),
+    },
+    connection = {
+      id: "extension-latch",
+      a: extension,
+      b: output,
+      mode: "rotation-linear",
+      profile: "axle-cross",
+      point: new THREE.Vector3(0, 0, -0.5),
+      axis: new THREE.Vector3(0, 0, 1),
+      socket,
+      shaft,
+      travel: 0.6,
+      motorSpeed: 0,
+      motorForce: 0,
+    };
+  const config = buildRustJointConfig(
+    connection,
+    new Map([[extension, 1], [output, 2]]),
+    { frictionlessPinRotation: 0 },
+  );
+  assert.deepEqual(Array.from(config.linearDetents), [0]);
+  assert.deepEqual(Array.from(config.linearLimits), [-1.1, 0]);
+  assert.equal(config.detentForce, 24);
+  assert.equal(config.mode, "rotation-linear");
+  assert.deepEqual(Array.from(config.worldAnchorA), [0, 0, -0.5]);
+  assert.deepEqual(Array.from(config.worldAnchorB), [0, 0, -0.5]);
 });
 
 test("32187 is a clutch target for 6539 but not for 18947", () => {

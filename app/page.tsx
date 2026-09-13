@@ -129,9 +129,11 @@ import {
   detectGearboxLinks,
   detectGearboxSelectorPairs,
   gearboxContactExclusionPairs,
+  hasGearboxExtension,
   hasGearboxRing,
   isGearboxCarrierPair,
   isGearboxRigidExtensionPair,
+  isGearboxRotatingExtensionPair,
 } from "./physics/gearbox";
 import { DEFAULT_PHYSICS_SETTINGS } from "./physics/settings";
 import { createProjectId, uniqueProjectName } from "./projects/naming";
@@ -482,6 +484,16 @@ const nonPhysicalGearParts = new Set([
   "99009",
   "18939",
 ]);
+
+const gearboxExtensionPartRefs = new Set(["32187", "35186"]);
+const isGearboxExtensionPart = (
+  piece: Pick<CatalogPart, "part" | "modelPart" | "resolvedPart">,
+) =>
+  [piece.part, piece.modelPart, piece.resolvedPart]
+    .filter(Boolean)
+    .some((reference) => gearboxExtensionPartRefs.has(reference!.toLowerCase()));
+const supportsDynamicAxleConnections = (piece: Piece) =>
+  piece.dynamicAxleConnections || isGearboxExtensionPart(piece);
 
 const isConcealedGearboxGuide = (connector: MeshConnector) =>
   connector.role === "shaft" &&
@@ -930,7 +942,9 @@ const allowedModesForConnection = (connection: Connection): JointMode[] =>
   isGearboxCarrierPair(connection.a, connection.b)
     ? ["linear"]
     : isGearboxRigidExtensionPair(connection.a, connection.b)
-      ? ["fixed"]
+      ? ["linear"]
+      : isGearboxRotatingExtensionPair(connection.a, connection.b)
+        ? ["rotation-linear"]
     : isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
     ? ["rotation"]
     : allowedModes(connection.profile);
@@ -958,7 +972,9 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
     if (!allowedModesForConnection(connection).includes(connection.mode)) {
       connection.mode =
         isGearboxRigidExtensionPair(connection.a, connection.b)
-          ? "fixed"
+          ? "linear"
+          : isGearboxRotatingExtensionPair(connection.a, connection.b)
+            ? "rotation-linear"
           : isRotationOnlyConnector(connection.socket) ||
         isRotationOnlyConnector(connection.shaft)
           ? "rotation"
@@ -971,7 +987,9 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
     if (connection.userConfigured) return;
     if (isGearboxCarrierPair(connection.a, connection.b)) connection.mode = "linear";
     else if (isGearboxRigidExtensionPair(connection.a, connection.b))
-      connection.mode = "fixed";
+      connection.mode = "linear";
+    else if (isGearboxRotatingExtensionPair(connection.a, connection.b))
+      connection.mode = "rotation-linear";
     else if (
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft)
@@ -991,6 +1009,7 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
       connection.userConfigured ||
       isGearboxCarrierPair(connection.a, connection.b) ||
       isGearboxRigidExtensionPair(connection.a, connection.b) ||
+      isGearboxRotatingExtensionPair(connection.a, connection.b) ||
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft) ||
       connection.profile === "axle-cross" ||
@@ -3800,7 +3819,7 @@ export default function Home() {
             fixed: false,
             pin: isPinPart(p),
             frictionPin: hasPinFriction(p),
-            dynamicAxleConnections: isAxlePart(p),
+            dynamicAxleConnections: isAxlePart(p) || isGearboxExtensionPart(p),
             gearDirectionLock: undefined,
             gearMotor: undefined,
           };
@@ -4117,10 +4136,13 @@ export default function Home() {
           isRotationOnlyConnector(socket) || isRotationOnlyConnector(shaft),
         gearboxConnection = isGearboxCarrierPair(host, rod),
         rigidExtensionConnection = isGearboxRigidExtensionPair(host, rod),
+        rotatingExtensionConnection = isGearboxRotatingExtensionPair(host, rod),
         validModes = gearboxConnection
           ? (["linear"] as JointMode[])
           : rigidExtensionConnection
-            ? (["fixed"] as JointMode[])
+            ? (["linear"] as JointMode[])
+            : rotatingExtensionConnection
+              ? (["rotation-linear"] as JointMode[])
           : rotationOnlyConnection
             ? (["rotation"] as JointMode[])
             : allowedModes(profile),
@@ -4130,7 +4152,9 @@ export default function Home() {
             : gearboxConnection
               ? "linear"
             : rigidExtensionConnection
-              ? "fixed"
+              ? "linear"
+            : rotatingExtensionConnection
+              ? "rotation-linear"
             : rotationOnlyConnection
               ? "rotation"
               : defaultMode(profile),
@@ -4768,7 +4792,7 @@ export default function Home() {
         const dynamicAxle =
           !connection.forced &&
           (connection.profile === "axle-cross" || connection.profile === "axle-round") &&
-          connection.b.dynamicAxleConnections;
+          supportsDynamicAxleConnections(connection.b);
         if (!dynamicAxle) {
           retained.push(connection);
           continue;
@@ -4820,11 +4844,14 @@ export default function Home() {
         );
         if (!stillConnected) {
           const key = contactPairKey(a, b);
-          if (
-            state.dynamicNoContactPairs.delete(key) &&
-            !state.contactExclusions.has(key)
-          )
+          state.dynamicNoContactPairs.delete(key);
+          const remainsSpeciallyExcluded = gearboxContactExclusionPairs(
+            state.pieces,
+          ).some(([left, right]) => contactPairKey(left, right) === key);
+          if (!remainsSpeciallyExcluded) {
+            state.contactExclusions.delete(key);
             state.world!.setExcludedColliderPair(a.id, b.id, false);
+          }
         }
       });
 
@@ -4835,7 +4862,7 @@ export default function Home() {
           [pair.a, pair.b],
           [pair.b, pair.a],
         ] as [Piece, Piece][]) {
-          if (!rod.dynamicAxleConnections) continue;
+          if (!supportsDynamicAxleConnections(rod)) continue;
           for (const shaft of rod.connectors.filter(
             (connector) => connector.role === "shaft" && connector.kind === "axle",
           )) {
@@ -4875,7 +4902,7 @@ export default function Home() {
         }
         const dynamicAxle =
           (connection.profile === "axle-cross" || connection.profile === "axle-round") &&
-          connection.b.dynamicAxleConnections;
+          supportsDynamicAxleConnections(connection.b);
         if (!dynamicAxle) continue;
         accepted.push(connection);
         const exclusionKey = contactPairKey(connection.a, connection.b);
@@ -4941,7 +4968,8 @@ export default function Home() {
     const dynamicMechanismsNeedScan = () =>
       pendingGearContactChanges.size > 0 ||
       state.contactCandidates.size > 0 ||
-      hasGearboxRing(state.pieces);
+      hasGearboxRing(state.pieces) ||
+      hasGearboxExtension(state.pieces);
 
     const connect = (piece: Piece) => {
       if (!AUTO_CONNECTIONS_ENABLED) return;
@@ -8789,7 +8817,8 @@ export default function Home() {
             if (
               left &&
               right &&
-              (left.dynamicAxleConnections || right.dynamicAxleConnections)
+              (supportsDynamicAxleConnections(left) ||
+                supportsDynamicAxleConnections(right))
             )
               state.contactCandidates.set(contactPairKey(left, right), {
                 a: left,

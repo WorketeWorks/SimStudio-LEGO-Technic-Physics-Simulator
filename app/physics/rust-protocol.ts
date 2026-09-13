@@ -63,6 +63,8 @@ export type RustJointConfig = {
   angularLimit?: number;
   /** Axial offsets, relative to the starting pose, that act as gearbox detents. */
   linearDetents?: number[];
+  /** Explicit one- or two-sided axial travel relative to the connected pose. */
+  linearLimits?: [number, number];
   /** Maximum restoring force of a gearbox detent. */
   detentForce?: number;
 };

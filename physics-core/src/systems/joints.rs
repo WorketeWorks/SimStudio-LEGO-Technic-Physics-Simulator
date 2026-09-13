@@ -83,7 +83,9 @@ pub fn create_joint(
                 .set_local_anchor2(anchor_b)
                 .set_contacts_enabled(true);
             if !config.dynamic_axle {
-                if config.linear_detents.is_empty() {
+                if let Some(limits) = config.linear_limits {
+                    joint.set_limits(limits);
+                } else if config.linear_detents.is_empty() {
                     let limit = (config.travel * 0.5).max(0.15);
                     joint.set_limits([-limit, limit]);
                 } else {
@@ -134,6 +136,11 @@ pub fn create_joint(
         if let Some(limit) = config.angular_limit.filter(|limit| *limit > 0.0) {
             let limit = limit.min(std::f32::consts::PI);
             data.set_limits(JointAxis::AngX, [-limit, limit]);
+        }
+    }
+    if config.mode == JointMode::RotationLinear {
+        if let Some(limits) = config.linear_limits {
+            data.set_limits(JointAxis::LinX, limits);
         }
     }
 
@@ -371,6 +378,7 @@ mod tests {
             dynamic_axle: false,
             angular_limit: None,
             linear_detents: vec![],
+            linear_limits: None,
             detent_force: 0.0,
         };
 

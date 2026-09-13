@@ -307,6 +307,77 @@ test("a gearbox selector resists small forces and captures the next detent", () 
   engine.free();
 });
 
+test("a zero-tolerance extension latch blocks insertion and releases outward under force", () => {
+  const latchBody = (id, fixed) => ({
+    id,
+    fixed,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0, 1],
+    mass: 1,
+    linearDamping: 0.15,
+    angularDamping: 0.15,
+    additionalSolverIterations: 4,
+    ccd: false,
+    colliders: [{
+      ownerId: id,
+      center: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      friction: 0,
+      density: 1,
+      collisionGroup: 1,
+      collisionMask: 0,
+      shape: { kind: "box", halfExtents: [0.25, 0.25, 0.25] },
+    }],
+  });
+  const engine = new PhysicsEngine({
+    gravity: [0, 0, 0],
+    settings,
+    bodies: [latchBody(1, true), latchBody(2, false)],
+    joints: [{
+      id: "extension-latch",
+      bodyA: 1,
+      bodyB: 2,
+      mode: "linear",
+      worldAnchorA: [0, 0, 0],
+      worldAnchorB: [0, 0, 0],
+      worldAxisA: [0, 0, 1],
+      worldAxisB: [0, 0, 1],
+      travel: 1.1,
+      motorSpeed: 0,
+      motorForce: 0,
+      passiveMotorForce: 0,
+      dynamicAxle: false,
+      linearDetents: [0],
+      linearLimits: [-1.1, 0],
+      detentForce: 24,
+    }],
+    gears: [],
+    differentials: [],
+    excludedColliderPairs: [],
+  });
+  let state = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, 4] },
+    { kind: "setAngularVelocity", body: 2, velocity: [0, 0, 6] },
+  ]);
+  for (let frame = 0; frame < 45; frame++) state = engine.step(1 / 60, []);
+  assert.ok(state[18] <= 0.01, `the part crossed its inward stop: ${state[18]}`);
+  assert.ok(Math.abs(state[28]) < 0.01, `the zero-tolerance tabs rotated: ${state[28]}`);
+
+  state = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, -0.2] },
+  ]);
+  for (let frame = 0; frame < 60; frame++) state = engine.step(1 / 60, []);
+  assert.ok(Math.abs(state[18]) < 0.04, `small pull escaped the latch: ${state[18]}`);
+
+  state = engine.step(1 / 60, [
+    { kind: "setLinearVelocity", body: 2, velocity: [0, 0, -5] },
+  ]);
+  for (let frame = 0; frame < 20; frame++) state = engine.step(1 / 60, []);
+  assert.ok(state[18] < -0.25, `strong pull did not separate the latch: ${state[18]}`);
+  assert.ok(state[18] >= -1.12, `the latch exceeded its outward travel: ${state[18]}`);
+  engine.free();
+});
+
 test("orbiting a meshed gear through a carrier produces axial rotation", () => {
   const body = (id, fixed, position) => ({
     id,

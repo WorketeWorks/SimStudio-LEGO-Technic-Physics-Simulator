@@ -349,8 +349,37 @@ test("loads the downloaded connection corrections", () => {
   assert.equal(preloadedConnectionMaps["4159"].length, 3);
   assert.equal(preloadedConnectionMaps["6538"].length, 3);
   assert.equal(preloadedConnectionMaps["6538"][0].role, "shaft");
-  assert.deepEqual(preloadedConnectionMaps["32187"][0].kind, "round");
-  assert.deepEqual(preloadedConnectionMaps["35186"][0].kind, "round");
+  assert.deepEqual(preloadedConnectionMaps["32187"], [
+    {
+      local: [0, 0, 1],
+      axis: [0, 0, 1],
+      kind: "axle",
+      role: "shaft",
+      diameter: 0.8,
+      length: 0.6,
+      rotationOnly: true,
+      connectionTarget: { partId: "35186", connectorId: 1 },
+      singleConnection: true,
+    },
+  ]);
+  assert.equal(preloadedConnectionMaps["35186"].length, 5);
+  assert.deepEqual(
+    preloadedConnectionMaps["35186"].map(
+      ({ local, role, rotationOnly, connectionTarget }) => ({
+        z: local[2],
+        role,
+        rotationOnly: Boolean(rotationOnly),
+        target: connectionTarget.partId,
+      }),
+    ),
+    [
+      { z: -0.5, role: "socket", rotationOnly: true, target: "32187" },
+      { z: -0.5, role: "socket", rotationOnly: false, target: "35186" },
+      { z: 0.9, role: "shaft", rotationOnly: false, target: "35186" },
+      { z: 0.9, role: "shaft", rotationOnly: true, target: "6542" },
+      { z: 0.9, role: "shaft", rotationOnly: true, target: "35185" },
+    ],
+  );
   assert.equal(preloadedConnectionMaps["6542"][0].kind, "round");
 });
 
@@ -436,7 +465,7 @@ test("gearbox guide connectors cannot be mistaken for ordinary axle connections"
       axle,
       ordinaryShaft,
     ),
-    true,
+    false,
   );
 });
 

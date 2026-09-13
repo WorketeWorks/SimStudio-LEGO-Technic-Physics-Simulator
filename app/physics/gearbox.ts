@@ -61,6 +61,12 @@ export const isGearboxRing = (piece: Piece) => specForRing(piece) !== undefined;
 
 export const hasGearboxRing = (pieces: Piece[]) => pieces.some(isGearboxRing);
 
+export const isGearboxExtension = (piece: Piece) =>
+  hasReference(piece, ["32187", "35186"]);
+
+export const hasGearboxExtension = (pieces: Piece[]) =>
+  pieces.some(isGearboxExtension);
+
 export const isGearboxCarrierPair = (left: Piece, right: Piece) =>
   gearboxSpecs.some(
     (spec) =>
@@ -78,6 +84,23 @@ export const isGearboxRotatingExtensionPair = (left: Piece, right: Piece) =>
     hasReference(right, ["6542", "6542a", "35185"])) ||
   (hasReference(right, ["35186"]) &&
     hasReference(left, ["6542", "6542a", "35185"]));
+
+/** A zero-position snap that resists removal but only permits outward travel. */
+export const gearboxExtensionLatchForConnection = (connection: Connection) => {
+  if (
+    !isGearboxRigidExtensionPair(connection.a, connection.b) &&
+    !isGearboxRotatingExtensionPair(connection.a, connection.b)
+  )
+    return undefined;
+  const axis = axleAxis(connection.a),
+    side = Math.sign(centre(connection.b).sub(centre(connection.a)).dot(axis)) || 1,
+    separation = 1.1;
+  return {
+    limits: (side > 0 ? [0, separation] : [-separation, 0]) as [number, number],
+    positions: [0],
+    force: 24,
+  };
+};
 
 export type GearboxSelectorPair = {
   ring: Piece;
@@ -215,7 +238,7 @@ const extensionCouplingPairs = (pieces: Piece[]) => {
       if (!isGearboxRotatingExtensionPair(a, b)) continue;
       const extension = hasReference(a, ["35186"]) ? a : b,
         other = extension === a ? b : a,
-        expectedDistance = hasReference(other, ["32187"]) ? 1 : 0.7,
+        expectedDistance = hasReference(other, ["32187"]) ? 1.5 : 0.9,
         extensionCenter = centre(extension),
         extensionAxis = axleAxis(extension),
         otherCenter = centre(other),
@@ -291,9 +314,6 @@ export const gearboxContactExclusionPairs = (pieces: Piece[]): [Piece, Piece][] 
     }),
     ...detectGearboxSelectorPairs(pieces).map(
       ({ ring, selector }) => [ring, selector] as [Piece, Piece],
-    ),
-    ...extensionCouplingPairs(pieces).map(
-      ({ a, b }) => [a, b] as [Piece, Piece],
     ),
   ];
 

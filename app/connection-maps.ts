@@ -8160,22 +8160,68 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
   ],
   "32187": [
     {
-      "local": [0, 0, 0],
+      "local": [0, 0, 1],
       "axis": [0, 0, 1],
-      "kind": "round",
-      "role": "socket",
+      "kind": "axle",
+      "role": "shaft",
       "diameter": 0.8,
-      "length": 1
+      "length": 0.6,
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "35186", "connectorId": 1 },
+      "singleConnection": true
     }
   ],
   "35186": [
     {
-      "local": [0, 0, 0],
+      "local": [0, 0, -0.5],
       "axis": [0, 0, 1],
-      "kind": "round",
+      "kind": "axle",
       "role": "socket",
       "diameter": 0.8,
-      "length": 1
+      "length": 0.6,
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "32187", "connectorId": 1 }
+    },
+    {
+      "local": [0, 0, -0.5],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "socket",
+      "diameter": 0.8,
+      "length": 0.6,
+      "connectionTarget": { "partId": "35186", "connectorId": 3 }
+    },
+    {
+      "local": [0, 0, 0.9],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "shaft",
+      "diameter": 0.8,
+      "length": 0.6,
+      "connectionTarget": { "partId": "35186", "connectorId": 2 },
+      "singleConnection": true
+    },
+    {
+      "local": [0, 0, 0.9],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "shaft",
+      "diameter": 0.8,
+      "length": 0.6,
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "6542" },
+      "singleConnection": true
+    },
+    {
+      "local": [0, 0, 0.9],
+      "axis": [0, 0, 1],
+      "kind": "axle",
+      "role": "shaft",
+      "diameter": 0.8,
+      "length": 0.6,
+      "rotationOnly": true,
+      "connectionTarget": { "partId": "35185" },
+      "singleConnection": true
     }
   ],
   "35188": [

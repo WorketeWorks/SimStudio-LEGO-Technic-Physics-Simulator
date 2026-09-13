@@ -30,7 +30,10 @@ import type {
   RustQuat,
   RustVec3,
 } from "./rust-protocol";
-import { gearboxDetentForConnection } from "./gearbox";
+import {
+  gearboxDetentForConnection,
+  gearboxExtensionLatchForConnection,
+} from "./gearbox";
 import { sampleRubberBand } from "./rubber-band";
 
 const frictionlessPinRefs = new Set(["3749", "3673", "32556"]);
@@ -162,9 +165,11 @@ export function buildRustJointConfig(
   const bodyB = bodyIdByPiece.get(connection.b);
   if (!bodyA || !bodyB || bodyA === bodyB) return undefined;
 
-  const dynamicAxle =
-    (connection.profile === "axle-cross" || connection.profile === "axle-round") &&
-    connection.b.dynamicAxleConnections;
+  const extensionLatch = gearboxExtensionLatchForConnection(connection),
+    dynamicAxle =
+      !extensionLatch &&
+      (connection.profile === "axle-cross" || connection.profile === "axle-round") &&
+      connection.b.dynamicAxleConnections;
   const worldAxisA = dynamicAxle
     ? connection.socket.axis
         .clone()
@@ -191,14 +196,15 @@ export function buildRustJointConfig(
   let anchorA = anchor;
   let anchorB = anchor;
 
-  if (dynamicAxle) {
+  if (dynamicAxle || extensionLatch) {
     anchorA = connection.a.mesh.localToWorld(connection.socket.local.clone());
 
     const shaftCenter = connection.b.mesh.localToWorld(connection.shaft.local.clone());
-
-    const along = anchorA.clone().sub(shaftCenter).dot(worldAxisB);
-
-    anchorB = shaftCenter.clone().addScaledVector(worldAxisB, along);
+    if (extensionLatch) anchorB = shaftCenter;
+    else {
+      const along = anchorA.clone().sub(shaftCenter).dot(worldAxisB);
+      anchorB = shaftCenter.clone().addScaledVector(worldAxisB, along);
+    }
   }
   const passiveMotorForce =
     connection.mode === "rotation" && connection.b.frictionPin
@@ -225,6 +231,13 @@ export function buildRustJointConfig(
       ? {
           linearDetents: gearboxDetent.positions,
           detentForce: gearboxDetent.force,
+        }
+      : {}),
+    ...(extensionLatch
+      ? {
+          linearDetents: extensionLatch.positions,
+          linearLimits: extensionLatch.limits,
+          detentForce: extensionLatch.force,
         }
       : {}),
   };
