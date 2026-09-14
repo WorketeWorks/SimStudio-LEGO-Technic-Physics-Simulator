@@ -1,5 +1,8 @@
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
-import { normalizeMapProvenanceSnapshot, type MapProvenanceSnapshot } from "./map-provenance";
+import {
+  normalizeMapProvenanceSnapshot,
+  type MapProvenanceSnapshot,
+} from "./map-provenance";
 
 export const PROJECT_EXTENSION = ".simstudio";
 export const PROJECT_MIME = "application/x-simstudio-project";
@@ -23,6 +26,7 @@ export type SavedConnector = {
   diameter: number;
   length?: number;
   rotationOnly?: boolean;
+  sliding?: boolean;
   connectionTarget?: {
     partId: string;
     connectorId?: number;
@@ -262,6 +266,8 @@ const sanitizeProjectDocument = (
                   ? undefined
                   : positiveNumber(connector.length, 0.5, 0.01),
               rotationOnly: connector.rotationOnly === true || undefined,
+              sliding:
+                typeof connector.sliding === "boolean" ? connector.sliding : undefined,
               connectionTarget:
                 connector.connectionTarget &&
                 typeof connector.connectionTarget.partId === "string"
@@ -470,10 +476,7 @@ const sanitizeProjectDocument = (
         motorSpeed: finiteNumber(connection.motorSpeed, 0),
         motorForce: Math.max(0, finiteNumber(connection.motorForce, 30)),
         motorPulse: connection.motorPulse === true,
-        motorPulseAngle: Math.min(
-          360,
-          positiveNumber(connection.motorPulseAngle, 90, 1),
-        ),
+        motorPulseAngle: Math.min(360, positiveNumber(connection.motorPulseAngle, 90, 1)),
         motorPulseInterval: Math.min(
           60,
           positiveNumber(connection.motorPulseInterval, 1, 0.05),

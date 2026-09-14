@@ -18,10 +18,19 @@ import {
 } from "../app/collision-maps.ts";
 import { paletteParts } from "../app/palette.ts";
 import { flattenLDrawRenderables } from "../app/ldraw-geometry.ts";
-import { automaticMapProvenance, canRegenerateMap, normalizeMapProvenanceSnapshot } from "../app/map-provenance.ts";
-const reviewedProvenance = JSON.parse(await readFile(new URL("../app/preloaded-map-provenance.json", import.meta.url), "utf8"));
-const preservedOverlay = (part, layer, maps) => maps[part] !== undefined
-  && !canRegenerateMap(reviewedProvenance[part]?.[layer]);
+import {
+  automaticMapProvenance,
+  canRegenerateMap,
+  normalizeMapProvenanceSnapshot,
+} from "../app/map-provenance.ts";
+const reviewedProvenance = JSON.parse(
+  await readFile(
+    new URL("../app/preloaded-map-provenance.json", import.meta.url),
+    "utf8",
+  ),
+);
+const preservedOverlay = (part, layer, maps) =>
+  maps[part] !== undefined && !canRegenerateMap(reviewedProvenance[part]?.[layer]);
 
 globalThis.ProgressEvent ??= class ProgressEvent extends Event {
   constructor(type, init = {}) {
@@ -169,17 +178,17 @@ await writeFile(
 );
 
 await Promise.all(
-  [...new Map(targetParts.map((part) => [part.modelPart ?? part.part, part])).values()].map(
-    async (part) => {
-      if (!part.sourceThumb?.startsWith("http")) return;
-      const response = await fetch(part.sourceThumb);
-      if (!response.ok) return;
-      await writeFile(
-        join(renderRoot, `${part.modelPart ?? part.part}.png`),
-        Buffer.from(await response.arrayBuffer()),
-      );
-    },
-  ),
+  [
+    ...new Map(targetParts.map((part) => [part.modelPart ?? part.part, part])).values(),
+  ].map(async (part) => {
+    if (!part.sourceThumb?.startsWith("http")) return;
+    const response = await fetch(part.sourceThumb);
+    if (!response.ok) return;
+    await writeFile(
+      join(renderRoot, `${part.modelPart ?? part.part}.png`),
+      Buffer.from(await response.arrayBuffer()),
+    );
+  }),
 );
 
 const contentTypes = {
@@ -190,15 +199,16 @@ const contentTypes = {
 };
 const server = createServer(async (request, response) => {
   try {
-    const relative = decodeURIComponent(new URL(request.url, "http://localhost").pathname).replace(
-        /^\/+/,
-        "",
-      ),
+    const relative = decodeURIComponent(
+        new URL(request.url, "http://localhost").pathname,
+      ).replace(/^\/+/, ""),
       requested = normalize(join(publicRoot, relative));
-    if (!requested.startsWith(normalize(publicRoot + sep))) throw new Error("Ruta inválida");
+    if (!requested.startsWith(normalize(publicRoot + sep)))
+      throw new Error("Ruta inválida");
     const data = await readFile(requested);
     response.writeHead(200, {
-      "content-type": contentTypes[extname(requested).toLowerCase()] || "application/octet-stream",
+      "content-type":
+        contentTypes[extname(requested).toLowerCase()] || "application/octet-stream",
     });
     response.end(data);
   } catch {
@@ -237,6 +247,7 @@ const modelText = (part) =>
     ...(connector.rotationOnly === undefined
       ? {}
       : { rotationOnly: connector.rotationOnly }),
+    ...(connector.sliding === undefined ? {} : { sliding: connector.sliding }),
     ...(connector.connectionTarget === undefined
       ? {}
       : { connectionTarget: connector.connectionTarget }),
@@ -258,13 +269,9 @@ const modelText = (part) =>
       ...collider,
       shape: collider.shape,
       center: new THREE.Vector3(...collider.center),
-      ...(collider.size
-        ? { size: new THREE.Vector3(...collider.size) }
-        : {}),
+      ...(collider.size ? { size: new THREE.Vector3(...collider.size) } : {}),
       ...(collider.radius === undefined ? {} : { radius: collider.radius }),
-      ...(collider.halfHeight === undefined
-        ? {}
-        : { halfHeight: collider.halfHeight }),
+      ...(collider.halfHeight === undefined ? {} : { halfHeight: collider.halfHeight }),
       rotation: new THREE.Quaternion(...collider.rotation),
     }));
 
@@ -301,9 +308,13 @@ try {
       : generatePartConnectors(wrapper, part.name);
     const colliders = preservedOverlay(part.part, "colliders", preloadedCollisionMaps)
         ? colliderVectors(preloadedCollisionMaps[part.part])
-        : straightAxleCollisionPrimitives(part.name) ??
-          approximateCollisionPrimitives(wrapper, part.name, connectors),
-      gearColliders = preservedOverlay(part.part, "gearColliders", preloadedGearCollisionMaps)
+        : (straightAxleCollisionPrimitives(part.name) ??
+          approximateCollisionPrimitives(wrapper, part.name, connectors)),
+      gearColliders = preservedOverlay(
+        part.part,
+        "gearColliders",
+        preloadedGearCollisionMaps,
+      )
         ? colliderVectors(preloadedGearCollisionMaps[part.part])
         : part.gear
           ? approximateGearCollisionPrimitives(colliders)
@@ -324,15 +335,25 @@ try {
       gearColliders: gearColliders.map(serializeCollider),
       bounds: { min: box.min.toArray(), max: box.max.toArray() },
     };
-    for (const [layer, reviewed] of Object.entries({ connectors: preloadedConnectionMaps, colliders: preloadedCollisionMaps, gearColliders: preloadedGearCollisionMaps })) {
+    for (const [layer, reviewed] of Object.entries({
+      connectors: preloadedConnectionMaps,
+      colliders: preloadedCollisionMaps,
+      gearColliders: preloadedGearCollisionMaps,
+    })) {
       if (preservedOverlay(part.part, layer, reviewed)) {
-        mapProvenance[layer] = reviewedProvenance[part.part]?.[layer] ?? { origin: "unknown" };
-      } else if (previous?.[layer] !== undefined && !canRegenerateMap(previousProvenance[layer])) {
+        mapProvenance[layer] = reviewedProvenance[part.part]?.[layer] ?? {
+          origin: "unknown",
+        };
+      } else if (
+        previous?.[layer] !== undefined &&
+        !canRegenerateMap(previousProvenance[layer])
+      ) {
         catalog.parts[part.part][layer] = previous[layer];
         mapProvenance[layer] = previousProvenance[layer];
       } else mapProvenance[layer] = automaticMapProvenance();
     }
-    if (previous?.specialGear !== undefined) catalog.parts[part.part].specialGear = previous.specialGear;
+    if (previous?.specialGear !== undefined)
+      catalog.parts[part.part].specialGear = previous.specialGear;
     mapProvenance.specialGear = previousProvenance.specialGear;
     catalog.parts[part.part].mapProvenance = mapProvenance;
     catalog.assets[assetKey] = {
@@ -344,7 +365,6 @@ try {
 } finally {
   await new Promise((done) => server.close(done));
 }
-
 
 await writeFile(
   join(repositoryRoot, "app", "preloaded-catalog.json"),

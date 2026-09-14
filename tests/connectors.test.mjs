@@ -175,7 +175,10 @@ test("full beams use a 0.45 radial collision envelope", () => {
     connectors = detectConnectorHoles(root),
     colliders = approximateCollisionPrimitives(root, "Technic Beam 3", connectors);
   assert.equal(colliders.length, 3);
-  assert.deepEqual(colliders.map(c => c.shape), ["box", "cylinder", "cylinder"]);
+  assert.deepEqual(
+    colliders.map((c) => c.shape),
+    ["box", "cylinder", "cylinder"],
+  );
   colliders
     .filter((item) => item.shape === "box")
     .forEach((box) => {
@@ -216,17 +219,27 @@ test("straight beam envelopes stay compact without a connection map and under wo
 });
 
 test("socket connectors are not mistaken for solid pins or axles", () => {
-  const connectors = generatePartConnectors(loadPart("32013-71"), "Technic Axle and Pin Connector Angled #1");
+  const connectors = generatePartConnectors(
+    loadPart("32013-71"),
+    "Technic Axle and Pin Connector Angled #1",
+  );
   assert.equal(connectors.length, 2);
-  assert.ok(connectors.every(c => c.role === "socket"));
+  assert.ok(connectors.every((c) => c.role === "socket"));
 });
 
 test("angled connector shells use two solid cylinders meeting at the joint", () => {
-  const root = loadPart("32013-71"), name = "Technic Axle and Pin Connector Angled #1",
-    colliders = approximateCollisionPrimitives(root, name, generatePartConnectors(root, name));
+  const root = loadPart("32013-71"),
+    name = "Technic Axle and Pin Connector Angled #1",
+    colliders = approximateCollisionPrimitives(
+      root,
+      name,
+      generatePartConnectors(root, name),
+    );
   assert.equal(colliders.length, 2);
-  assert.ok(colliders.every(c => c.shape === "cylinder" && c.radius === 0.45));
-  const axes = colliders.map(c => new THREE.Vector3(0, 1, 0).applyQuaternion(c.rotation));
+  assert.ok(colliders.every((c) => c.shape === "cylinder" && c.radius === 0.45));
+  const axes = colliders.map((c) =>
+    new THREE.Vector3(0, 1, 0).applyQuaternion(c.rotation),
+  );
   assert.ok(Math.abs(axes[0].dot(axes[1])) < 1e-6);
   for (let i = 0; i < colliders.length; i++) {
     const local = colliders[i].center.clone().negate();
@@ -437,27 +450,26 @@ test("loads the five reviewed gearbox collision maps", () => {
 
 test("loads the reviewed 4159, 6628 and 3584 collision maps", () => {
   assert.deepEqual(
-    ["4159", "6628", "3584"].map((part) =>
-      preloadedCollisionMaps[part].length,
-    ),
+    ["4159", "6628", "3584"].map((part) => preloadedCollisionMaps[part].length),
     [7, 3, 1],
   );
-  assert.deepEqual(
-    preloadedCollisionMaps["4159"][0],
-    {
-      shape: "arc",
-      center: [1, 2.25, 0],
-      radius: 0.6,
-      innerRadius: 0.35,
-      halfHeight: 0.25,
-      startAngle: 0,
-      arcAngle: 90,
-      arcPoints: [[0, 0.7], [1, 0], [2.9085361479749636e-17, -0.7]],
-      arcThickness: 0.25,
-      segments: 16,
-      rotation: [0.5, -0.5, -0.4999999999999999, 0.5000000000000001],
-    },
-  );
+  assert.deepEqual(preloadedCollisionMaps["4159"][0], {
+    shape: "arc",
+    center: [1, 2.25, 0],
+    radius: 0.6,
+    innerRadius: 0.35,
+    halfHeight: 0.25,
+    startAngle: 0,
+    arcAngle: 90,
+    arcPoints: [
+      [0, 0.7],
+      [1, 0],
+      [2.9085361479749636e-17, -0.7],
+    ],
+    arcThickness: 0.25,
+    segments: 16,
+    rotation: [0.5, -0.5, -0.4999999999999999, 0.5000000000000001],
+  });
   assert.deepEqual(
     preloadedCollisionMaps["6628"].map(({ shape }) => shape),
     ["cylinder", "sphere", "cylinder"],
@@ -508,13 +520,12 @@ test("gearbox guide connectors cannot be mistaken for ordinary axle connections"
     true,
   );
   assert.equal(fork4159.connectors[0].rotationOnly, true);
+  assert.deepEqual(
+    preloadedConnectionMaps["4159"].map((connector) => connector.sliding === true),
+    [false, true, true, false],
+  );
   assert.equal(
-    connectorPoliciesCompatible(
-      ring18947,
-      ring18947.connectors[0],
-      axle,
-      ordinaryShaft,
-    ),
+    connectorPoliciesCompatible(ring18947, ring18947.connectors[0], axle, ordinaryShaft),
     false,
   );
   assert.equal(
@@ -529,10 +540,7 @@ test("gearbox guide connectors cannot be mistaken for ordinary axle connections"
 
   const extension32187 = piece("32187", preloadedConnectionMaps["32187"][0]),
     extension35186 = piece("35186", preloadedConnectionMaps["35186"][0]),
-    normalAxleSocket35186 = piece(
-      "35186",
-      preloadedConnectionMaps["35186"][5],
-    );
+    normalAxleSocket35186 = piece("35186", preloadedConnectionMaps["35186"][5]);
   assert.equal(
     connectorPoliciesCompatible(
       extension32187,
@@ -560,10 +568,7 @@ test("gearbox guide connectors cannot be mistaken for ordinary axle connections"
     ),
     true,
   );
-  const normalAxleSocket32187 = piece(
-    "32187",
-    preloadedConnectionMaps["32187"][1],
-  );
+  const normalAxleSocket32187 = piece("32187", preloadedConnectionMaps["32187"][1]);
   assert.equal(
     connectorPoliciesCompatible(
       normalAxleSocket32187,
@@ -589,8 +594,14 @@ test("loads the downloaded 6589 gear collision correction", () => {
 });
 
 test("keeps the 6542 normal and gear collision layers separate", () => {
-  assert.deepEqual(preloadedCollisionMaps["6542"].map((collider) => collider.radius), [0.85, 0.45, 1.1]);
-  assert.deepEqual(preloadedGearCollisionMaps["6542"].map((collider) => collider.radius), [0.85, 0.45]);
+  assert.deepEqual(
+    preloadedCollisionMaps["6542"].map((collider) => collider.radius),
+    [0.85, 0.45, 1.1],
+  );
+  assert.deepEqual(
+    preloadedGearCollisionMaps["6542"].map((collider) => collider.radius),
+    [0.85, 0.45],
+  );
 });
 
 test("the 6573 differential exposes lateral sockets, a rotation-only axle stud and two gear volumes", () => {

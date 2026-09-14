@@ -95,9 +95,14 @@ import {
   type PartMapBundle,
 } from "./map-updates";
 import {
-  automaticMapProvenance, normalizeMapProvenance, normalizeMapProvenanceSnapshot,
-  readMapProvenance, writeMapProvenance, isStaleAutomaticMap,
-  type MapProvenance, type MapProvenanceSnapshot,
+  automaticMapProvenance,
+  normalizeMapProvenance,
+  normalizeMapProvenanceSnapshot,
+  readMapProvenance,
+  writeMapProvenance,
+  isStaleAutomaticMap,
+  type MapProvenance,
+  type MapProvenanceSnapshot,
 } from "./map-provenance";
 import {
   disposeRubberBand,
@@ -355,6 +360,7 @@ const packagedParts = preloadedCatalog.parts as Record<
       diameter: number;
       length?: number;
       rotationOnly?: boolean;
+      sliding?: boolean;
       connectionTarget?: { partId: string; connectorId?: number };
       singleConnection?: boolean;
     }[];
@@ -429,7 +435,8 @@ const modelText = (p: CatalogPart) =>
 const frictionPinRefs = new Set(["2780", "6558", "32054", "43093"]);
 
 const isPinPart = (p: CatalogPart) =>
-  /^Technic (Axle )?Pin(?! Connector| Joiner| Hole)/i.test(p.name) || frictionPinRefs.has(p.part);
+  /^Technic (Axle )?Pin(?! Connector| Joiner| Hole)/i.test(p.name) ||
+  frictionPinRefs.has(p.part);
 
 const isAxlePart = (p: CatalogPart) => /^Technic Axle\s+\d/i.test(p.name);
 
@@ -500,9 +507,7 @@ const supportsDynamicAxleConnections = (piece: Piece) =>
 const isConcealedGearboxGuide = (connector: MeshConnector) =>
   connector.role === "shaft" &&
   connector.kind === "axle" &&
-  ["6539", "18947"].includes(
-    connector.connectionTarget?.partId.toLowerCase() ?? "",
-  );
+  ["6539", "18947"].includes(connector.connectionTarget?.partId.toLowerCase() ?? "");
 const turntableCounterpart: Record<string, string> = {
   "99009": "99010",
   "18938u": "18939",
@@ -697,6 +702,20 @@ const connectorMapReach = (connectors: MeshConnector[]) =>
       (connector) => connector.local.length() + (connector.length ?? 0.5) / 2,
     ),
   );
+
+const connectorDefaultsForPart = (part: string, connectors: MeshConnector[]) => {
+  if (part.toLowerCase().replace(/\.dat$/, "") !== "4159") return connectors;
+  return connectors.map((connector) =>
+    connector.kind === "axle" &&
+    connector.role === "socket" &&
+    Math.abs(Math.abs(connector.local.x) - 1) < 0.05 &&
+    Math.abs(connector.local.y) < 0.05 &&
+    Math.abs(connector.local.z) < 0.05 &&
+    connector.sliding === undefined
+      ? { ...connector, sliding: true }
+      : connector,
+  );
+};
 
 const jointPivotKey = (connection: Connection) => `joint:${connection.id}`;
 
@@ -937,6 +956,22 @@ const pairProfile = (a: MeshConnector, b: MeshConnector) =>
 const isRotationOnlyConnector = (connector: MeshConnector) =>
   connector.rotationOnly === true;
 
+const isSlidingConnector = (connector: MeshConnector) => connector.sliding === true;
+
+const isSlidingConnection = (connection: Connection) =>
+  isSlidingConnector(connection.socket) || isSlidingConnector(connection.shaft);
+
+const isSpecialMechanicalConnection = (connection: Connection) =>
+  isGearboxCarrierPair(connection.a, connection.b) ||
+  isGearboxRigidExtensionPair(connection.a, connection.b) ||
+  isGearboxRotatingExtensionPair(connection.a, connection.b) ||
+  isChangeoverForkRingConnection(
+    connection.a,
+    connection.socket,
+    connection.b,
+    connection.shaft,
+  );
+
 const allowedModes = (profile: ConnectionProfile): JointMode[] =>
   profile === "pin-round"
     ? ["fixed", "rotation", "motor"]
@@ -951,9 +986,10 @@ const allowedModesForConnection = (connection: Connection): JointMode[] =>
       ? ["linear"]
       : isGearboxRotatingExtensionPair(connection.a, connection.b)
         ? ["rotation-linear"]
-    : isRotationOnlyConnector(connection.socket) || isRotationOnlyConnector(connection.shaft)
-    ? ["rotation"]
-    : allowedModes(connection.profile);
+        : isRotationOnlyConnector(connection.socket) ||
+            isRotationOnlyConnector(connection.shaft)
+          ? ["rotation"]
+          : allowedModes(connection.profile);
 
 const defaultMode = (profile: ConnectionProfile): JointMode =>
   profile === "pin-round"
@@ -976,15 +1012,16 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
   if (!connections.length) return;
   connections.forEach((connection) => {
     if (!allowedModesForConnection(connection).includes(connection.mode)) {
-      connection.mode =
-        isGearboxRigidExtensionPair(connection.a, connection.b)
-          ? "linear"
-          : isGearboxRotatingExtensionPair(connection.a, connection.b)
-            ? "rotation-linear"
+      connection.mode = isGearboxRigidExtensionPair(connection.a, connection.b)
+        ? "linear"
+        : isGearboxRotatingExtensionPair(connection.a, connection.b)
+          ? "rotation-linear"
           : isRotationOnlyConnector(connection.socket) ||
-        isRotationOnlyConnector(connection.shaft)
-          ? "rotation"
-          : defaultMode(connection.profile);
+              isRotationOnlyConnector(connection.shaft)
+            ? "rotation"
+            : isSlidingConnection(connection)
+              ? "linear"
+              : defaultMode(connection.profile);
       connection.userConfigured = false;
       state.connectionModes.delete(connection.id);
     }
@@ -1001,6 +1038,7 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
       isRotationOnlyConnector(connection.shaft)
     )
       connection.mode = "rotation";
+    else if (isSlidingConnection(connection)) connection.mode = "linear";
     else if (connection.profile === "axle-cross") connection.mode = "fixed";
     else if (connection.profile === "axle-round") connection.mode = "rotation-linear";
     else if (shaftPiece.frictionPin) connection.mode = "fixed";
@@ -1018,6 +1056,7 @@ const rebalanceSmartDefaults = (state: AppState, shaftPiece: Piece) => {
       isGearboxRotatingExtensionPair(connection.a, connection.b) ||
       isRotationOnlyConnector(connection.socket) ||
       isRotationOnlyConnector(connection.shaft) ||
+      isSlidingConnection(connection) ||
       connection.profile === "axle-cross" ||
       connection.profile === "axle-round" ||
       shaftPiece.frictionPin
@@ -2075,10 +2114,14 @@ export default function Home() {
       const localProvenance = readMapProvenance(localStorage, correctionStorageKey),
         reviewedProvenance = correctionMapProvenance(correctionStorageKey),
         packagedProvenance = normalizeMapProvenanceSnapshot(
-          (packaged as { mapProvenance?: MapProvenanceSnapshot } | undefined)?.mapProvenance),
+          (packaged as { mapProvenance?: MapProvenanceSnapshot } | undefined)
+            ?.mapProvenance,
+        ),
         mapProvenance: MapProvenanceSnapshot = {
-          connectors: automaticMapProvenance(), colliders: automaticMapProvenance(),
-          gearColliders: automaticMapProvenance(), specialGear: automaticMapProvenance(),
+          connectors: automaticMapProvenance(),
+          colliders: automaticMapProvenance(),
+          gearColliders: automaticMapProvenance(),
+          specialGear: automaticMapProvenance(),
         };
       const storedSpecialGear = localStorage.getItem(
           `sim-special-gear-v1:${correctionStorageKey}`,
@@ -2104,6 +2147,7 @@ export default function Home() {
               diameter: number;
               length?: number;
               rotationOnly?: boolean;
+              sliding?: boolean;
               connectionTarget?: { partId: string; connectorId?: number };
               singleConnection?: boolean;
             }[]
@@ -2115,7 +2159,11 @@ export default function Home() {
           }));
         }
       } catch {}
-      if (!connectors && preloadedConnections && !isStaleAutomaticMap(reviewedProvenance.connectors)) {
+      if (
+        !connectors &&
+        preloadedConnections &&
+        !isStaleAutomaticMap(reviewedProvenance.connectors)
+      ) {
         mapProvenance.connectors = reviewedProvenance.connectors;
         connectors = preloadedConnections.map((connector) => ({
           ...connector,
@@ -2124,7 +2172,11 @@ export default function Home() {
         }));
       }
       if (!connectors) connectors = straightAxleConnectors(p.name);
-      if (!connectors && packaged && !isStaleAutomaticMap(packagedProvenance.connectors)) {
+      if (
+        !connectors &&
+        packaged &&
+        !isStaleAutomaticMap(packagedProvenance.connectors)
+      ) {
         mapProvenance.connectors = packagedProvenance.connectors;
         connectors = packaged.connectors.map((connector) => ({
           ...connector,
@@ -2142,10 +2194,17 @@ export default function Home() {
         try {
           localStorage.setItem(
             `sim-connectors-v4:${correctionStorageKey}`,
-            JSON.stringify(connectors.map(connector => ({ ...connector,
-              local: connector.local.toArray(), axis: connector.axis.toArray() }))),
+            JSON.stringify(
+              connectors.map((connector) => ({
+                ...connector,
+                local: connector.local.toArray(),
+                axis: connector.axis.toArray(),
+              })),
+            ),
           );
-          writeMapProvenance(localStorage, correctionStorageKey, { connectors: automaticMapProvenance() });
+          writeMapProvenance(localStorage, correctionStorageKey, {
+            connectors: automaticMapProvenance(),
+          });
         } catch {}
       }
       if (isHalfBeamPart(p) && mapProvenance.connectors?.origin === "automatic")
@@ -2156,6 +2215,7 @@ export default function Home() {
               ? "half"
               : connector.kind,
         }));
+      connectors = connectorDefaultsForPart(correctionStorageKey, connectors);
       connectorCache.set(correctionStorageKey, cloneConnectors(connectors));
       let colliders: CollisionPrimitive[] | undefined;
       if (!colliders)
@@ -2177,7 +2237,11 @@ export default function Home() {
                 .map(runtimeColliderFromStored);
           }
         } catch {}
-      if (!colliders && preloadedCollisions && !isStaleAutomaticMap(reviewedProvenance.colliders)) {
+      if (
+        !colliders &&
+        preloadedCollisions &&
+        !isStaleAutomaticMap(reviewedProvenance.colliders)
+      ) {
         mapProvenance.colliders = reviewedProvenance.colliders;
         colliders = preloadedCollisions.map((primitive) => ({
           ...primitive,
@@ -2188,7 +2252,11 @@ export default function Home() {
           rotation: new THREE.Quaternion().fromArray(primitive.rotation),
         }));
       }
-      if (!colliders && packaged && packagedProvenance.colliders?.origin !== "automatic") {
+      if (
+        !colliders &&
+        packaged &&
+        packagedProvenance.colliders?.origin !== "automatic"
+      ) {
         colliders = packaged.colliders.map(runtimeColliderFromStored);
         mapProvenance.colliders = packagedProvenance.colliders;
       }
@@ -2252,7 +2320,11 @@ export default function Home() {
             }
           }
         } catch {}
-        if (!gearMapResolved && preloadedGearCollisions && !isStaleAutomaticMap(reviewedProvenance.gearColliders)) {
+        if (
+          !gearMapResolved &&
+          preloadedGearCollisions &&
+          !isStaleAutomaticMap(reviewedProvenance.gearColliders)
+        ) {
           gearMapResolved = true;
           mapProvenance.gearColliders = reviewedProvenance.gearColliders;
           gearColliders = preloadedGearCollisions.map((primitive) => ({
@@ -2272,8 +2344,12 @@ export default function Home() {
               size: primitive.size?.clone(),
               rotation: primitive.rotation.clone(),
             })) ?? [];
-        if (!gearMapResolved && !gearColliders.length && packaged?.gearColliders
-          && !isStaleAutomaticMap(packagedProvenance.gearColliders)) {
+        if (
+          !gearMapResolved &&
+          !gearColliders.length &&
+          packaged?.gearColliders &&
+          !isStaleAutomaticMap(packagedProvenance.gearColliders)
+        ) {
           gearMapResolved = true;
           mapProvenance.gearColliders = packagedProvenance.gearColliders;
           gearColliders = packaged.gearColliders.map((primitive) => ({
@@ -2299,8 +2375,10 @@ export default function Home() {
           );
         }
       }
-      mapProvenance.specialGear = storedSpecialGear !== null
-        ? localProvenance.specialGear : reviewedProvenance.specialGear;
+      mapProvenance.specialGear =
+        storedSpecialGear !== null
+          ? localProvenance.specialGear
+          : reviewedProvenance.specialGear;
       return { connectors, colliders, gearColliders, specialGear, mapProvenance };
     };
 
@@ -3691,11 +3769,9 @@ export default function Home() {
                 primary.part.toLowerCase(),
             );
           if (primaryJoint && counterpartJoint) {
-            const socketPiece =
-                primaryJoint.role === "socket" ? primary : counterpart,
+            const socketPiece = primaryJoint.role === "socket" ? primary : counterpart,
               socket = primaryJoint.role === "socket" ? primaryJoint : counterpartJoint,
-              shaftPiece =
-                primaryJoint.role === "shaft" ? primary : counterpart,
+              shaftPiece = primaryJoint.role === "shaft" ? primary : counterpart,
               shaft = primaryJoint.role === "shaft" ? primaryJoint : counterpartJoint;
             addConnection(socketPiece, shaftPiece, socket, shaft, {
               point: worldConnector(socketPiece, socket).point,
@@ -3807,10 +3883,8 @@ export default function Home() {
         wrapper.position.copy(position);
         if (rotation) wrapper.quaternion.copy(rotation);
         wrapper.updateMatrixWorld(true);
-        const { connectors, colliders, gearColliders, specialGear, mapProvenance } = analyzePart(
-            wrapper,
-            p,
-          ),
+        const { connectors, colliders, gearColliders, specialGear, mapProvenance } =
+            analyzePart(wrapper, p),
           piece: Piece = {
             ...p,
             id: Date.now() + Math.random(),
@@ -4091,7 +4165,8 @@ export default function Home() {
           .getWorldPosition(new THREE.Vector3())
           .sub(socketPiece.mesh.getWorldPosition(new THREE.Vector3()))
           .dot(axis),
-        side = Math.sign(Math.abs(connectorSide) > 1e-4 ? connectorSide : centreSide) || 1;
+        side =
+          Math.sign(Math.abs(connectorSide) > 1e-4 ? connectorSide : centreSide) || 1;
       return side * gap;
     };
 
@@ -4169,6 +4244,7 @@ export default function Home() {
         saved = state.connectionModes.get(id),
         rotationOnlyConnection =
           isRotationOnlyConnector(socket) || isRotationOnlyConnector(shaft),
+        slidingConnection = isSlidingConnector(socket) || isSlidingConnector(shaft),
         gearboxConnection = isGearboxCarrierPair(host, rod),
         rigidExtensionConnection = isGearboxRigidExtensionPair(host, rod),
         rotatingExtensionConnection = isGearboxRotatingExtensionPair(host, rod),
@@ -4178,21 +4254,23 @@ export default function Home() {
             ? (["linear"] as JointMode[])
             : rotatingExtensionConnection
               ? (["rotation-linear"] as JointMode[])
-          : rotationOnlyConnection
-            ? (["rotation"] as JointMode[])
-            : allowedModes(profile),
+              : rotationOnlyConnection
+                ? (["rotation"] as JointMode[])
+                : allowedModes(profile),
         mode =
           saved && validModes.includes(saved.mode)
             ? saved.mode
             : gearboxConnection
               ? "linear"
-            : rigidExtensionConnection
-              ? "linear"
-            : rotatingExtensionConnection
-              ? "rotation-linear"
-            : rotationOnlyConnection
-              ? "rotation"
-              : defaultMode(profile),
+              : rigidExtensionConnection
+                ? "linear"
+                : rotatingExtensionConnection
+                  ? "rotation-linear"
+                  : rotationOnlyConnection
+                    ? "rotation"
+                    : slidingConnection
+                      ? "linear"
+                      : defaultMode(profile),
         motorSpeed = saved?.motorSpeed ?? 3,
         motorForce = saved?.motorForce ?? 80,
         motorPulse = saved?.motorPulse ?? false,
@@ -4270,10 +4348,8 @@ export default function Home() {
         )
       )
         return false;
-      const socketPiece =
-          sourceConnector.role === "socket" ? sourcePiece : targetPiece,
-        shaftPiece =
-          sourceConnector.role === "shaft" ? sourcePiece : targetPiece;
+      const socketPiece = sourceConnector.role === "socket" ? sourcePiece : targetPiece,
+        shaftPiece = sourceConnector.role === "shaft" ? sourcePiece : targetPiece;
       sourcePiece.mesh.updateMatrix();
       const sourceMatrixBefore = sourcePiece.mesh.matrix.clone();
       const sourceWorld = worldConnector(sourcePiece, sourceConnector),
@@ -4311,13 +4387,20 @@ export default function Home() {
             socketWorld.point,
             targetAxis,
           ) ??
-          closestConnectorOffset(
-            shaft,
-            socket,
-            shaftWorld.point,
-            socketWorld.point,
-            targetAxis,
-          ),
+          (shaft.kind === "axle" &&
+          (isSlidingConnector(socket) || isSlidingConnector(shaft))
+            ? THREE.MathUtils.clamp(
+                shaftWorld.point.clone().sub(socketWorld.point).dot(targetAxis),
+                -(shaft.length ?? 0.5) / 2,
+                (shaft.length ?? 0.5) / 2,
+              )
+            : closestConnectorOffset(
+                shaft,
+                socket,
+                shaftWorld.point,
+                socketWorld.point,
+                targetAxis,
+              )),
         sourceTarget = targetWorld.point
           .clone()
           .addScaledVector(
@@ -4345,15 +4428,25 @@ export default function Home() {
       // placement treats them as one rigid editorial assembly. Keep their
       // internal joints and move their cached world frames with the group.
       state.connections.forEach((connection) => {
-        if (!sourceGroupSet.has(connection.a) || !sourceGroupSet.has(connection.b))
+        const aMoved = sourceGroupSet.has(connection.a),
+          bMoved = sourceGroupSet.has(connection.b);
+        if (aMoved && bMoved) {
+          connection.point.applyMatrix4(groupTransform);
+          connection.axis.transformDirection(groupTransform).normalize();
           return;
-        connection.point.applyMatrix4(groupTransform);
-        connection.axis.transformDirection(groupTransform).normalize();
+        }
+        if (!(aMoved || bMoved) || !isSpecialMechanicalConnection(connection)) return;
+        const socketPose = worldConnector(connection.a, connection.socket);
+        connection.point.copy(socketPose.point);
+        connection.axis.copy(socketPose.axis);
+        connection.localAxisA.copy(connection.socket.axis).normalize();
       });
       state.renderBatchesDirty = true;
       state.connections = state.connections.filter(
         (connection) =>
-          sourceGroupSet.has(connection.a) === sourceGroupSet.has(connection.b),
+          sourceGroupSet.has(connection.a) === sourceGroupSet.has(connection.b) ||
+          connection.forced ||
+          isSpecialMechanicalConnection(connection),
       );
       rebalanceAllSmartDefaults(state);
       const socketConnector =
@@ -4580,6 +4673,25 @@ export default function Home() {
         setConnectionRevision((value) => value + 1);
         refreshDebug();
         return state.connections.length;
+      },
+      retainReusableConnections = () => {
+        const livePieces = new Set(state.pieces);
+        state.connections = state.connections.filter(
+          (connection) =>
+            livePieces.has(connection.a) &&
+            livePieces.has(connection.b) &&
+            connection.a.connectors.includes(connection.socket) &&
+            connection.b.connectors.includes(connection.shaft) &&
+            connection.socket.role === "socket" &&
+            connection.shaft.role === "shaft" &&
+            connectorProfile(connection.shaft, connection.socket) !== undefined &&
+            connectorPoliciesCompatible(
+              connection.a,
+              connection.socket,
+              connection.b,
+              connection.shaft,
+            ),
+        );
       };
     const verifyConnections = () => {
       if (!AUTO_CONNECTIONS_ENABLED) {
@@ -4591,7 +4703,11 @@ export default function Home() {
       }
       const started = performance.now();
       state.connectionScanVersion++;
-      state.connections = state.connections.filter((connection) => connection.forced);
+      // Adding a piece, pasting or refreshing the project must not rebuild
+      // already-known joints from approximate proximity. Their connector pair,
+      // special mode and exact seating are authoritative until an endpoint is
+      // actually moved or its connector map is replaced.
+      retainReusableConnections();
       state.bulkConnecting = true;
       const { sockets, shaftGrid } = buildConnectionIndex();
       sockets.forEach((socket) => scanSocketOnce(socket, shaftGrid));
@@ -4604,7 +4720,7 @@ export default function Home() {
       if (!AUTO_CONNECTIONS_ENABLED) return state.connections.length;
       const scanVersion = ++state.connectionScanVersion;
       let operationStarted = performance.now();
-      state.connections = state.connections.filter((connection) => connection.forced);
+      retainReusableConnections();
       state.bulkConnecting = true;
       const { sockets, shaftGrid } = buildConnectionIndex();
       state.pendingConnectionMs += performance.now() - operationStarted;
@@ -5084,11 +5200,18 @@ export default function Home() {
                   radial = delta.clone().addScaledVector(axis, -along).length();
                 score = radial + Math.max(0, Math.abs(along) - (shaft.length ?? 0.5) / 2);
               }
+              const specialConnection = isChangeoverForkRingConnection(
+                  host,
+                  socket,
+                  piece,
+                  shaft,
+                ),
+                rankedScore = specialConnection ? score - captureMargin * 2 : score;
               if (
-                score < captureMargin &&
-                automaticConnectorMatchIsBetter(score, orientationError, best)
+                score < (specialConnection ? 1.4 : captureMargin) &&
+                automaticConnectorMatchIsBetter(rankedScore, orientationError, best)
               )
-                best = { host, socket, shaft, score, orientationError };
+                best = { host, socket, shaft, score: rankedScore, orientationError };
             }
         if (best) {
           let targetAxis = worldConnector(best.host, best.socket).axis,
@@ -5124,6 +5247,10 @@ export default function Home() {
               ),
               targetShaftPoint = socketPoint.clone().addScaledVector(targetAxis, offset);
             piece.mesh.position.add(targetShaftPoint.sub(shaftPoint));
+          } else if (isSlidingConnector(best.socket)) {
+            const correction = socketPoint.clone().sub(shaftPoint),
+              along = correction.dot(targetAxis);
+            piece.mesh.position.addScaledVector(targetAxis, -along).add(correction);
           } else {
             const snap = nearestAxleSnapWorld(piece, best.shaft, socketPoint);
             if (snap) piece.mesh.position.add(socketPoint.clone().sub(snap.world));
@@ -5173,11 +5300,18 @@ export default function Home() {
                 radial = delta.clone().addScaledVector(axis, -along).length();
               score = radial + Math.max(0, Math.abs(along) - (shaft.length ?? 0.5) / 2);
             }
+            const specialConnection = isChangeoverForkRingConnection(
+                piece,
+                socket,
+                rod,
+                shaft,
+              ),
+              rankedScore = specialConnection ? score - captureMargin * 2 : score;
             if (
-              score < captureMargin &&
-              automaticConnectorMatchIsBetter(score, orientationError, best)
+              score < (specialConnection ? 1.4 : captureMargin) &&
+              automaticConnectorMatchIsBetter(rankedScore, orientationError, best)
             )
-              best = { rod, socket, shaft, score, orientationError };
+              best = { rod, socket, shaft, score: rankedScore, orientationError };
           }
       if (!best) return;
       let targetAxis = worldConnector(best.rod, best.shaft).axis,
@@ -5216,6 +5350,10 @@ export default function Home() {
           ),
           targetSocketPoint = shaftPoint.clone().addScaledVector(targetAxis, -offset);
         piece.mesh.position.add(targetSocketPoint.sub(socketPoint));
+      } else if (isSlidingConnector(best.socket)) {
+        const correction = shaftPoint.clone().sub(socketPoint),
+          along = correction.dot(targetAxis);
+        piece.mesh.position.addScaledVector(targetAxis, -along).add(correction);
       } else {
         const snap = nearestAxleSnapWorld(best.rod, best.shaft, socketPoint);
         if (snap) piece.mesh.position.add(snap.world.clone().sub(socketPoint));
@@ -5607,8 +5745,7 @@ export default function Home() {
           if (Math.abs(distanceDelta) > 3) return distanceDelta;
           const aIsDedicatedGuide = Boolean(a.connector.connectionTarget),
             bIsDedicatedGuide = Boolean(b.connector.connectionTarget);
-          if (aIsDedicatedGuide !== bIsDedicatedGuide)
-            return aIsDedicatedGuide ? 1 : -1;
+          if (aIsDedicatedGuide !== bIsDedicatedGuide) return aIsDedicatedGuide ? 1 : -1;
           return distanceDelta;
         })[0];
     };
@@ -6448,6 +6585,7 @@ export default function Home() {
         diameter: connector.diameter,
         length: connector.length,
         rotationOnly: connector.rotationOnly,
+        sliding: connector.sliding,
         connectionTarget: connector.connectionTarget
           ? { ...connector.connectionTarget }
           : undefined,
@@ -6741,7 +6879,10 @@ export default function Home() {
             );
           if (!piece) throw new Error(`Could not restore ${catalog.part}`);
           piece.mesh.scale.fromArray(saved.scale);
-          piece.connectors = saved.connectors.map(loadConnector);
+          piece.connectors = connectorDefaultsForPart(
+            saved.part,
+            saved.connectors.map(loadConnector),
+          );
           piece.colliders = saved.colliders.map(loadCollider);
           piece.mapProvenance = normalizeMapProvenanceSnapshot(saved.mapProvenance);
           piece.gearColliders = saved.gearColliders.map(loadCollider);
@@ -10056,8 +10197,7 @@ export default function Home() {
               motorSpeed: configured?.motorSpeed ?? connection.motorSpeed,
               motorForce: configured?.motorForce ?? connection.motorForce,
               motorPulse: configured?.motorPulse ?? connection.motorPulse,
-              motorPulseAngle:
-                configured?.motorPulseAngle ?? connection.motorPulseAngle,
+              motorPulseAngle: configured?.motorPulseAngle ?? connection.motorPulseAngle,
               motorPulseInterval:
                 configured?.motorPulseInterval ?? connection.motorPulseInterval,
               userConfigured: configured?.userConfigured ?? connection.userConfigured,
@@ -10548,10 +10688,28 @@ export default function Home() {
       if (!instances.length) continue;
       runtimeChanged = true;
       for (const piece of instances) {
-        piece.mapProvenance = { ...piece.mapProvenance,
-          ...Object.fromEntries(candidate.layers.map(layer => [layer, provenance[layer]])) };
+        piece.mapProvenance = {
+          ...piece.mapProvenance,
+          ...Object.fromEntries(
+            candidate.layers.map((layer) => [layer, provenance[layer]]),
+          ),
+        };
         if (candidate.layers.includes("connectors") && Array.isArray(bundle.connectors)) {
-          piece.connectors = bundle.connectors.map(runtimeConnectorFromStored);
+          const previousConnectors = piece.connectors,
+            replacementConnectors = bundle.connectors.map(runtimeConnectorFromStored);
+          state.connections.forEach((connection) => {
+            if (connection.a === piece) {
+              const index = previousConnectors.indexOf(connection.socket);
+              if (index >= 0 && replacementConnectors[index]?.role === "socket")
+                connection.socket = replacementConnectors[index];
+            }
+            if (connection.b === piece) {
+              const index = previousConnectors.indexOf(connection.shaft);
+              if (index >= 0 && replacementConnectors[index]?.role === "shaft")
+                connection.shaft = replacementConnectors[index];
+            }
+          });
+          piece.connectors = replacementConnectors;
           piece.mesh.userData.connectorReach = connectorMapReach(piece.connectors);
           connectorsChanged = true;
         }
@@ -11075,9 +11233,7 @@ export default function Home() {
       activeJoint.configureMotorVelocity(
         motorSpeed,
         connection.motorForce,
-        connection.motorPulse
-          ? THREE.MathUtils.degToRad(connection.motorPulseAngle)
-          : 0,
+        connection.motorPulse ? THREE.MathUtils.degToRad(connection.motorPulseAngle) : 0,
         connection.motorPulse ? connection.motorPulseInterval : 0,
       );
     setConnectionRevision((value) => value + 1);
@@ -11104,9 +11260,7 @@ export default function Home() {
       activeJoint.configureMotorVelocity(
         connection.motorSpeed,
         motorForce,
-        connection.motorPulse
-          ? THREE.MathUtils.degToRad(connection.motorPulseAngle)
-          : 0,
+        connection.motorPulse ? THREE.MathUtils.degToRad(connection.motorPulseAngle) : 0,
         connection.motorPulse ? connection.motorPulseInterval : 0,
       );
     setConnectionRevision((value) => value + 1);
@@ -11125,11 +11279,7 @@ export default function Home() {
     state.recordHistory();
     if (update.motorPulse !== undefined) connection.motorPulse = update.motorPulse;
     if (update.motorPulseAngle !== undefined)
-      connection.motorPulseAngle = THREE.MathUtils.clamp(
-        update.motorPulseAngle,
-        1,
-        360,
-      );
+      connection.motorPulseAngle = THREE.MathUtils.clamp(update.motorPulseAngle, 1, 360);
     if (update.motorPulseInterval !== undefined)
       connection.motorPulseInterval = THREE.MathUtils.clamp(
         update.motorPulseInterval,
@@ -11165,6 +11315,7 @@ export default function Home() {
       diameter: connector.diameter,
       length: connector.length,
       rotationOnly: connector.rotationOnly,
+      sliding: connector.sliding,
       connectionTarget: connector.connectionTarget
         ? { ...connector.connectionTarget }
         : undefined,
@@ -11176,6 +11327,7 @@ export default function Home() {
     connectors: MeshConnector[],
     notice: string,
     provenance: MapProvenance = { origin: "manual", source: "map-editor" },
+    preserveConnections = false,
   ) => {
     const state = appRef.current;
     if (!state || running) return;
@@ -11189,20 +11341,45 @@ export default function Home() {
           : new THREE.Vector3(1, 0, 0),
     }));
     for (const instance of state.pieces.filter((item) => item.part === piece.part)) {
+      const previousConnectors = instance.connectors,
+        replacementConnectors = normalized.map((connector) => ({
+          ...connector,
+          local: connector.local.clone(),
+          axis: connector.axis.clone(),
+        }));
+      if (preserveConnections) {
+        state.connections.forEach((connection) => {
+          if (connection.a === instance) {
+            const index = previousConnectors.indexOf(connection.socket);
+            if (index >= 0 && replacementConnectors[index]?.role === "socket")
+              connection.socket = replacementConnectors[index];
+          }
+          if (connection.b === instance) {
+            const index = previousConnectors.indexOf(connection.shaft);
+            if (index >= 0 && replacementConnectors[index]?.role === "shaft")
+              connection.shaft = replacementConnectors[index];
+          }
+        });
+      }
       instance.mapProvenance = { ...instance.mapProvenance, connectors: provenance };
-      instance.connectors = normalized.map((connector) => ({
-        ...connector,
-        local: connector.local.clone(),
-        axis: connector.axis.clone(),
-      }));
+      instance.connectors = replacementConnectors;
       instance.mesh.userData.connectorReach = connectorMapReach(instance.connectors);
       // Connector edits must not discard a reviewed collision map. Colliders
       // are maintained by the collision-map editor and may be authored
       // independently from the connector topology.
     }
-    state.connections = state.connections.filter(
-      (connection) =>
-        connection.a.part !== piece.part && connection.b.part !== piece.part,
+    state.connections = state.connections.filter((connection) =>
+      preserveConnections
+        ? connection.a.connectors.includes(connection.socket) &&
+          connection.b.connectors.includes(connection.shaft) &&
+          pairProfile(connection.socket, connection.shaft) !== undefined &&
+          connectorPoliciesCompatible(
+            connection.a,
+            connection.socket,
+            connection.b,
+            connection.shaft,
+          )
+        : connection.a.part !== piece.part && connection.b.part !== piece.part,
     );
     rebalanceAllSmartDefaults(state);
     try {
@@ -11216,7 +11393,9 @@ export default function Home() {
       );
     } catch {}
     acknowledgeManualMapEdit(correctionStorageKeyFor(piece), ["connectors"]);
-    writeMapProvenance(localStorage, correctionStorageKeyFor(piece), { connectors: provenance });
+    writeMapProvenance(localStorage, correctionStorageKeyFor(piece), {
+      connectors: provenance,
+    });
     state.debug.connectors = true;
     setDebugViews((current) => ({ ...current, connectors: true }));
     state.refreshDebug();
@@ -11270,6 +11449,8 @@ export default function Home() {
       selected,
       next,
       `Mapa ${selected.part}: reglas del conector ${index + 1} actualizadas`,
+      { origin: "manual", source: "map-editor" },
+      true,
     );
   };
 
@@ -11341,7 +11522,9 @@ export default function Home() {
     const payload = {
         format: "sim-studio-connect-map",
         version: 1,
-        mapProvenance: { connectors: normalizeMapProvenance(selected.mapProvenance?.connectors) },
+        mapProvenance: {
+          connectors: normalizeMapProvenance(selected.mapProvenance?.connectors),
+        },
         part: selected.part,
         name: selected.name,
         connectors: connectorData(selected),
@@ -11372,6 +11555,7 @@ export default function Home() {
           diameter?: number;
           length?: number;
           rotationOnly?: boolean;
+          sliding?: boolean;
           connectionTarget?: { partId?: string; connectorId?: number };
           singleConnection?: boolean;
         }) => {
@@ -11390,6 +11574,7 @@ export default function Home() {
             diameter: row.diameter ?? 0.24,
             length: row.length,
             rotationOnly: row.rotationOnly === true || undefined,
+            sliding: typeof row.sliding === "boolean" ? row.sliding : undefined,
             connectionTarget:
               row.connectionTarget && typeof row.connectionTarget.partId === "string"
                 ? {
@@ -11410,7 +11595,8 @@ export default function Home() {
         selected,
         connectors,
         `Mapa ${selected.part}: ${connectors.length} conectores importados`,
-        payload.mapProvenance?.connectors ? normalizeMapProvenance(payload.mapProvenance.connectors)
+        payload.mapProvenance?.connectors
+          ? normalizeMapProvenance(payload.mapProvenance.connectors)
           : { origin: "manual", source: "legacy-import" },
       );
     } catch (error) {
@@ -11463,8 +11649,10 @@ export default function Home() {
     state.pieces
       .filter((instance) => instance.part === piece.part)
       .forEach((instance) => {
-        instance.mapProvenance = { ...instance.mapProvenance,
-          [layer === "gear" ? "gearColliders" : "colliders"]: provenance };
+        instance.mapProvenance = {
+          ...instance.mapProvenance,
+          [layer === "gear" ? "gearColliders" : "colliders"]: provenance,
+        };
         if (layer === "gear") instance.gearColliders = normalized.map(cloneCollider);
         else instance.colliders = normalized.map(cloneCollider);
       });
@@ -11495,13 +11683,22 @@ export default function Home() {
 
   const regenerateCollisionMap = () => {
     if (!selected || running) return;
-    const colliders = selectedCollisionLayer === "gear"
-      ? approximateGearCollisionPrimitives(selected.colliders)
-      : straightAxleCollisionPrimitives(selected.name)
-        ?? approximateCollisionPrimitives(selected.mesh, selected.name, selected.connectors);
-    commitCollisionMap(selected, colliders,
+    const colliders =
+      selectedCollisionLayer === "gear"
+        ? approximateGearCollisionPrimitives(selected.colliders)
+        : (straightAxleCollisionPrimitives(selected.name) ??
+          approximateCollisionPrimitives(
+            selected.mesh,
+            selected.name,
+            selected.connectors,
+          ));
+    commitCollisionMap(
+      selected,
+      colliders,
       `Mapa ${selected.part}: ${colliders.length} colliders regenerados`,
-      selectedCollisionLayer, automaticMapProvenance());
+      selectedCollisionLayer,
+      automaticMapProvenance(),
+    );
   };
 
   const addCollider = (shape: CollisionPrimitive["shape"]) => {
@@ -11539,7 +11736,10 @@ export default function Home() {
       .filter((instance) => instance.part === selected.part)
       .forEach((instance) => {
         instance.specialGear = enabled;
-        instance.mapProvenance = { ...instance.mapProvenance, specialGear: { origin: "manual", source: "map-editor" } };
+        instance.mapProvenance = {
+          ...instance.mapProvenance,
+          specialGear: { origin: "manual", source: "map-editor" },
+        };
       });
     localStorage.setItem(
       `sim-special-gear-v1:${correctionStorageKeyFor(selected)}`,
@@ -11550,7 +11750,9 @@ export default function Home() {
       collisionMapRevision(correctionStorageKeyFor(selected)),
     );
     acknowledgeManualMapEdit(correctionStorageKeyFor(selected), ["specialGear"]);
-    writeMapProvenance(localStorage, correctionStorageKeyFor(selected), { specialGear: { origin: "manual", source: "map-editor" } });
+    writeMapProvenance(localStorage, correctionStorageKeyFor(selected), {
+      specialGear: { origin: "manual", source: "map-editor" },
+    });
     setColliderRevision((value) => value + 1);
   };
 
@@ -11828,20 +12030,26 @@ export default function Home() {
           .filter((instance) => instance.part === selected.part)
           .forEach((instance) => {
             instance.specialGear = importedSpecialGear;
-            instance.mapProvenance = { ...instance.mapProvenance, specialGear: provenance };
+            instance.mapProvenance = {
+              ...instance.mapProvenance,
+              specialGear: provenance,
+            };
           });
         localStorage.setItem(
           `sim-special-gear-v1:${correctionStorageKeyFor(selected)}`,
           String(importedSpecialGear),
         );
-        writeMapProvenance(localStorage, correctionStorageKeyFor(selected), { specialGear: provenance });
+        writeMapProvenance(localStorage, correctionStorageKeyFor(selected), {
+          specialGear: provenance,
+        });
       }
       commitCollisionMap(
         selected,
         colliders,
         `Mapa ${selected.part}: ${colliders.length} colliders importados`,
         "normal",
-        payload.mapProvenance?.colliders ? normalizeMapProvenance(payload.mapProvenance.colliders)
+        payload.mapProvenance?.colliders
+          ? normalizeMapProvenance(payload.mapProvenance.colliders)
           : { origin: "manual", source: "legacy-import" },
       );
       if (selected.gear && Array.isArray(payload.gearColliders)) {
@@ -11851,7 +12059,8 @@ export default function Home() {
           gearColliders,
           `Mapa ${selected.part}: ${colliders.length} normales y ${gearColliders.length} de engranaje importados`,
           "gear",
-          payload.mapProvenance?.gearColliders ? normalizeMapProvenance(payload.mapProvenance.gearColliders)
+          payload.mapProvenance?.gearColliders
+            ? normalizeMapProvenance(payload.mapProvenance.gearColliders)
             : { origin: "manual", source: "legacy-import" },
         );
       }
@@ -12834,7 +13043,11 @@ export default function Home() {
                       />
                     )}
                     <img
-                      className={compoundPreviewThumb[p.part] ? "compound-thumb-primary" : undefined}
+                      className={
+                        compoundPreviewThumb[p.part]
+                          ? "compound-thumb-primary"
+                          : undefined
+                      }
                       src={p.thumb}
                       alt={p.name}
                       onError={(event) => {
@@ -13801,144 +14014,139 @@ export default function Home() {
               <div className="connection-editor">
                 <label>{t.pieceJoints}</label>
                 {selectedConnections.map((connection, index) => {
-                    const other = connection.a === selected ? connection.b : connection.a;
-                    return (
-                      <div className="connection-card" key={connection.id}>
-                        <div>
-                          <b>
-                            {t.joint} {index + 1} · {other.part}
-                          </b>
-                          <span>
-                            {profileLabels[connection.profile]} ·{" "}
-                            {modeLabels[connection.mode]}
-                            {connection.forced
-                              ? ` (${t.forcedJoint} ${(connection.forcedOffset ?? 0).toFixed(2)} u)`
-                              : ""}
-                          </span>
-                        </div>
-                        <select
-                          value={connection.mode}
-                          disabled={running}
-                          onChange={(event) =>
-                            setConnectionMode(
-                              connection.id,
-                              event.target.value as JointMode,
-                            )
-                          }
-                        >
-                          {allowedModesForConnection(connection).map((mode) => (
-                            <option value={mode} key={mode}>
-                              {modeLabels[mode]}
-                            </option>
-                          ))}
-                        </select>
-                        {connection.mode === "motor" && (
-                          <>
-                            <label className="motor-label">{t.speed}</label>
-                            <div className="motor-control">
-                              <input
-                                aria-label="Velocidad del motor"
-                                type="range"
-                                min="-30"
-                                max="30"
-                                step=".5"
-                                value={connection.motorSpeed}
-                                onChange={(event) =>
-                                  setMotorSpeed(connection.id, +event.target.value)
-                                }
-                              />
-                              <b>{connection.motorSpeed.toFixed(1)} rad/s</b>
-                            </div>
-                            <label className="motor-label">{t.torque}</label>
-                            <div className="motor-control">
-                              <input
-                                aria-label="Fuerza del motor"
-                                type="range"
-                                min="5"
-                                max="10000"
-                                step="25"
-                                value={connection.motorForce}
-                                onChange={(event) =>
-                                  setMotorForce(connection.id, +event.target.value)
-                                }
-                              />
-                              <b>{connection.motorForce.toFixed(0)} N·m</b>
-                            </div>
-                            <label className="motor-pulse-toggle">
-                              <input
-                                aria-label="Activar motor por pulsos"
-                                type="checkbox"
-                                checked={connection.motorPulse}
-                                disabled={running}
-                                onChange={(event) =>
-                                  setMotorPulse(connection.id, {
-                                    motorPulse: event.target.checked,
-                                  })
-                                }
-                              />
-                              <span>
-                                {language === "es"
-                                  ? "Motor por pulsos"
-                                  : "Pulse motor"}
-                              </span>
-                            </label>
-                            {connection.motorPulse && (
-                              <>
-                                <label className="motor-label">
-                                  {language === "es"
-                                    ? "Ángulo por pulso"
-                                    : "Angle per pulse"}
-                                </label>
-                                <div className="motor-control">
-                                  <input
-                                    aria-label="Ángulo por pulso"
-                                    type="number"
-                                    min="1"
-                                    max="360"
-                                    step="1"
-                                    value={connection.motorPulseAngle}
-                                    disabled={running}
-                                    onChange={(event) =>
-                                      setMotorPulse(connection.id, {
-                                        motorPulseAngle:
-                                          Number(event.target.value) || 1,
-                                      })
-                                    }
-                                  />
-                                  <b>{connection.motorPulseAngle.toFixed(0)}°</b>
-                                </div>
-                                <label className="motor-label">
-                                  {language === "es"
-                                    ? "Tiempo entre pulsos"
-                                    : "Pulse interval"}
-                                </label>
-                                <div className="motor-control">
-                                  <input
-                                    aria-label="Tiempo entre pulsos"
-                                    type="number"
-                                    min="0.05"
-                                    max="60"
-                                    step="0.05"
-                                    value={connection.motorPulseInterval}
-                                    disabled={running}
-                                    onChange={(event) =>
-                                      setMotorPulse(connection.id, {
-                                        motorPulseInterval:
-                                          Number(event.target.value) || 0.05,
-                                      })
-                                    }
-                                  />
-                                  <b>
-                                    {connection.motorPulseInterval.toFixed(2)} s
-                                  </b>
-                                </div>
-                              </>
-                            )}
-                          </>
-                        )}
+                  const other = connection.a === selected ? connection.b : connection.a;
+                  return (
+                    <div className="connection-card" key={connection.id}>
+                      <div>
+                        <b>
+                          {t.joint} {index + 1} · {other.part}
+                        </b>
+                        <span>
+                          {profileLabels[connection.profile]} ·{" "}
+                          {modeLabels[connection.mode]}
+                          {connection.forced
+                            ? ` (${t.forcedJoint} ${(connection.forcedOffset ?? 0).toFixed(2)} u)`
+                            : ""}
+                        </span>
                       </div>
-                    );
-                  })}
+                      <select
+                        value={connection.mode}
+                        disabled={running}
+                        onChange={(event) =>
+                          setConnectionMode(
+                            connection.id,
+                            event.target.value as JointMode,
+                          )
+                        }
+                      >
+                        {allowedModesForConnection(connection).map((mode) => (
+                          <option value={mode} key={mode}>
+                            {modeLabels[mode]}
+                          </option>
+                        ))}
+                      </select>
+                      {connection.mode === "motor" && (
+                        <>
+                          <label className="motor-label">{t.speed}</label>
+                          <div className="motor-control">
+                            <input
+                              aria-label="Velocidad del motor"
+                              type="range"
+                              min="-30"
+                              max="30"
+                              step=".5"
+                              value={connection.motorSpeed}
+                              onChange={(event) =>
+                                setMotorSpeed(connection.id, +event.target.value)
+                              }
+                            />
+                            <b>{connection.motorSpeed.toFixed(1)} rad/s</b>
+                          </div>
+                          <label className="motor-label">{t.torque}</label>
+                          <div className="motor-control">
+                            <input
+                              aria-label="Fuerza del motor"
+                              type="range"
+                              min="5"
+                              max="10000"
+                              step="25"
+                              value={connection.motorForce}
+                              onChange={(event) =>
+                                setMotorForce(connection.id, +event.target.value)
+                              }
+                            />
+                            <b>{connection.motorForce.toFixed(0)} N·m</b>
+                          </div>
+                          <label className="motor-pulse-toggle">
+                            <input
+                              aria-label="Activar motor por pulsos"
+                              type="checkbox"
+                              checked={connection.motorPulse}
+                              disabled={running}
+                              onChange={(event) =>
+                                setMotorPulse(connection.id, {
+                                  motorPulse: event.target.checked,
+                                })
+                              }
+                            />
+                            <span>
+                              {language === "es" ? "Motor por pulsos" : "Pulse motor"}
+                            </span>
+                          </label>
+                          {connection.motorPulse && (
+                            <>
+                              <label className="motor-label">
+                                {language === "es"
+                                  ? "Ángulo por pulso"
+                                  : "Angle per pulse"}
+                              </label>
+                              <div className="motor-control">
+                                <input
+                                  aria-label="Ángulo por pulso"
+                                  type="number"
+                                  min="1"
+                                  max="360"
+                                  step="1"
+                                  value={connection.motorPulseAngle}
+                                  disabled={running}
+                                  onChange={(event) =>
+                                    setMotorPulse(connection.id, {
+                                      motorPulseAngle: Number(event.target.value) || 1,
+                                    })
+                                  }
+                                />
+                                <b>{connection.motorPulseAngle.toFixed(0)}°</b>
+                              </div>
+                              <label className="motor-label">
+                                {language === "es"
+                                  ? "Tiempo entre pulsos"
+                                  : "Pulse interval"}
+                              </label>
+                              <div className="motor-control">
+                                <input
+                                  aria-label="Tiempo entre pulsos"
+                                  type="number"
+                                  min="0.05"
+                                  max="60"
+                                  step="0.05"
+                                  value={connection.motorPulseInterval}
+                                  disabled={running}
+                                  onChange={(event) =>
+                                    setMotorPulse(connection.id, {
+                                      motorPulseInterval:
+                                        Number(event.target.value) || 0.05,
+                                    })
+                                  }
+                                />
+                                <b>{connection.motorPulseInterval.toFixed(2)} s</b>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
                 {selectedGearboxSelectorPairs.map(({ ring, selector, layout }) => {
                   const other = selected === ring ? selector : ring;
                   return (
@@ -13981,10 +14189,20 @@ export default function Home() {
             </button>
             {connectionMapOpen && (
               <div className="map-editor">
-                <div className="data-row"><span>{language === "es" ? "Origen" : "Origin"}</span>
-                  <b>{selected.mapProvenance?.connectors?.origin === "manual" ? "Manual"
-                    : selected.mapProvenance?.connectors?.origin === "automatic" ? (language === "es" ? "Automático" : "Automatic")
-                    : (language === "es" ? "Desconocido" : "Unknown")}</b></div>
+                <div className="data-row">
+                  <span>{language === "es" ? "Origen" : "Origin"}</span>
+                  <b>
+                    {selected.mapProvenance?.connectors?.origin === "manual"
+                      ? "Manual"
+                      : selected.mapProvenance?.connectors?.origin === "automatic"
+                        ? language === "es"
+                          ? "Automático"
+                          : "Automatic"
+                        : language === "es"
+                          ? "Desconocido"
+                          : "Unknown"}
+                  </b>
+                </div>
                 <p>{t.mapHelp}</p>
                 <div className="map-actions">
                   <button onClick={addConnector}>{t.addPoint}</button>
@@ -14113,6 +14331,21 @@ export default function Home() {
                     <label className="property-check">
                       <input
                         type="checkbox"
+                        checked={connector.sliding === true}
+                        disabled={connector.kind !== "axle"}
+                        onChange={(event) =>
+                          updateConnectorPolicy(index, (next) => {
+                            next.sliding = event.target.checked;
+                          })
+                        }
+                      />
+                      {language === "es"
+                        ? "Deslizamiento por defecto"
+                        : "Slide by default"}
+                    </label>
+                    <label className="property-check">
+                      <input
+                        type="checkbox"
                         checked={connector.connectionTarget !== undefined}
                         onChange={(event) =>
                           updateConnectorPolicy(index, (next) => {
@@ -14211,10 +14444,26 @@ export default function Home() {
             </button>
             {collisionMapOpen && (
               <div className="map-editor collision-map-editor">
-                <div className="data-row"><span>{language === "es" ? "Origen" : "Origin"}</span>
-                  <b>{selected.mapProvenance?.[selectedCollisionLayer === "gear" ? "gearColliders" : "colliders"]?.origin === "manual" ? "Manual"
-                    : selected.mapProvenance?.[selectedCollisionLayer === "gear" ? "gearColliders" : "colliders"]?.origin === "automatic" ? (language === "es" ? "Automático" : "Automatic")
-                    : (language === "es" ? "Desconocido" : "Unknown")}</b></div>
+                <div className="data-row">
+                  <span>{language === "es" ? "Origen" : "Origin"}</span>
+                  <b>
+                    {selected.mapProvenance?.[
+                      selectedCollisionLayer === "gear" ? "gearColliders" : "colliders"
+                    ]?.origin === "manual"
+                      ? "Manual"
+                      : selected.mapProvenance?.[
+                            selectedCollisionLayer === "gear"
+                              ? "gearColliders"
+                              : "colliders"
+                          ]?.origin === "automatic"
+                        ? language === "es"
+                          ? "Automático"
+                          : "Automatic"
+                        : language === "es"
+                          ? "Desconocido"
+                          : "Unknown"}
+                  </b>
+                </div>
                 <p>{t.collisionMapHelp}</p>
                 {selected.gear && (
                   <>

@@ -6,6 +6,7 @@ export type StoredConnector = {
   diameter: number;
   length?: number;
   rotationOnly?: boolean;
+  sliding?: boolean;
   connectionTarget?: {
     partId: string;
     connectorId?: number;
@@ -8284,14 +8285,16 @@ export const preloadedConnectionMaps: Record<string, StoredConnector[]> = {
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "socket",
-      "diameter": 0.6
+      "diameter": 0.6,
+      "sliding": true
     },
     {
       "local": [1, 0, 0],
       "axis": [0, 0, 1],
       "kind": "axle",
       "role": "socket",
-      "diameter": 0.6
+      "diameter": 0.6,
+      "sliding": true
     },
     {
       "local": [1, 2, 0],

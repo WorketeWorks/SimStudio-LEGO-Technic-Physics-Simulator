@@ -9,6 +9,8 @@ export type MeshConnector = {
   length?: number;
   /** Axle stud that snaps at one point and permits rotation but no travel. */
   rotationOnly?: boolean;
+  /** Keeps this axle connection free to slide unless the user selects another mode. */
+  sliding?: boolean;
   /** Optional allow-list entry. Connector ids are one-based, as shown in the editor. */
   connectionTarget?: {
     partId: string;
@@ -91,13 +93,20 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
   surface.updateMatrixWorld(true);
   const ray = new THREE.Raycaster();
   const profile = (center: THREE.Vector3, axis: THREE.Vector3) => {
-    const u = new THREE.Vector3(Math.abs(axis.x) < 0.8 ? 1 : 0, Math.abs(axis.x) < 0.8 ? 0 : 1, 0);
+    const u = new THREE.Vector3(
+      Math.abs(axis.x) < 0.8 ? 1 : 0,
+      Math.abs(axis.x) < 0.8 ? 0 : 1,
+      0,
+    );
     u.addScaledVector(axis, -u.dot(axis)).normalize();
     const v = new THREE.Vector3().crossVectors(axis, u);
     const radii: number[] = [];
     for (let i = 0; i < 16; i++) {
-      const angle = i * Math.PI / 8;
-      ray.set(center, u.clone().multiplyScalar(Math.cos(angle)).addScaledVector(v, Math.sin(angle)));
+      const angle = (i * Math.PI) / 8;
+      ray.set(
+        center,
+        u.clone().multiplyScalar(Math.cos(angle)).addScaledVector(v, Math.sin(angle)),
+      );
       ray.near = 0.001;
       ray.far = 0.46;
       const hit = ray.intersectObject(surface, false)[0];
@@ -107,11 +116,14 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
     // A ray exactly on a triangulation seam may miss one wall. Require
     // coverage around the opening, with a small allowance for those seams.
     if (radii.length < 14) return undefined;
-    const minimum = Math.min(...radii), maximum = Math.max(...radii);
+    const minimum = Math.min(...radii),
+      maximum = Math.max(...radii);
     // Classify the opening, not its nominal diameter. Small circular bores
     // are common in frames and panels and are not cross-axle sockets.
-    return { kind: (minimum / maximum < 0.78 ? "axle" : "round") as MeshConnector["kind"],
-      diameter: maximum * 2 };
+    return {
+      kind: (minimum / maximum < 0.78 ? "axle" : "round") as MeshConnector["kind"],
+      diameter: maximum * 2,
+    };
   };
   try {
     return detectAxisAlignedHoles(root, profile);
@@ -123,7 +135,10 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
 
 function detectAxisAlignedHoles(
   root: THREE.Object3D,
-  profile: (center: THREE.Vector3, axis: THREE.Vector3) => { kind: MeshConnector["kind"]; diameter: number } | undefined,
+  profile: (
+    center: THREE.Vector3,
+    axis: THREE.Vector3,
+  ) => { kind: MeshConnector["kind"]; diameter: number } | undefined,
 ): MeshConnector[] {
   root.updateMatrixWorld(true);
   const inverse = root.matrixWorld.clone().invert(),
@@ -250,9 +265,7 @@ function detectAxisAlignedHoles(
         ),
         diameter = (a.du + a.dv + b.du + b.dv) / 4,
         kind: MeshConnector["kind"] =
-          Math.min(a.radialRatio, b.radialRatio) < 0.78
-            ? "axle"
-            : "round";
+          Math.min(a.radialRatio, b.radialRatio) < 0.78 ? "axle" : "round";
       const start = center.clone(),
         end = center.clone(),
         margin = 0.08;
@@ -277,7 +290,14 @@ function detectAxisAlignedHoles(
           (c) => c.local.distanceTo(center) < 0.12 && Math.abs(c.axis.dot(axis)) > 0.9,
         )
       )
-        result.push({ local: center, axis, kind, role: "socket", diameter, length: depth });
+        result.push({
+          local: center,
+          axis,
+          kind,
+          role: "socket",
+          diameter,
+          length: depth,
+        });
     }
   // Cross holes placed at the end of a beam often share edges with the outer
   // silhouette, so the line-loop pass above cannot close their contour. Probe
@@ -342,9 +362,14 @@ function detectAxisAlignedHoles(
           if (existing) {
             Object.assign(existing, measured, { length: dimensions[axisIndex] });
             existing.local.copy(center);
-          }
-          else result.push({ local: center, axis: axis.clone(), ...measured,
-            role: "socket", length: dimensions[axisIndex] });
+          } else
+            result.push({
+              local: center,
+              axis: axis.clone(),
+              ...measured,
+              role: "socket",
+              length: dimensions[axisIndex],
+            });
           continue;
         }
         let surroundingMaterial = 0,
@@ -445,19 +470,38 @@ export function hybridAxlePinConnectors(root: THREE.Object3D): MeshConnector[] {
   ];
 }
 
-export function generatePartConnectors(root: THREE.Object3D, name: string): MeshConnector[] {
+export function generatePartConnectors(
+  root: THREE.Object3D,
+  name: string,
+): MeshConnector[] {
   const template = straightAxleConnectors(name);
   if (template) return template;
   const sockets = detectConnectorHoles(root);
   const pin = /^Technic (Axle )?Pin(?! Connector| Joiner| Hole)/i.test(name);
   const axle = /^Technic Axle\s+\d/i.test(name);
-  const shafts = pin ? (/^Technic Axle Pin/i.test(name)
-    ? hybridAxlePinConnectors(root) : rodConnectors(root, "round"))
-    : axle ? rodConnectors(root, "axle") : [];
-  const connectors = [...shafts, ...sockets.filter(socket => !shafts.some(shaft =>
-    shaft.local.distanceTo(socket.local) < 0.12 && Math.abs(shaft.axis.dot(socket.axis)) > 0.98))];
-  const half = /^Technic (Beam|Panel)/i.test(name) && /(?:\bx\s*0\.5\b|\bhalf\b)/i.test(name);
-  return connectors.map(c => half && c.kind === "round" && c.role === "socket" ? { ...c, kind: "half" } : c);
+  const shafts = pin
+    ? /^Technic Axle Pin/i.test(name)
+      ? hybridAxlePinConnectors(root)
+      : rodConnectors(root, "round")
+    : axle
+      ? rodConnectors(root, "axle")
+      : [];
+  const connectors = [
+    ...shafts,
+    ...sockets.filter(
+      (socket) =>
+        !shafts.some(
+          (shaft) =>
+            shaft.local.distanceTo(socket.local) < 0.12 &&
+            Math.abs(shaft.axis.dot(socket.axis)) > 0.98,
+        ),
+    ),
+  ];
+  const half =
+    /^Technic (Beam|Panel)/i.test(name) && /(?:\bx\s*0\.5\b|\bhalf\b)/i.test(name);
+  return connectors.map((c) =>
+    half && c.kind === "round" && c.role === "socket" ? { ...c, kind: "half" } : c,
+  );
 }
 
 export type CollisionPrimitive = {
@@ -561,38 +605,81 @@ export function approximateCollisionPrimitives(
   longAxis.setComponent(axisIndex, 1);
   // Solid outer envelopes: connection bores belong to the connector map, not
   // to the simplified contact geometry.
-  if (/^Technic Beam \d+(?: x 0\.5)?(?: Liftarm)?(?: with Axle Holes| Alternating Holes)?$/i.test(name)
-      && !/^Technic Beam 1(?:\s|$)/i.test(name)) {
-    const transverse = [0, 1, 2].filter(index => index !== axisIndex),
-      depthAxisIndex = transverse.reduce((a, b) => Math.abs(dimensions[a] - beamThickness) <= Math.abs(dimensions[b] - beamThickness) ? a : b),
+  if (
+    /^Technic Beam \d+(?: x 0\.5)?(?: Liftarm)?(?: with Axle Holes| Alternating Holes)?$/i.test(
+      name,
+    ) &&
+    !/^Technic Beam 1(?:\s|$)/i.test(name)
+  ) {
+    const transverse = [0, 1, 2].filter((index) => index !== axisIndex),
+      depthAxisIndex = transverse.reduce((a, b) =>
+        Math.abs(dimensions[a] - beamThickness) <= Math.abs(dimensions[b] - beamThickness)
+          ? a
+          : b,
+      ),
       depthAxis = new THREE.Vector3().setComponent(depthAxisIndex, 1),
       widthAxis = new THREE.Vector3().crossVectors(longAxis, depthAxis).normalize(),
-      width = dimensions[transverse.find(index => index !== depthAxisIndex)!],
+      width = dimensions[transverse.find((index) => index !== depthAxisIndex)!],
       radius = Math.min(0.45, width / 2),
       span = Math.max(0, dimensions[axisIndex] - width),
       depth = Math.min(beamThickness, dimensions[depthAxisIndex]),
-      capRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), depthAxis);
-    if (span < 0.05) return [{ shape: "cylinder", center, radius, halfHeight: depth / 2, rotation: capRotation }];
+      capRotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        depthAxis,
+      );
+    if (span < 0.05)
+      return [
+        {
+          shape: "cylinder",
+          center,
+          radius,
+          halfHeight: depth / 2,
+          rotation: capRotation,
+        },
+      ];
     return [
-      { shape: "box", center, size: new THREE.Vector3(span, depth, radius * 2),
-        rotation: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(longAxis, depthAxis, widthAxis)) },
-      ...[-1, 1].map(sign => ({ shape: "cylinder" as const,
-        center: center.clone().addScaledVector(longAxis, sign * span / 2),
-        radius, halfHeight: depth / 2, rotation: capRotation.clone() })),
+      {
+        shape: "box",
+        center,
+        size: new THREE.Vector3(span, depth, radius * 2),
+        rotation: new THREE.Quaternion().setFromRotationMatrix(
+          new THREE.Matrix4().makeBasis(longAxis, depthAxis, widthAxis),
+        ),
+      },
+      ...[-1, 1].map((sign) => ({
+        shape: "cylinder" as const,
+        center: center.clone().addScaledVector(longAxis, (sign * span) / 2),
+        radius,
+        halfHeight: depth / 2,
+        rotation: capRotation.clone(),
+      })),
     ];
   }
-  if (/^Technic Panel/i.test(name)) return [{
-    shape: "box", center, size: size.clone().multiplyScalar(0.95), rotation: new THREE.Quaternion(),
-  }];
-  const shellSockets = connectors.filter(c => c.role === "socket" && c.axis.lengthSq() > 0.5);
-  if (/^Technic (?:Axle(?: and Pin)?|Pin) (?:Connector|Joiner)/i.test(name)
-      && shellSockets.length >= 2 && shellSockets.length <= 4
-      && shellSockets.some(c => Math.abs(c.axis.dot(shellSockets[0].axis)) < 0.95)) {
-    return shellSockets.map(socket => {
+  if (/^Technic Panel/i.test(name))
+    return [
+      {
+        shape: "box",
+        center,
+        size: size.clone().multiplyScalar(0.95),
+        rotation: new THREE.Quaternion(),
+      },
+    ];
+  const shellSockets = connectors.filter(
+    (c) => c.role === "socket" && c.axis.lengthSq() > 0.5,
+  );
+  if (
+    /^Technic (?:Axle(?: and Pin)?|Pin) (?:Connector|Joiner)/i.test(name) &&
+    shellSockets.length >= 2 &&
+    shellSockets.length <= 4 &&
+    shellSockets.some((c) => Math.abs(c.axis.dot(shellSockets[0].axis)) < 0.95)
+  ) {
+    return shellSockets.map((socket) => {
       const axis = socket.axis.clone().normalize();
-      let minimum = -(socket.length ?? 1) / 2, maximum = -minimum;
+      let minimum = -(socket.length ?? 1) / 2,
+        maximum = -minimum;
       for (const other of shellSockets) {
-        const otherAxis = other.axis.clone().normalize(), dot = axis.dot(otherAxis);
+        const otherAxis = other.axis.clone().normalize(),
+          dot = axis.dot(otherAxis);
         if (Math.abs(dot) > 0.95) continue;
         const delta = other.local.clone().sub(socket.local),
           along = (delta.dot(axis) - dot * delta.dot(otherAxis)) / (1 - dot * dot),
@@ -603,10 +690,16 @@ export function approximateCollisionPrimitives(
           maximum = Math.max(maximum, along);
         }
       }
-      return { shape: "cylinder" as const,
+      return {
+        shape: "cylinder" as const,
         center: socket.local.clone().addScaledVector(axis, (minimum + maximum) / 2),
-        radius: 0.45, halfHeight: (maximum - minimum) / 2,
-        rotation: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis) };
+        radius: 0.45,
+        halfHeight: (maximum - minimum) / 2,
+        rotation: new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          axis,
+        ),
+      };
     });
   }
   if (/^Technic (Axle|Pin)/i.test(name)) {
@@ -671,7 +764,8 @@ export function approximateCollisionPrimitives(
             }))
             .filter((item) => item.distance < 0.16)
             .map((item) => item.index);
-        if (indices.length < 2 || Math.abs(direction.dot(sockets[i].axis)) > 0.95) continue;
+        if (indices.length < 2 || Math.abs(direction.dot(sockets[i].axis)) > 0.95)
+          continue;
         const key = indices
           .slice()
           .sort((a, b) => a - b)
@@ -824,7 +918,6 @@ export function approximateCollisionPrimitives(
     },
   ];
 }
-
 
 /** Secondary volume used only for gear-to-gear contacts. */
 export function approximateGearCollisionPrimitives(

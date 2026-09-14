@@ -2611,7 +2611,8 @@
           ],
           "kind": "axle",
           "role": "socket",
-          "diameter": 0.6000000000000001
+          "diameter": 0.6000000000000001,
+          "sliding": true
         },
         {
           "local": [
@@ -2626,7 +2627,8 @@
           ],
           "kind": "axle",
           "role": "socket",
-          "diameter": 0.6000000000000001
+          "diameter": 0.6000000000000001,
+          "sliding": true
         },
         {
           "local": [

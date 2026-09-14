@@ -15,7 +15,13 @@ const javascript = ts.transpileModule(source, {
 const module = { exports: {} };
 vm.runInNewContext(
   `(function(require,exports,module){${javascript}\n})(require,module.exports,module);`,
-  { require: (name) => name === "./map-provenance" ? provenance : require(name), module, Uint8Array, ArrayBuffer, indexedDB: undefined },
+  {
+    require: (name) => (name === "./map-provenance" ? provenance : require(name)),
+    module,
+    Uint8Array,
+    ArrayBuffer,
+    indexedDB: undefined,
+  },
 );
 const {
   decodeProjectFile,
@@ -86,6 +92,7 @@ test("repairs non-finite recovery data before it reaches physics", () => {
             kind: "round",
             role: "socket",
             diameter: Number.NaN,
+            sliding: false,
           },
         ],
         colliders: [
@@ -120,15 +127,15 @@ test("repairs non-finite recovery data before it reaches physics", () => {
   assert.deepEqual(Array.from(repaired.pieces[0].rotation), [0, 0, 0, 1]);
   assert.deepEqual(Array.from(repaired.pieces[0].scale), [1, 1, 1]);
   assert.deepEqual(Array.from(repaired.pieces[0].connectors[0].axis), [0, 1, 0]);
+  assert.equal(repaired.pieces[0].connectors[0].sliding, false);
   assert.equal(repaired.pieces[0].colliders[0].halfHeight, 0.01);
   assert.equal(repaired.connections.length, 0);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(repaired.settings.physics)),
-    { axleTolerance: 0.02 },
-  );
+  assert.deepEqual(JSON.parse(JSON.stringify(repaired.settings.physics)), {
+    axleTolerance: 0.02,
+  });
   assert.equal(repaired.settings.structuralStiffness, 85);
 });
 
 test("sanitizes the project download name", () => {
-  assert.equal(safeProjectFileName('Drive: 8/20 * demo'), "Drive- 8-20 - demo.simstudio");
+  assert.equal(safeProjectFileName("Drive: 8/20 * demo"), "Drive- 8-20 - demo.simstudio");
 });
