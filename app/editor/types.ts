@@ -1,3 +1,4 @@
+import type { RestPose } from "../animation-runtime";
 /**
  * Shared runtime types for the editor.
  *
@@ -15,6 +16,7 @@ import type {
   RustPhysicsRuntime,
 } from "../physics/rust-runtime";
 import type { JsonObject, SimStudioProjectDocument } from "../project-format";
+import type { AnimationDoc, GroupDef } from "../animation";
 
 export type PieceKind = "beam" | "wheel" | "motor";
 
@@ -70,6 +72,8 @@ export type Piece = CatalogPart & {
   /** Components that move/select together in the editor but remain separate physics bodies. */
   editorAssemblyId?: string;
   editorAssemblyDetached?: boolean;
+  /** User group: parts sharing an id select, move and animate together. */
+  groupId?: string;
   /** Centre connector (0/1) whose end is the Cardan editor's input/reference. */
   editorCardanReferenceConnector?: 0 | 1;
   rotationPivotLocal?: THREE.Vector3;
@@ -86,6 +90,8 @@ export type Piece = CatalogPart & {
   physicsIsland?: Piece[];
   physicsIslandFixed?: boolean;
   renderBatched?: boolean;
+  /** Kept out of instanced batches (a sub-part of it is animated on its own). */
+  noBatch?: boolean;
 };
 
 export type EditorPieceSnapshot = {
@@ -100,6 +106,7 @@ export type EditorPieceSnapshot = {
   dynamicAxleConnections: boolean;
   editorAssemblyId?: string;
   editorAssemblyDetached?: boolean;
+  groupId?: string;
   editorCardanReferenceConnector?: 0 | 1;
   rotationPivotLocal?: THREE.Vector3;
   rotationPivotKey?: string;
@@ -118,6 +125,8 @@ export type EditorSnapshot = {
   connectionModes: AppState["connectionModes"];
   selected?: Piece;
   selectedPieces?: Piece[];
+  groups?: GroupDef[];
+  animation?: AnimationDoc;
 };
 
 export type RenderBatchItem = {
@@ -348,6 +357,10 @@ export type AppState = {
   axleSnapStep: AxleSnapStep;
   rotationSnapStep: RotationSnapStep;
   pieces: Piece[];
+  /** User groups (parts that move and animate together). */
+  groups: GroupDef[];
+  /** Keyframe animation of groups and parts. */
+  animation: AnimationDoc;
   selected?: Piece;
   selectedPieces: Set<Piece>;
   running: boolean;
@@ -409,6 +422,21 @@ export type AppState = {
   ) => Promise<Piece | null>;
   preloadPart: (part: CatalogPart) => Promise<void>;
   recolorPart: (piece: Piece, color: number) => Promise<boolean>;
+  /** Clears LDraw caches and re-downloads the model of the given pieces. */
+  forceReloadParts: (pieces: Piece[]) => Promise<number>;
+  /** Animation preview: poses every piece at `time` (rest pose captured on first call). */
+  previewRest: Map<Piece, RestPose> | null;
+  previewTime: number;
+  /** One-shot hook called right after the next frame is drawn (video/GIF capture). */
+  setExportSize?: (size: { w: number; h: number } | null) => void;
+  afterRender?: (canvas: HTMLCanvasElement) => void;
+  setPreviewTime: (time: number) => void;
+  /** Restores the rest pose; returns true if a preview was active. */
+  endPreview: () => boolean;
+  runAtRest: <T>(task: () => Promise<T> | T) => Promise<T>;
+  /** Rebuilds parts from LDraw with fresh connectors and ids, optionally as another part number. */
+  replacePieces: (pieces: Piece[], to?: CatalogPart) => Promise<{ count: number }>;
+  fixModel: (options: { rebuild: boolean; realign: boolean; motors: boolean }) => Promise<FixReport>;
   renderImportPreview: (parts: PreparedImportPlacement[]) => Promise<string>;
   verifyConnections: () => number;
   verifyConnectionsAsync: () => Promise<number>;
@@ -446,4 +474,14 @@ export type AppState = {
   simLog?: SimulationLog;
   nextLogSample?: number;
   simStartedMs?: number;
+};
+
+export type FixReport = {
+  rebuilt: number;
+  rotationsSnapped: number;
+  realigned: number;
+  connections: number;
+  motorsConverted: number;
+  motorsSkipped: number;
+  groupsPruned: number;
 };

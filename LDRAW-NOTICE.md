@@ -1,6 +1,6 @@
 # LDraw Parts Library notice
 
-Sim Studio includes and transforms material from **The LDraw Parts Library**.
+BrickReel includes and transforms material from **The LDraw Parts Library**.
 
 - Source and attribution: [LDraw.org](https://www.ldraw.org/)
 - LDraw legal information and Parts Library Agreement: <https://www.ldraw.org/legal-info>
@@ -9,7 +9,7 @@ Sim Studio includes and transforms material from **The LDraw Parts Library**.
 
 The original LDraw files are stored under `public/ldraw/`. Their original description, author, history, copyright and `!LICENSE` notices have been retained. The license stated in each individual file controls that file.
 
-Files under `public/catalog/geometry/`, connection maps in the generated manifest, and collider descriptions are conversions or derivative data produced by Sim Studio from the corresponding LDraw files. Sim Studio changes the representation by parsing the LDraw commands into Three.js geometry, applying runtime scale/coordinate conventions, detecting connection points, and approximating physics collision shapes.
+Files under `public/catalog/geometry/`, connection maps in the generated manifest, and collider descriptions are conversions or derivative data produced by BrickReel from the corresponding LDraw files. BrickReel changes the representation by parsing the LDraw commands into Three.js geometry, applying runtime scale/coordinate conventions, detecting connection points, and approximating physics collision shapes.
 
 Attribution is given to **The LDraw Parts Library**, which LDraw.org states is sufficient for derivative works in place of listing every contributing author. No endorsement by LDraw.org or the original part authors is implied.
 

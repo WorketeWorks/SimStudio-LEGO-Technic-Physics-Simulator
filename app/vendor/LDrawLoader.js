@@ -514,6 +514,12 @@ class LineParser {
 }
 
 // Fetches and parses an intermediate representation of LDraw parts files.
+const globalLDrawTextCache = new Map();
+// Cache keys of sub-files that a given library could not provide.
+const globalLDrawMissCache = new Set();
+// Full URLs already known to be 404, so they are never requested twice.
+const globalLDrawBadUrls = new Set();
+
 class LDrawParsedCache {
 
 	constructor( loader ) {
@@ -579,78 +585,111 @@ class LDrawParsedCache {
 
 	async fetchData( fileName ) {
 
-		let triedLowerCase = false;
-		let locationState = FILE_LOCATION_TRY_PARTS;
-		while ( locationState !== FILE_LOCATION_NOT_FOUND ) {
+		fileName = ( fileName || '' ).replace( /\\/g, '/' ).trim();
+		const lowerName = fileName.toLowerCase();
+		// The cache is per parts library: a sub-file that one library lacks (and
+		// answers with an empty fallback) must not hide the real file in another.
+		const cacheKey = ( this.loader.partsLibraryPath || '' ) + '|' + lowerName;
+		if ( globalLDrawTextCache.has( cacheKey ) ) {
+			if ( globalLDrawMissCache.has( cacheKey ) && this.loader.missingFiles ) this.loader.missingFiles.add( lowerName );
+			return globalLDrawTextCache.get( cacheKey );
+		}
 
-			let subobjectURL = fileName;
-			switch ( locationState ) {
+		const loader = this.loader;
+		const fileLoader = new FileLoader( loader.manager );
+		fileLoader.setPath( loader.partsLibraryPath );
+		fileLoader.setRequestHeader( loader.requestHeader );
+		fileLoader.setWithCredentials( loader.withCredentials );
 
-				case FILE_LOCATION_AS_IS:
-					locationState = locationState + 1;
-					break;
+		// Check fileMap first for ultra-fast 1-shot loading
+		const mapped = loader.fileMap && (
+			loader.fileMap[ fileName ] ||
+			loader.fileMap[ lowerName ] ||
+			loader.fileMap[ lowerName + '.dat' ] ||
+			loader.fileMap[ 'parts/' + lowerName ] ||
+			loader.fileMap[ 'p/' + lowerName ]
+		);
 
-				case FILE_LOCATION_TRY_PARTS:
-					subobjectURL = 'parts/' + subobjectURL;
-					locationState = locationState + 1;
-					break;
+		if ( mapped ) {
+			try {
+				const text = await fileLoader.loadAsync( mapped );
+				globalLDrawTextCache.set( cacheKey, text );
+				return text;
+			} catch ( _ ) {}
+		}
 
-				case FILE_LOCATION_TRY_P:
-					subobjectURL = 'p/' + subobjectURL;
-					locationState = locationState + 1;
-					break;
+		// Instant Spike alias resolution
+		if ( lowerName === 'sg1' || lowerName === 'sg1.dat' || lowerName === 's/sg1.dat' || lowerName === 's/sg1' ) {
+			try {
+				const text = await fileLoader.loadAsync( 'parts/68488.dat' );
+				globalLDrawTextCache.set( cacheKey, text );
+				return text;
+			} catch ( _ ) {}
+		}
+		if ( lowerName === '68487' || lowerName === '68487.dat' ) {
+			try {
+				const text = await fileLoader.loadAsync( 'parts/54676.dat' );
+				globalLDrawTextCache.set( cacheKey, text );
+				return text;
+			} catch ( _ ) {}
+		}
 
-				case FILE_LOCATION_TRY_MODELS:
-					subobjectURL = 'models/' + subobjectURL;
-					locationState = locationState + 1;
-					break;
 
-				case FILE_LOCATION_TRY_RELATIVE:
-					subobjectURL = fileName.substring( 0, fileName.lastIndexOf( '/' ) + 1 ) + subobjectURL;
-					locationState = locationState + 1;
-					break;
+		// Go straight to the right folder instead of trying every combination:
+		// each wrong guess is a real 404 request. Hi-res primitives ("48/x.dat")
+		// live in p/48, sub-parts ("s/x.dat") in parts/s.
+		const lowerFile = fileName.toLowerCase();
+		let urls;
+		if ( /^(48|8)\//.test( lowerFile ) ) urls = [ 'p/' + lowerFile ];
+		else if ( /^s\//.test( lowerFile ) ) urls = [ 'parts/' + lowerFile ];
+		else if ( /^(parts|p|models)\//.test( lowerFile ) ) urls = [ lowerFile ];
+		else {
 
-				case FILE_LOCATION_TRY_ABSOLUTE:
+			urls = [ 'parts/' + fileName, 'p/' + fileName, 'models/' + fileName, fileName ];
+			if ( lowerFile !== fileName ) urls.push( 'parts/' + lowerFile, 'p/' + lowerFile, 'models/' + lowerFile, lowerFile );
 
-					if ( triedLowerCase ) {
+		}
 
-						// Try absolute path
-						locationState = FILE_LOCATION_NOT_FOUND;
+		// Own library first, then every fallback library: a part can live in one
+		// library while its newer sub-parts only exist in another.
+		const bases = [ loader.partsLibraryPath, ...( loader.fallbackLibraries || [] ).filter( base => base !== loader.partsLibraryPath ) ];
+		for ( const base of bases ) {
 
-					} else {
+			const baseLoader = base === loader.partsLibraryPath ? fileLoader : new FileLoader( loader.manager );
+			if ( baseLoader !== fileLoader ) {
 
-						// Next attempt is lower case
-						fileName = fileName.toLowerCase();
-						subobjectURL = fileName;
-						triedLowerCase = true;
-						locationState = FILE_LOCATION_TRY_PARTS;
-
-					}
-
-					break;
+				baseLoader.setPath( base );
+				baseLoader.setRequestHeader( loader.requestHeader );
+				baseLoader.setWithCredentials( loader.withCredentials );
 
 			}
 
-			const loader = this.loader;
-			const fileLoader = new FileLoader( loader.manager );
-			fileLoader.setPath( loader.partsLibraryPath );
-			fileLoader.setRequestHeader( loader.requestHeader );
-			fileLoader.setWithCredentials( loader.withCredentials );
+			for ( const subobjectURL of urls ) {
 
-			try {
+				const fullUrl = base + subobjectURL;
+				if ( globalLDrawBadUrls.has( fullUrl ) ) continue;
+				try {
 
-				const text = await fileLoader.loadAsync( subobjectURL );
-				return text;
+					const text = await baseLoader.loadAsync( subobjectURL );
+					globalLDrawTextCache.set( cacheKey, text );
+					return text;
 
-			} catch ( _ ) {
+				} catch ( _ ) {
 
-				continue;
+					globalLDrawBadUrls.add( fullUrl );
+
+				}
 
 			}
 
 		}
 
-		throw new Error( 'THREE.LDrawLoader: Subobject "' + fileName + '" could not be loaded.' );
+		// Graceful fallback for missing subobjects so models never fail to render
+		const fallbackText = '0 // Fallback for ' + fileName + '\n';
+		globalLDrawTextCache.set( cacheKey, fallbackText );
+		globalLDrawMissCache.add( cacheKey );
+		if ( this.loader.missingFiles ) this.loader.missingFiles.add( lowerName );
+		return fallbackText;
 
 	}
 
@@ -919,12 +958,18 @@ class LDrawParsedCache {
 					);
 
 					let fileName = lp.getRemainingString().trim().replace( /\\/g, '/' );
+					const lower = fileName.toLowerCase();
 
 					if ( loader.fileMap[ fileName ] ) {
-
-						// Found the subobject path in the preloaded file path map
 						fileName = loader.fileMap[ fileName ];
-
+					} else if ( loader.fileMap[ lower ] ) {
+						fileName = loader.fileMap[ lower ];
+					} else if ( loader.fileMap[ lower + '.dat' ] ) {
+						fileName = loader.fileMap[ lower + '.dat' ];
+					} else if ( lower === 'sg1' || lower === 'sg1.dat' || lower === 's/sg1' || lower === 's/sg1.dat' ) {
+						fileName = 'parts/68488.dat';
+					} else if ( lower === '68487' || lower === '68487.dat' ) {
+						fileName = 'parts/54676.dat';
 					} else {
 
 						// Standardized subfolders
@@ -1199,7 +1244,7 @@ class LDrawPartsGeometryCache {
 				const promise = parseCache.ensureDataLoaded( subobject.fileName ).then( () => {
 
 					const subobjectInfo = parseCache.getData( subobject.fileName, false );
-					if ( ! isPrimitiveType( subobjectInfo.type ) ) {
+					if ( ! isPrimitiveType( subobjectInfo.type ) || ( loader.separateSubparts && subobjectInfo.type === 'Subpart' ) ) {
 
 						return this.loadModel( subobject.fileName ).catch( error => {
 
@@ -1800,6 +1845,12 @@ class LDrawLoader extends Loader {
 		// This object is a map from file names to paths. It agilizes the paths search. If it is not set then files will be searched by trial and error.
 		this.fileMap = {};
 
+		// Sub-files the last load could not find (used to prefer a complete library).
+		this.missingFiles = new Set();
+
+		// Other parts libraries to ask when a sub-file is missing from this one.
+		this.fallbackLibraries = [];
+
 		// If this flag is set to true the vertex normals will be smoothed.
 		this.smoothNormals = true;
 
@@ -2018,6 +2069,58 @@ class LDrawLoader extends Loader {
 	 * @param {Object<string,string>} fileMap - The file map to set.
 	 * @return {LDrawLoader} A reference to this loader.
 	 */
+	// Drops this instance's parsed-geometry cache (used by "force reload").
+	resetCaches() {
+
+		this.partsCache = new LDrawPartsGeometryCache( this );
+		this.missingFiles.clear();
+
+	}
+
+	// Walks the sub-file tree of an LDraw model text and returns every placement of
+	// a sub-file `classify` calls 'hit' (hole / pin primitives) with its matrix in
+	// the model's own coordinate system. The loader merges primitives into their
+	// parent, so this is the only place their exact position and axis survive.
+	async collectSubparts( text, classify ) {
+
+		const parseCache = this.partsCache.parseCache;
+		const found = [];
+		const visit = async ( info, matrix, depth ) => {
+
+			for ( const sub of info.subobjects ) {
+
+				const combined = matrix.clone().multiply( sub.matrix );
+				const verdict = classify( sub.fileName );
+				if ( verdict === 'hit' ) {
+
+					found.push( { fileName: sub.fileName, matrix: combined.toArray() } );
+					continue;
+
+				}
+
+				if ( verdict === 'skip' || depth > 14 ) continue;
+				try {
+
+					await parseCache.ensureDataLoaded( sub.fileName );
+
+				} catch ( error ) {
+
+					continue;
+
+				}
+
+				const child = parseCache.getData( sub.fileName, false );
+				if ( child ) await visit( child, combined, depth + 1 );
+
+			}
+
+		};
+
+		await visit( parseCache.parse( text ), new Matrix4(), 0 );
+		return found;
+
+	}
+
 	setFileMap( fileMap ) {
 
 		this.fileMap = fileMap;
@@ -2514,4 +2617,13 @@ class LDrawLoader extends Loader {
 
 }
 
-export { LDrawLoader };
+// Forgets every downloaded / known-missing file so the next load hits the network.
+function clearLDrawCaches() {
+
+	globalLDrawTextCache.clear();
+	globalLDrawMissCache.clear();
+	globalLDrawBadUrls.clear();
+
+}
+
+export { LDrawLoader, clearLDrawCaches };

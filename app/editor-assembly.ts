@@ -1,9 +1,20 @@
 import type { Connection, Piece } from "./editor/types";
 
-export const editorAssemblyMembers = (pieces: Piece[], selected: Piece) =>
-  selected.editorAssemblyId
-    ? pieces.filter((piece) => piece.editorAssemblyId === selected.editorAssemblyId)
-    : [selected];
+/**
+ * Parts that move/select together with `selected`: its editor assembly
+ * (Cardan, turntable) and its user group.
+ */
+export const editorAssemblyMembers = (pieces: Piece[], selected: Piece) => {
+  if (!selected.editorAssemblyId && !selected.groupId) return [selected];
+  const members = pieces.filter(
+    (piece) =>
+      piece === selected ||
+      (selected.editorAssemblyId !== undefined &&
+        piece.editorAssemblyId === selected.editorAssemblyId) ||
+      (selected.groupId !== undefined && piece.groupId === selected.groupId),
+  );
+  return members;
+};
 
 export const cardanAssemblyLayout = (members: Piece[], connections: Connection[]) => {
   const centre = members.find((member) => member.part.toLowerCase() === "62519"),

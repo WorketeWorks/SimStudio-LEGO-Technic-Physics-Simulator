@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Sim Studio is currently under active development. Security updates apply only
+BrickReel is currently under active development. Security updates apply only
 to the latest version on the `main` branch.
 
 | Version | Supported |

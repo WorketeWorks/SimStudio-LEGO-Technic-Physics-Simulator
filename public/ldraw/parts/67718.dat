@@ -1,0 +1,14 @@
+0 Technic Spike Prime Large Hub
+0 Name: 67718.dat
+0 Author: Sim Studio
+0 !LICENSE Redistributable under CCAL version 2.0
+0 !KEYWORDS Mindstorms, Powered Up, Spike Prime, Hub
+1 71 0 0 0 48 0 0 0 68 0 0 0 20 box5.dat
+1 14 0 0 10 36 0 0 0 52 0 0 0 2 box5.dat
+1 0 0 0 12 12 0 0 0 12 0 0 0 1 box5.dat
+1 71 -20 -30 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 20 -30 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 -20 30 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 20 30 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 0 -40 0 1 0 0 0 0 1 0 -1 0 peghole.dat
+1 71 0 40 0 1 0 0 0 0 1 0 -1 0 peghole.dat

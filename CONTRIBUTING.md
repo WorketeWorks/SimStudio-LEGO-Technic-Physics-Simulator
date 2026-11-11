@@ -1,4 +1,4 @@
-# Contributing to Sim Studio
+# Contributing to BrickReel
 
 Thanks for your interest in improving the project. For larger changes, please
 open an issue first so we can agree on the approach.

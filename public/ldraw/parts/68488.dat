@@ -1,0 +1,15 @@
+0 Technic Spike Prime Medium Angular Motor
+0 Name: 68488.dat
+0 Author: Sim Studio
+0 !LICENSE Redistributable under CCAL version 2.0
+0 !KEYWORDS Mindstorms, Powered Up, Spike Prime, Medium Motor
+1 71 0 0 0 20 0 0 0 24 0 0 0 20 box5.dat
+1 71 0 -12 0 18 0 0 0 12 0 0 0 18 box5.dat
+1 71 0 12 0 18 0 0 0 12 0 0 0 18 box5.dat
+1 16 0 0 20 1 0 0 0 1 0 0 0 1 axlehole.dat
+1 71 0 0 20 10 0 0 0 10 0 0 0 2 4-4cyli.dat
+1 15 0 0 20 6 0 0 0 6 0 0 0 1 4-4disc.dat
+1 71 -10 0 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 10 0 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 0 -20 0 1 0 0 0 0 1 0 -1 0 peghole.dat
+1 71 0 20 0 1 0 0 0 0 1 0 -1 0 peghole.dat

@@ -18,7 +18,17 @@ const groups:Record<PaletteFamily,Entry[]>={
   ],
   wheels:[["4185","Technic Wedge Belt Wheel",86],["42610","Wheel Rim 8 x 11.2 with Centre Groove",86],["56904","Wheel Rim 14 x 30 with 6 Spokes and No Pegholes",86],["50951","Tyre 6/30 x 11",26]],
   specials:[["45590","Technic Axle Joiner Double Flexible",11],["85543","Rubber Belt Round 15 / 1.6",15],["85545","Rubber Belt Round 26 / 1.6",1],["85546","Rubber Belt Round 33 / 1.6",14]],
-  spike:[],
+  spike:[
+    ["68488","Technic Spike Prime Medium Angular Motor",71],
+    ["54676","Technic Spike Prime Large Angular Motor",71],
+    ["37308","Technic Spike Prime Color Sensor",71],
+    ["37312","Technic Spike Prime Force Sensor",71],
+    ["37316","Technic Spike Prime Distance Sensor",71],
+    ["67718","Technic Spike Prime Hub",71],
+    ["39739","Technic Castor Wheel",86],
+    ["39794","Technic Beam 11 x 7 Open Center",71],
+    ["39790","Technic Beam 15 x 11 Open Center",11]
+  ],
   pins:[
     ["11214","Technic Axle Pin Long with Friction, 2L Pin",85],["43093","Technic Axle Pin with Friction",7],["3749","Technic Axle Pin",2],["18651","Technic Axle Pin Long with Friction, 2L Axle",11],["4274","Technic Pin 1/2",86],
     ["6558","Technic Pin Long with Friction and Slot",7],["87082","Technic Pin Long with Pin Hole",86],["32054","Technic Pin Long with Stop Bush",86],["32054","Technic Pin Long with Stop Bush",5],["32556","Technic Pin Long without Friction",2],["15100","Technic Pin with Friction and Perpendicular Hole",11],["2780","Technic Pin with Friction and Slots",11],["3673","Technic Pin without Friction",86],
@@ -111,7 +121,15 @@ const ldrawColor:Record<number,number>={2:19,5:4,7:1,11:0,85:72,86:71,88:70};
 const defaultColorOverride:Record<string,number>={"4265c":14,"15458":72,"32002":19,"4274":1,"48496":0,"39793":0,"32138":0,"32139":0,"6628":0,"50951":0,"6539":4,"18947":72,"35188":25,"35186":14,"3584":25,"4158":73,"4159":73,"7445":4,"7446":14,"85543":15,"85544":4,"85545":1,"85546":14};
 const invalidGeometry=new Set<string>();
 const modelAlias:Record<string,string>={"4265c":"32123b","4185":"4185b","6538":"6538a","6538c":"59443","6542":"6542a","3648":"3648b","44":"32126","18938u":"18938","6628a":"6628"};
-export const paletteRequestAliases:Record<string,string>={"32123a":"4265c","32556b":"32556","62520c01":"61903"};
+export const paletteRequestAliases:Record<string,string>={
+  "32123a":"4265c",
+  "32556b":"32556",
+  "62520c01":"61903",
+  "sg1":"68488",
+  "sg01":"68488",
+  "s/g1":"68488",
+  "68487":"54676",
+};
 const thumbAlias:Record<string,string>={"32556":"32556b","19467c01":"19467","21828c01":"21828","3167":"3167s01","2477":"24779s01"};
 // Turntable bottoms stay in the gear palette, but their teeth are captive:
 // only the matching top is allowed to participate in a drivetrain.

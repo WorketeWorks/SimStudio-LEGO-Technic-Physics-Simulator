@@ -1,6 +1,6 @@
-# Sim Studio architecture
+# BrickReel architecture
 
-Sim Studio is split by responsibility. `app/page.tsx` is the application
+BrickReel is split by responsibility. `app/page.tsx` is the application
 coordinator: it connects React, Three.js and Rapier, but shared data and
 self-contained algorithms belong in the modules below.
 

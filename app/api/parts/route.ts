@@ -31,7 +31,7 @@ const commonColor=(family:string,part:string,name:string)=>{
 };
 async function search(query:string,family:string){
   const response=await fetch(`https://library.ldraw.org/parts/list?tableSearch=${encodeURIComponent(query)}`,{headers:{"User-Agent":"Sim-Studio/0.3"}});if(!response.ok)return[];
-  const html=await response.text();const pattern=/<img[^>]+src="([^"]+?-thumb\.png[^\"]*)"[\s\S]*?parts\/([\w-]+)\.dat[\s\S]*?<div class="fi-ta-text-item fi-font-mono[^\"]*"[^>]*>([\s\S]*?)<\/div>/gi;const items:PartResult[]=[];
+  const html=await response.text();const pattern=/<img[^>]+src="([^"]+?-thumb\.png[^"]*)"[\s\S]*?parts\/([\w-]+)\.dat[\s\S]*?<div class="fi-ta-text-item fi-font-mono[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;const items:PartResult[]=[];
   for(const m of html.matchAll(pattern)){const name=decode(m[3].replace(/<[^>]+>/g,""));if(name.startsWith("=")||name.startsWith("~"))continue;items.push({part:m[2],name,thumb:m[1].replace(/&amp;/g,"&"),color:commonColor(family,m[2],name)})}
   return items;
 }

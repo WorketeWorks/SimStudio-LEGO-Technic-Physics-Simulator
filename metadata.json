@@ -1,0 +1,8 @@
+{
+  "name": "BrickReel — LEGO Builder & Animator",
+  "description": "Construye mecanismos LEGO Technic y prueba su física en el navegador.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

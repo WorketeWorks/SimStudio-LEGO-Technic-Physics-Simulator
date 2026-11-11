@@ -1,44 +1,48 @@
-# Sim Studio
+# BrickReel — LEGO® Builder & Animator
 
-Sim Studio is an experimental browser-based 3D editor for building LEGO® Technic-compatible mechanisms and testing them with real-time physics. It combines full LDraw part geometry with connection maps, compound colliders, configurable joints, motors, gravity, friction and collision simulation.
+BrickReel is a browser-based **LEGO® builder** with full **LDraw** support. Build Technic and System models from the complete LDraw parts library, snap them together with generated connection maps, group parts, animate them on a **timeline**, and export the result as a lightweight **GLB for Three.js**, an **MP4** or an animated **GIF**. Everything runs client-side — nothing to install.
 
-> Sim Studio is an independent, unofficial project. It is not sponsored, endorsed or authorized by the LEGO Group, BrickLink or Studio.
+> BrickReel is an independent, unofficial project. It is not sponsored, endorsed or authorized by the LEGO Group, BrickLink or Studio.
 
 <p align="center">
-  <img src="docs/images/sim-studio-interface.png" alt="Sim Studio editor interface" width="800">
+  <img src="docs/images/sim-studio-interface.png" alt="BrickReel editor interface" width="800">
 </p>
 
 ## Use it online
 
-**[Open Sim Studio in your browser](https://worketeworks.github.io/SimStudio-LEGO-Technic-Physics-Simulator/)** — no download or installation is required.
+**[Open BrickReel in your browser](https://franck403.github.io/SimStudio-LEGO-Technic-Physics-Simulator/)** — no download or installation is required.
 
-The GitHub Pages version includes the complete default palette and its locally packaged geometry. Features that require the dynamic external-catalog API may be limited on static hosting.
+## Highlights
 
-## Main features
+- **Full LDraw support** — any part number from the official library, with several mirrors as fallbacks, `Moved to` redirects, `a/b/c/c01` variants and incomplete-download detection. Search by name or look a part up directly by id.
+- **Import / export** — `.ldr`, `.mpd`, BrickLink Studio `.io` and **`.stl`** (millimetres → studs) in; `.ldr`, **GLB**, **MP4**, **GIF** and portable `.simstudio` projects out.
+- **Groups** — select parts and group them so they select, move and animate as one.
+- **Timeline animation** — keyframes (position + rotation), easing, 360° spin helpers, pose capture with the gizmo, scrubbing and looping playback. Parts rigidly attached to a keyed part follow it.
+- **Three.js export** — compact GLB with shared meshes, welded vertices, your groups as named nodes and the timeline as an animation clip, plus a copy-paste snippet and an example viewer.
+- **Video / GIF export** — renders the timeline frame by frame from the current camera (MP4 needs a WebCodecs browser such as Chrome or Edge).
+- **Model fixer** — repairs models from older versions: rebuilds parts with fresh connectors and ids, realigns misplaced parts onto their joints, remakes broken connections and turns old motors into animation spins. "Replace part ids" swaps parts and re-snaps.
+- **Snap system** — connection maps for pins, axles, half-width holes and cross holes, plus connectors read straight from LDraw sub-part primitives so dense parts (Spike motors, hubs) snap correctly.
+- **Responsive UI** — LDraw parsing and hole detection run in Web Workers; slow jobs show a blocking progress overlay.
+- **Projects** — browser-local project library, crash recovery, undo/redo, light and dark themes.
+- *Optional legacy physics* — the original Rapier/WebAssembly simulation is still included behind **Settings → Legacy physics simulation**.
 
-- Offline-first default palette with locally packaged LDraw sources, parsed 3D geometry, renders, connection maps, collider data and metadata.
-- Beams, axles, pins, connectors, gears and wheels organized into Studio-like categories.
-- Search by part name or part number, plus external LDraw part import with source and requested/resolved-reference metadata.
-- Drag parts from the palette into the 3D workspace.
-- Move placed parts on X/Z, use `Shift` for constrained movement, and rotate them by any angle.
-- Rotate the selected part in 90° steps with `WASD` or the arrow keys.
-- Import `.ldr`, `.mpd` and BrickLink Studio `.io` models and export the assembly as `.ldr`.
-- Browser-local project library, automatic crash/reload recovery and self-contained `.simstudio` project import/export.
-- Import preview and progress dialog that separates locally cached palette parts from external catalog parts.
-- Change a placed part to any supported LDraw color from its properties.
-- Light and dark themes, including the 3D environment.
-- Spanish and English UI, selected from the flag button in the top bar.
-- Orbit, pan, zoom, part-focused camera targeting, below-floor viewing and an effectively infinite adaptive grid.
-- Gravity, friction, self-collision, configurable joints, motors and spring-force dragging with a live newton readout.
-- Fix or release parts with `Alt + click`.
-- Restore the complete build state when the simulation stops.
-- Rigid and flexible structural modes with adjustable joint stiffness.
-- Runtime axle/socket and gear engagement updates when moving mechanisms connect or separate.
-- JSON physics log for the most recent simulation.
-- FPS overlay and detailed frame-performance profiling.
-- Diagnostic views for compound colliders, connection points, rigid bodies, pivots, groups and physics joints.
-- Connection-map and compound-collider editors with JSON import/export for correcting individual parts.
-- Resizable properties panel with model provenance, requested reference, resolved LDraw file and download source.
+## Quick start
+
+1. Drag parts from the palette into the workspace, or search a part number.
+2. Select two or more parts and press **Group**.
+3. Open **Animate**, move or rotate the group at a point in time and press **Add key** (or use **Spin**).
+4. Press play to preview, then **More → GLB · Three.js** or **More → Export video / GIF**.
+
+Using the GLB in Three.js:
+
+```js
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+const gltf = await new GLTFLoader().loadAsync("model.glb");
+scene.add(gltf.scene);
+const mixer = new THREE.AnimationMixer(gltf.scene);
+gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
+// in your render loop: mixer.update(clock.getDelta());
+```
 
 ## Offline-first part catalog
 
@@ -100,7 +104,11 @@ Motor mode creates a driven rotational joint with configurable angular speed, di
 
 Compatible gears are linked from their tooth counts, pitch radii, axis alignment and centre distance. Motion is transferred in either direction using the calculated ratio. Gear engagement is updated during simulation when height, alignment or distance changes, and a separate gear-contact collider keeps tooth interaction independent from the normal solid collider.
 
-## Physics architecture and colliders
+## Legacy physics (optional)
+
+The simulation described below is no longer the focus of the project and is hidden by default. Enable it in **Settings → Legacy physics simulation** to get the **Simulate** button back.
+
+### Physics architecture and colliders
 
 The simulation core is written in Rust and compiled to WebAssembly. TypeScript
 owns the editor, rendering and interaction layer, but it never receives a
@@ -138,11 +146,11 @@ The renderer caps presentation at 60 FPS. Dynamic resolution reduction is reserv
 
 ## Projects and automatic recovery
 
-Click the project name in the top bar to open the project library. Named projects are stored locally in IndexedDB and remain available in that browser. The editor also maintains a separate invisible recovery document after edits, camera changes and settings changes; reopening or reloading Sim Studio restores that latest working state even when it was never added to the named project list.
+Click the project name in the top bar to open the project library. Named projects are stored locally in IndexedDB and remain available in that browser. The editor also maintains a separate invisible recovery document after edits, camera changes and settings changes; reopening or reloading BrickReel restores that latest working state even when it was never added to the named project list.
 
 The custom `.simstudio` format is compressed and self-contained. It stores part transforms and colors, embedded 3D assets (including external catalog parts), connection and collider maps, exact joint endpoints and modes, gear links, camera position, snap settings, structural behavior and global physics settings. Loading it reconstructs the saved connection graph directly instead of running proximity-based auto-connect again.
 
-Use **Export .simstudio** to keep a portable backup and **Import .simstudio** to add it to another browser. `Ctrl + S` updates an existing named project or opens the naming flow for a new one. The status dot is red while recovery is being written, yellow when the recoverable working copy is newer than the named project, and a green check when both match. Sim Studio confirms before discarding unsaved changes or deleting a browser project.
+Use **Export .simstudio** to keep a portable backup and **Import .simstudio** to add it to another browser. `Ctrl + S` updates an existing named project or opens the naming flow for a new one. The status dot is red while recovery is being written, yellow when the recoverable working copy is newer than the named project, and a green check when both match. BrickReel confirms before discarding unsaved changes or deleting a browser project.
 
 Saved project names are locked against accidental typing. Use the pencil button to rename the active project, or the duplicate button to create an independently named copy. Imported `.simstudio` files always become new browser projects; they receive a new internal ID and an automatic numeric suffix when their name is already in use, so an import never overwrites an existing project.
 
@@ -175,13 +183,13 @@ Node.js `22.13.0` or newer is required. The generated physics WASM is committed,
 so Rust is only required when modifying the native physics core.
 
 ```bash
-git clone https://github.com/WorketeWorks/SimStudio-LEGO-Technic-Physics-Simulator.git
+git clone https://github.com/franck403/SimStudio-LEGO-Technic-Physics-Simulator.git
 cd SimStudio-LEGO-Technic-Physics-Simulator
 npm install
 npm run dev
 ```
 
-Then open the local address printed by the development server. For immediate use without cloning the repository, use the [hosted GitHub Pages version](https://worketeworks.github.io/SimStudio-LEGO-Technic-Physics-Simulator/).
+Then open the local address printed by the development server. For immediate use without cloning the repository, use the [hosted GitHub Pages version](https://franck403.github.io/SimStudio-LEGO-Technic-Physics-Simulator/).
 
 ## Commands
 
@@ -209,7 +217,7 @@ npm test                  # Build and automated tests
 
 - LDraw/MPD and Studio `.io` import restore part number, color, position and orientation.
 - `.io` export is not currently supported.
-- LDraw export creates `sim-studio-model.ldr`; Sim Studio-specific physics modes are not currently embedded in the exported model.
+- LDraw export creates `brickreel-model.ldr`; BrickReel-specific physics modes are not currently embedded in the exported model.
 - Named projects and automatic recovery are local to the current browser unless exported as `.simstudio` files.
 - Automatic connector detection is geometric and may require correction for unusual parts.
 - Compound colliders are simulation approximations, not manufacturing geometry.
@@ -222,7 +230,7 @@ npm test                  # Build and automated tests
 
 The original `.dat` sources under `public/ldraw/` retain their author, history and `!LICENSE` headers. Depending on the individual file, they are licensed under [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), both licenses, or another license explicitly identified in that file.
 
-The pre-parsed Three.js geometry, generated connection data and generated collider descriptions are conversions/derivative data created from those LDraw sources by Sim Studio. They are distributed with attribution to **The LDraw Parts Library**, links to the applicable license terms, and an indication that conversion, scaling, coordinate transformation and physics approximation changes were made. Rendered 2D thumbnails are treated separately under the LDraw rendered-image policy.
+The pre-parsed Three.js geometry, generated connection data and generated collider descriptions are conversions/derivative data created from those LDraw sources by BrickReel. They are distributed with attribution to **The LDraw Parts Library**, links to the applicable license terms, and an indication that conversion, scaling, coordinate transformation and physics approximation changes were made. Rendered 2D thumbnails are treated separately under the LDraw rendered-image policy.
 
 See [LDRAW-NOTICE.md](./LDRAW-NOTICE.md) and `public/ldraw/CAreadme.txt` for the redistribution notice. The project does not add technological or legal restrictions to the packaged LDraw material beyond the terms identified by its source files.
 

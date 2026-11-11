@@ -3461,3 +3461,168 @@ body.resizing-inspector * {
   min-width: auto;
   flex: 0 0 auto;
 }
+
+.clear-id-result {
+  border: 0;
+  background: transparent;
+  color: #1558bd;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.settings-dialog {
+  width: min(520px, 95vw);
+}
+.settings-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.settings-body h3 {
+  margin: 8px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #cbd6dd;
+  border-radius: 9px;
+  background: #fff;
+  padding: 9px 11px;
+  font-size: 11px;
+}
+.settings-row input[type="range"] {
+  width: 150px;
+}
+.settings-choice {
+  display: flex;
+  gap: 5px;
+}
+.settings-choice button {
+  border: 1px solid #bfcbd3;
+  border-radius: 6px;
+  background: #f1f4f6;
+  color: inherit;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.settings-choice button.active {
+  border-color: #4b8fe8;
+  background: #eaf2ff;
+  color: #145db8;
+}
+.settings-help {
+  margin: 0;
+  font-size: 10px;
+  color: #66747e;
+}
+.settings-reload {
+  align-self: flex-start;
+}
+.force-reload-button {
+  width: 100%;
+  margin: 8px 0 4px;
+  font-size: 10px;
+}
+.studio.dark .settings-row {
+  background: #1e2226;
+  border-color: #444b52;
+}
+.studio.dark .settings-choice button {
+  background: #2c3136;
+  border-color: #4a5158;
+}
+.studio.dark .settings-choice button.active {
+  background: #213a5c;
+  border-color: #4b8fe8;
+  color: #8dbbf4;
+}
+.studio.dark .settings-help {
+  color: #aab4bb;
+}
+
+/* --- Timeline, export and fixer ------------------------------------------ */
+.timeline-panel{position:fixed;left:0;right:0;bottom:0;z-index:40;max-height:44vh;display:flex;flex-direction:column;background:var(--panel,#1d2126);color:inherit;border-top:1px solid rgba(128,128,128,.35);box-shadow:0 -8px 24px rgba(0,0,0,.25);font-size:12px}
+.timeline-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(128,128,128,.25)}
+.timeline-bar button,.timeline-side button,.timeline-editor button{padding:4px 9px}
+.timeline-play{min-width:36px}
+.timeline-clock{font-variant-numeric:tabular-nums;min-width:96px}
+.timeline-scrub{flex:1 1 160px;min-width:120px}
+.timeline-mini{display:flex;align-items:center;gap:4px}
+.timeline-mini input[type=number]{width:60px}
+.timeline-close{margin-left:auto}
+.timeline-body{display:grid;grid-template-columns:170px minmax(0,1fr) 230px;gap:0;min-height:0;overflow:auto}
+.timeline-side,.timeline-editor{display:flex;flex-direction:column;gap:6px;padding:8px 10px;overflow:auto}
+.timeline-side{border-right:1px solid rgba(128,128,128,.25)}
+.timeline-editor{border-left:1px solid rgba(128,128,128,.25)}
+.timeline-spin{display:flex;align-items:center;gap:4px}
+.timeline-tracks{position:relative;overflow:auto;padding:0 8px 8px}
+.timeline-ruler{position:relative;height:22px;margin-left:140px;cursor:col-resize;border-bottom:1px solid rgba(128,128,128,.3);touch-action:none}
+.timeline-ruler i{position:absolute;top:4px;font-style:normal;font-size:10px;opacity:.7;transform:translateX(2px)}
+.timeline-head{position:absolute;top:0;bottom:0;width:2px;background:#ff5a4f;pointer-events:none}
+.timeline-row{display:flex;align-items:center;height:28px}
+.timeline-row.selected{background:rgba(120,160,255,.1)}
+.timeline-row-label{flex:0 0 140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.timeline-row-remove{margin-left:auto;padding:0 5px!important;background:transparent;border:0;opacity:.6}
+.timeline-lane{position:relative;flex:1;height:100%;border-bottom:1px dashed rgba(128,128,128,.2);cursor:pointer}
+.timeline-key{position:absolute;top:50%;width:12px;height:12px;padding:0!important;margin:-6px 0 0 -6px;transform:rotate(45deg);border-radius:2px;background:#f2b84b;border:1px solid #000}
+.timeline-key.active{background:#fff;outline:2px solid #4b9bf2}
+.timeline-empty{padding:12px;opacity:.7}
+.timeline-field{display:flex;align-items:center;gap:4px}
+.timeline-field>span{flex:0 0 58px}
+.timeline-field input[type=number],.timeline-field input[type=text],.timeline-field select{width:100%;min-width:0}
+.export-snippet{max-height:200px;overflow:auto;font-size:11px;padding:8px;background:rgba(128,128,128,.15);border-radius:6px;white-space:pre}
+@media (max-width:900px){.timeline-body{grid-template-columns:1fr}.timeline-side,.timeline-editor{border:0}}
+
+/* --- Compact top bar ------------------------------------------------------ */
+.header-menu-wrap{position:relative}
+.header-actions .menu-trigger{background:#edf1f3;display:inline-flex;align-items:center;gap:6px}
+.studio.dark .header-actions .menu-trigger{background:#2b3035;color:inherit}
+.menu-trigger b{background:#e03b35;color:#fff;border-radius:9px;padding:0 6px;font-size:11px}
+.header-menu-backdrop{position:fixed;inset:0;z-index:59}
+.header-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:220px;display:flex;flex-direction:column;padding:6px;border-radius:10px;background:#fff;color:#1b2127;box-shadow:0 12px 32px rgba(0,0,0,.28);border:1px solid rgba(128,128,128,.3)}
+.studio.dark .header-menu{background:#23282d;color:#e8edf0}
+.header-menu button{background:transparent!important;text-align:left;padding:9px 12px!important;border-radius:6px!important;font-weight:600!important;width:100%}
+.header-menu button:hover:not(:disabled){background:rgba(120,160,255,.18)!important}
+.header-menu button:disabled{opacity:.45;cursor:default}
+.header-menu hr{border:0;border-top:1px solid rgba(128,128,128,.3);margin:4px 0;width:100%}
+@media (max-width:900px){.header-actions .menu-trigger{display:inline-flex}}
+.timeline-menu{position:fixed;z-index:80;min-width:180px;display:flex;flex-direction:column;padding:5px;border-radius:9px;background:#fff;color:#1b2127;border:1px solid rgba(128,128,128,.35);box-shadow:0 10px 28px rgba(0,0,0,.3)}
+.studio.dark .timeline-menu,.timeline-panel .timeline-menu{background:#23282d;color:#e8edf0}
+.timeline-menu button{background:transparent;border:0;text-align:left;padding:7px 10px;border-radius:5px;font-weight:600;cursor:pointer;color:inherit}
+.timeline-menu button:hover{background:rgba(120,160,255,.2)}
+.timeline-menu button.danger{color:#ff6b62}
+.timeline-menu hr{border:0;border-top:1px solid rgba(128,128,128,.3);margin:4px 0}
+.map-update-same{display:block;margin:2px 0 8px;opacity:.75;line-height:1.35}
+
+/* --- Blocking progress overlay ------------------------------------------- */
+.busy-overlay{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:rgba(10,14,18,.55);backdrop-filter:blur(2px);cursor:progress}
+.busy-card{min-width:240px;max-width:80vw;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 28px;border-radius:14px;background:#fff;color:#1b2127;box-shadow:0 18px 50px rgba(0,0,0,.4)}
+.studio.dark .busy-card,.busy-card{background:#23282d;color:#e8edf0}
+.busy-spinner{width:34px;height:34px;border-radius:50%;border:4px solid rgba(128,128,128,.3);border-top-color:#4b9bf2;animation:busy-spin .9s linear infinite}
+.busy-bar{width:100%;height:8px;border-radius:4px;background:rgba(128,128,128,.3);overflow:hidden}
+.busy-bar i{display:block;height:100%;background:#4b9bf2;transition:width .1s}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
+.stl-dialog{max-width:560px}
+.stl-preview{flex:none;height:260px;min-height:260px;border-radius:8px;overflow:hidden;background:#1b1f24}
+.stl-numbers{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.stl-numbers label{display:flex;align-items:center;gap:4px}
+.stl-numbers input[type=number]{width:70px}
+.stl-turn{display:inline-flex;align-items:center;gap:4px}
+.stl-turn b{min-width:58px;text-align:center;font-weight:600}
+.stl-dialog .settings-reload{width:100%;padding:12px;border:0;border-radius:10px;background:#1f6feb;color:#fff;font-weight:700;cursor:pointer}
+.stl-dialog .settings-reload:disabled{opacity:.5;cursor:default}
+.stl-dialog input[type=number],.stl-dialog select{padding:6px 8px;border:1px solid rgba(128,128,128,.4);border-radius:8px;background:transparent;color:inherit;font:inherit}
+.stl-dialog .stl-turn button{width:28px;height:28px;border:1px solid rgba(128,128,128,.4);border-radius:8px;background:transparent;color:inherit;cursor:pointer}
+.stl-dialog input[type=color]{width:48px;height:30px;border:0;padding:0;background:none}
+.stl-palette-button{width:100%;margin:8px 0;padding:10px;border:1px dashed rgba(128,128,128,.6);border-radius:10px;background:transparent;color:inherit;font-weight:600;cursor:pointer}
+.stl-palette-button:hover:not(:disabled){background:rgba(31,111,235,.12);border-color:#1f6feb}

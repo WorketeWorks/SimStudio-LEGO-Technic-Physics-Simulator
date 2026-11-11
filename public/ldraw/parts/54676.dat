@@ -1,0 +1,14 @@
+0 Technic Spike Prime Large Angular Motor
+0 Name: 54676.dat
+0 Author: Sim Studio
+0 !LICENSE Redistributable under CCAL version 2.0
+0 !KEYWORDS Mindstorms, Powered Up, Spike Prime, Large Motor
+1 71 0 0 0 28 0 0 0 32 0 0 0 24 box5.dat
+1 71 0 0 12 16 0 0 0 16 0 0 0 4 4-4cyli.dat
+1 16 0 0 16 1 0 0 0 1 0 0 0 1 axlehole.dat
+1 15 0 0 16 8 0 0 0 8 0 0 0 1 4-4disc.dat
+1 71 -12 -12 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 12 -12 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 -12 12 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 12 12 0 0 0 1 0 1 0 -1 0 0 peghole.dat
+1 71 0 -28 0 1 0 0 0 0 1 0 -1 0 peghole.dat

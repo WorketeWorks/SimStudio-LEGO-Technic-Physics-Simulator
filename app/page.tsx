@@ -9,15 +9,61 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import * as THREE from "three";
-import { LDrawLoader } from "./vendor/LDrawLoader.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { LDrawLoader, clearLDrawCaches } from "./vendor/LDrawLoader.js";
 import { LDrawConditionalLineMaterial } from "three/addons/materials/LDrawConditionalLineMaterial.js";
 import { ldrawToScenePlacement, makeLDR, parseLDR, type LDrawPlacement } from "./ldraw";
 import { flattenLDrawRenderables } from "./ldraw-geometry";
+import { createLDrawWorkerPool, WorkerUnavailable } from "./ldraw-worker-client";
+import {
+  cloneAnimation,
+  cloneGroups,
+  emptyAnimation,
+  findTrack,
+  keyAt,
+  newTrackId,
+  sanitizeAnimation,
+  sanitizeGroups,
+  spinKeys,
+  upsertKey,
+  type Keyframe,
+  type Track,
+  type TrackTarget,
+} from "./animation.ts";
+import {
+  applyPose,
+  captureRest,
+  createGroup,
+  pruneGroupsAndTracks,
+  restoreRest,
+  ungroupPiece,
+} from "./animation-runtime";
+import {
+  applySeat,
+  distanceToLine,
+  motorSpinKeys,
+  seatingCorrection,
+  snapToLattice,
+} from "./model-fixer";
+import TimelinePanel, { type TimelineSelection } from "./components/TimelinePanel";
+import { mergeSubpartConnectors, subpartConnectors, type SubpartHit } from "./ldraw-subparts";
+import {
+  decodeProjectAsync,
+  encodeProjectAsync,
+  loadProjectAsync,
+  loadRecoveryAsync,
+  saveProjectAsync,
+  saveRecoveryAsync,
+} from "./project-worker-client";
+import { listSubparts, splitSubTargetId, subTargetId } from "./subparts";
+import { prepareStlGeometry, type StlSettings } from "./stl-import";
+import StlImportDialog from "./components/StlImportDialog";
 import { extractStudioLDraw } from "./studio-io";
 import {
   approximateCollisionPrimitives,
   approximateGearCollisionPrimitives,
   generatePartConnectors,
+  lastDetectionExpired,
   straightAxleCollisionPrimitives,
   straightAxleConnectors,
   type CollisionPrimitive,
@@ -63,15 +109,9 @@ import preloadedCatalog from "./preloaded-catalog.json";
 import {
   PROJECT_EXTENSION,
   PROJECT_MIME,
-  decodeProjectFile,
   deleteBrowserProject,
-  encodeProjectFile,
   listBrowserProjects,
-  loadBrowserProject,
-  loadRecoveryProject,
   safeProjectFileName,
-  saveBrowserProject,
-  saveRecoveryProject,
   type JsonObject,
   type ProjectSummary,
   type SavedCollisionPrimitive,
@@ -161,6 +201,7 @@ import type {
   ConnectionProfile,
   DebugFlags,
   EditorSnapshot,
+  FixReport,
   FramePerformanceSample,
   GridStep,
   ImportDraft,
@@ -195,9 +236,12 @@ type MapUpdateCandidate = {
 
 const DEFAULT_FOG_SETTINGS: FogSettings = {
   enabled: true,
-  near: 30,
-  far: 100,
+  near: 60,
+  far: 260,
 };
+// Largest fog / view distance (studs) and how far the camera can zoom out.
+const MAX_VIEW_DISTANCE = 1000;
+const MAX_ZOOM_DISTANCE = 400;
 
 // --- Catalog sources and packaged metadata ---------------------------------
 // The older pybricks mirror does not contain newer official parts such as
@@ -206,6 +250,13 @@ const DEFAULT_FOG_SETTINGS: FogSettings = {
 const LDRAW = "https://cdn.jsdelivr.net/gh/remig/ldraw_parts@master/";
 
 const LEGACY_LDRAW = "https://cdn.jsdelivr.net/gh/pybricks/ldraw@master/";
+
+// Extra fallbacks for newer parts (Powered Up / Spike sub-parts such as
+// u9367c01 or "~Moved to" stubs like u9363) that the mirrors above may lack.
+const OFFICIAL_LDRAW = "https://library.ldraw.org/library/official/";
+
+const MIRROR_LDRAW =
+  "https://cdn.jsdelivr.net/gh/gkjohnson/ldraw-parts-library@master/complete/ldraw/";
 
 const MODEL_LOAD_TIMEOUT = 20_000;
 
@@ -414,8 +465,16 @@ const categories = [
   { id: "gears", icon: "⚙" },
   { id: "wheels", icon: "◉" },
   { id: "specials", icon: "✦" },
+  { id: "motors", icon: "⚡" },
   { id: "imported", icon: "↓" },
 ] as const;
+
+// Motors are listed but never preloaded (their LDraw files are the heaviest).
+// Candidates beyond the built-in SPIKE motors are checked against the LDraw
+// library the first time the tab opens; only real motors are shown.
+const MOTOR_CANDIDATES = [
+  "45303", "88003", "58121", "99499", "95658", "99455", "53787", "53792", "99010", "99012", "47154",
+];
 
 // --- Catalog classification and physics defaults ---------------------------
 
@@ -429,8 +488,97 @@ const kindFor = (category: string, name = ""): PieceKind =>
       ? "wheel"
       : "beam";
 
-const modelText = (p: CatalogPart) =>
-  `0 FILE ${p.part}.ldr\n1 ${p.color} 0 0 0 1 0 0 0 1 0 0 0 1 ${p.modelPart ?? p.part}.dat\n0`;
+const modelTextFor = (p: CatalogPart, file: string) =>
+  `0 FILE ${p.part}.ldr\n1 ${p.color} 0 0 0 1 0 0 0 1 0 0 0 1 ${file}.dat\n0`;
+
+const modelText = (p: CatalogPart) => modelTextFor(p, p.modelPart ?? p.part);
+
+// LDraw often ships several files for one part number (4265a/4265c, 6538a/b/c,
+// 32123a/b, 3749c01, ...). They all share the same numeric stem.
+const partStem = (id: string) =>
+  id
+    .toLowerCase()
+    .replace(/\.dat$/, "")
+    .replace(/^(\d+)[a-z]{1,3}\d{0,3}$/, "$1");
+
+const isSamePartFamily = (candidate: string, stems: string[]) =>
+  stems.includes(partStem(candidate));
+
+// Files tried in order when loading a part, so a stub / missing / empty .dat
+// falls through to the real file of the same part number.
+const partFileCandidates = (base: string) => {
+  const clean = base.toLowerCase().replace(/\.dat$/, ""),
+    stem = partStem(clean);
+  return [
+    ...new Set([clean, stem, `${stem}a`, `${stem}b`, `${stem}c`, `${stem}c01`, `${stem}d`]),
+  ];
+};
+
+// A loaded LDraw part with no (or non-finite) triangles renders as nothing or
+// as a broken mesh (typical for "~Moved to" stubs and truncated downloads).
+const hasRenderableMesh = (object: THREE.Object3D) => {
+  let ok = false;
+  object.traverse((child) => {
+    if (ok || !(child instanceof THREE.Mesh)) return;
+    const position = child.geometry?.getAttribute("position");
+    if (
+      position &&
+      position.count >= 3 &&
+      Number.isFinite(position.getX(0)) &&
+      Number.isFinite(position.getY(position.count - 1))
+    )
+      ok = true;
+  });
+  return ok;
+};
+
+// The static (GitHub Pages) build has no /api/parts route, so part numbers
+// are also resolved straight from the public LDraw part libraries.
+const fetchLDrawFileInfo = async (
+  id: string,
+  depth = 0,
+): Promise<{ part: string; name: string } | undefined> => {
+  for (const base of [LDRAW, LEGACY_LDRAW, MIRROR_LDRAW, OFFICIAL_LDRAW]) {
+    try {
+      const response = await fetch(`${base}parts/${id}.dat`);
+      if (!response.ok) continue;
+      const text = await response.text();
+      const moved = text.match(/^0\s+~Moved to\s+(\S+)/im);
+      if (moved && depth < 3)
+        return fetchLDrawFileInfo(moved[1].toLowerCase().replace(/\.dat$/, ""), depth + 1);
+      const title = text
+        .split(/\r?\n/)
+        .find((line) => /^0\s+\S/.test(line))
+        ?.replace(/^0\s+/, "")
+        .replace(/^[=~_|]+\s*/, "")
+        .trim();
+      return { part: id, name: title || `LDraw part ${id}` };
+    } catch {}
+  }
+};
+
+const motorEntry = (item: { part: string; name: string }): CatalogPart => ({
+  part: item.part,
+  name: item.name,
+  kind: "motor",
+  color: 71,
+  origin: "catalog-search",
+  sourceKind: "ldraw-network",
+  requestedPart: item.part,
+  catalogReturnedPart: item.part,
+  resolvedPart: item.part,
+  catalogQuery: item.part,
+});
+
+const lookupLDrawParts = async (id: string) => {
+  const files = await Promise.all(
+    partFileCandidates(id).map((candidate) => fetchLDrawFileInfo(candidate)),
+  );
+  return files.filter(
+    (file, index, all): file is { part: string; name: string } =>
+      !!file && all.findIndex((other) => other?.part === file.part) === index,
+  );
+};
 
 const frictionPinRefs = new Set(["2780", "6558", "32054", "43093"]);
 
@@ -470,7 +618,19 @@ const editorTransformPivot = (
 ) => {
   const cardan = cardanAssemblyLayout(members, state.connections);
   if (cardan) return cardan.centre.mesh.getWorldPosition(new THREE.Vector3());
+  // While animating, a group turns about its animation pivot: the gizmo and the
+  // rotate buttons use where that pivot currently is, so keys rotate about it.
+  const group = selected.groupId ? state.groups.find((g) => g.id === selected.groupId) : undefined,
+    rest = state.previewRest?.get(selected);
+  if (group && rest) {
+    const turn = selected.mesh.quaternion.clone().multiply(rest.quaternion.clone().invert());
+    return selected.mesh.position
+      .clone()
+      .sub(rest.position.clone().sub(new THREE.Vector3().fromArray(group.pivot)).applyQuaternion(turn));
+  }
   selected.mesh.updateMatrixWorld(true);
+  if (selected.rotationPivotLocal && members.length <= 1)
+    return selected.mesh.localToWorld(selected.rotationPivotLocal.clone());
   const bounds = new THREE.Box3().setFromObject(selected.mesh);
   return bounds.isEmpty()
     ? selected.mesh.getWorldPosition(new THREE.Vector3())
@@ -703,8 +863,12 @@ const connectorMapReach = (connectors: MeshConnector[]) =>
     ),
   );
 
-const connectorDefaultsForPart = (part: string, connectors: MeshConnector[]) => {
-  if (part.toLowerCase().replace(/\.dat$/, "") !== "4159") return connectors;
+const connectorDefaultsForPart = (
+  part: string | undefined | null,
+  connectors: MeshConnector[],
+) => {
+  if (!part || typeof part !== "string" || part.toLowerCase().replace(/\.dat$/, "") !== "4159")
+    return connectors;
   return connectors.map((connector) =>
     connector.kind === "axle" &&
     connector.role === "socket" &&
@@ -1102,6 +1266,7 @@ export default function Home() {
 
   // Hidden file inputs used by the import and map editors.
   const fileRef = useRef<HTMLInputElement>(null);
+  const stlFileRef = useRef<HTMLInputElement>(null);
   const projectFileRef = useRef<HTMLInputElement>(null);
   const connectorFileRef = useRef<HTMLInputElement>(null);
   const colliderFileRef = useRef<HTMLInputElement>(null);
@@ -1121,7 +1286,7 @@ export default function Home() {
   // Project identity and revision bookkeeping are kept outside React state so
   // recovery saves can read the latest values without recreating callbacks.
   const activeProjectIdRef = useRef(createProjectId());
-  const projectNameRef = useRef("Untitled mechanism");
+  const projectNameRef = useRef("Untitled animation");
   const projectCreatedAtRef = useRef(new Date().toISOString());
   const projectRevisionRef = useRef(0);
   const savedProjectRevisionRef = useRef<number | null>(null);
@@ -1142,7 +1307,12 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [reference, setReference] = useState("");
   const [results, setResults] = useState<CatalogPart[]>([]);
+  const [motorExtras, setMotorExtras] = useState<CatalogPart[]>([]);
+  const motorProbeRef = useRef(false);
   const [imported, setImported] = useState<CatalogPart[]>([]);
+  // Exact "find part by ID" result. null = normal palette/search view.
+  const [idQuery, setIdQuery] = useState("");
+  const [idResults, setIdResults] = useState<CatalogPart[] | null>(null);
   const [, setCatalogBusy] = useState(false);
   const [message, setMessage] = useState("catalog-ready");
 
@@ -1159,9 +1329,9 @@ export default function Home() {
   );
   const [gpuPrototypeError, setGpuPrototypeError] = useState("");
   const [gpuPreviewRunning, setGpuPreviewRunning] = useState(false);
-  const [viewportRenderer, setViewportRenderer] = useState<"WebGPU" | "WebGL">("WebGL");
+  const [viewportRenderer, setViewportRenderer] = useState<"WebGPU" | "WebGL">("WebGPU");
   const [rendererPreference, setRendererPreference] =
-    useState<ViewportRendererPreference>("auto");
+    useState<ViewportRendererPreference>("webgpu");
   const rendererPreferenceRef = useRef(rendererPreference);
   const rendererPreferenceInitializedRef = useRef(false);
   rendererPreferenceRef.current = rendererPreference;
@@ -1176,6 +1346,110 @@ export default function Home() {
   const [collisionLayer, setCollisionLayer] = useState<"normal" | "gear">("normal");
   const [mapUpdates, setMapUpdates] = useState<MapUpdateCandidate[]>([]);
   const [mapUpdatesOpen, setMapUpdatesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState<{
+    label: string;
+    progress?: number;
+    cancel?: () => void;
+  } | null>(null);
+  const busyRef = useRef(false);
+  const [videoOpen, setVideoOpen] = useState(false);
+  // Parts whose LDraw sub-parts are kept as separate meshes (animatable alone).
+  const splitPartsRef = useRef<Set<string>>(
+    (() => {
+      try {
+        return new Set<string>(JSON.parse(localStorage.getItem("brickreel:split-parts") ?? "[]"));
+      } catch {
+        return new Set<string>();
+      }
+    })(),
+  );
+  // "Precision less": moves / turns below these limits are treated as zero when a
+  // key is recorded, so a stray 0.025 stud drift cannot hide a pure rotation.
+  const [animPrecision, setAnimPrecisionState] = useState<{ move: number; turn: number }>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("brickreel:key-precision") ?? "null");
+      if (saved && Number.isFinite(saved.move) && Number.isFinite(saved.turn))
+        return { move: Math.max(0, saved.move), turn: Math.max(0, saved.turn) };
+    } catch {}
+    return { move: 0.05, turn: 0.5 };
+  });
+  const animPrecisionRef = useRef(animPrecision);
+  const setAnimPrecision = (next: { move: number; turn: number }) => {
+    animPrecisionRef.current = next;
+    setAnimPrecisionState(next);
+    try {
+      localStorage.setItem("brickreel:key-precision", JSON.stringify(next));
+    } catch {}
+  };
+  const [videoOptions, setVideoOptions] = useState({
+    format: "mp4" as "mp4" | "gif",
+    width: 1280,
+    fps: 30,
+    repeats: 1,
+  });
+  // Runs a slow task behind the blocking overlay; ignores re-entry while busy.
+  const blocking =
+    <A extends unknown[], R>(label: string, task: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R | undefined> => {
+      if (busyRef.current) return undefined;
+      busyRef.current = true;
+      setBusy({ label });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      try {
+        return await task(...args);
+      } finally {
+        busyRef.current = false;
+        setBusy(null);
+      }
+    };
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [animRev, setAnimRev] = useState(0);
+  const [animTime, setAnimTime] = useState(0);
+  const [animPlaying, setAnimPlaying] = useState(false);
+  const [animSpeed, setAnimSpeed] = useState(1);
+  const [previewActive, setPreviewActive] = useState(false);
+  const [posing, setPosing] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<TimelineSelection>(null);
+  // Sub-part of the selected piece being animated on its own (null = piece/group).
+  const [stlPending, setStlPending] = useState<File[] | null>(null);
+  const [subTarget, setSubTarget] = useState<string | null>(null);
+  useEffect(() => setSubTarget(null), [selectedId]);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportCodeText, setExportCode] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportOptions, setExportOptions] = useState({
+    units: "meters" as "meters" | "studs",
+    animation: true,
+    outlines: false,
+  });
+  const [exportInfo, setExportInfo] = useState<{
+    file: string;
+    stats: { parts: number; groups: number; uniqueMeshes: number; triangles: number; tracks: number; bytes: number };
+    snippet: string;
+    viewer: string;
+  } | null>(null);
+  const [fixerOpen, setFixerOpen] = useState(false);
+  const [fixerBusy, setFixerBusy] = useState(false);
+  const [fixerOptions, setFixerOptions] = useState({ rebuild: true, realign: true, motors: true });
+  const [fixerReport, setFixerReport] = useState<FixReport | null>(null);
+  const [replaceFrom, setReplaceFrom] = useState("");
+  const [replaceTo, setReplaceTo] = useState("");
+  const [legacyPhysics, setLegacyPhysics] = useState(() => {
+    try {
+      return localStorage.getItem("sim-studio:legacy-physics") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const animTimeRef = useRef(0);
+  const previewEndedRef = useRef<(() => void) | undefined>(undefined);
+  previewEndedRef.current = () => {
+    setPreviewActive(false);
+    setAnimPlaying(false);
+    setPosing(false);
+  };
 
   // Placement, snapping and pending import controls.
   const [rotationAngle, setRotationAngle] = useState(15);
@@ -1211,7 +1485,7 @@ export default function Home() {
   });
 
   // Project manager and recovery-save state.
-  const [projectName, setProjectName] = useState("Untitled mechanism");
+  const [projectName, setProjectName] = useState("Untitled animation");
   const [projectNameEditing, setProjectNameEditing] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
   const [duplicateProjectDocument, setDuplicateProjectDocument] =
@@ -1553,12 +1827,12 @@ export default function Home() {
         const near = THREE.MathUtils.clamp(
             Number(savedFog.near) || DEFAULT_FOG_SETTINGS.near,
             1,
-            149,
+            MAX_VIEW_DISTANCE - 1,
           ),
           far = THREE.MathUtils.clamp(
             Number(savedFog.far) || DEFAULT_FOG_SETTINGS.far,
             near + 1,
-            160,
+            MAX_VIEW_DISTANCE,
           );
         setFogSettings({
           enabled: savedFog.enabled !== false,
@@ -1653,29 +1927,150 @@ export default function Home() {
   }, [fogSettings, theme]);
 
   useEffect(() => {
-    projectNameRef.current = projectName.trim() || "Untitled mechanism";
+    projectNameRef.current = projectName.trim() || "Untitled animation";
     const markDirty = !suppressProjectNameDirtyRef.current;
     suppressProjectNameDirtyRef.current = false;
     appRef.current?.scheduleRecoverySave(false, markDirty);
   }, [projectName]);
 
   useEffect(() => {
-    const source =
+    const query = search.trim().toLowerCase();
+    setCatalogBusy(false);
+    if (!query) {
+      setResults(
         category === "imported"
           ? imported
-          : paletteParts.filter((p) => p.family === category),
-      query = search.trim().toLowerCase();
-    setCatalogBusy(false);
-    setResults(
-      query
-        ? source.filter((p) => (p.part + " " + p.name).toLowerCase().includes(query))
-        : source,
-    );
-  }, [category, search, imported]);
+          : category === "motors"
+            ? [
+                ...paletteParts.filter((p) => p.family === "spike" && /motor|hub|sensor/i.test(p.name)),
+                ...motorExtras,
+              ]
+            : paletteParts.filter((p) => p.family === category),
+      );
+      return undefined;
+    }
+    // A non-empty search looks through every category (and imported parts),
+    // never only the active tab, and only returns parts that really match.
+    const alias = resolvePaletteRequest(query),
+      words = query.split(/\s+/).filter(Boolean),
+      rank = (p: CatalogPart) => {
+        const ids = [p.part, p.modelPart, p.resolvedPart, p.requestedPart]
+          .filter(Boolean)
+          .map((value) => value!.toLowerCase());
+        if (ids.includes(query) || ids.includes(alias)) return 0;
+        if (ids.some((id) => id.startsWith(query))) return 1;
+        if (ids.some((id) => partStem(id) === partStem(query))) return 2;
+        if (ids.some((id) => id.includes(query))) return 2;
+        const haystack = `${ids.join(" ")} ${p.name.toLowerCase()}`;
+        return words.every((word) => haystack.includes(word)) ? 3 : -1;
+      },
+      seen = new Set<string>(),
+      matches: { part: CatalogPart; rank: number }[] = [];
+    for (const part of [...paletteParts, ...imported]) {
+      const key = `${part.part}-${part.color}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const r = rank(part);
+      if (r >= 0) matches.push({ part, rank: r });
+    }
+    setResults(matches.sort((a, b) => a.rank - b.rank).map((m) => m.part));
+    // A part number that is not in the local catalog (or only matches through
+    // an alias) is looked up in the LDraw libraries and added to the results.
+    const exactId = (p: CatalogPart) =>
+      [p.part, p.modelPart, p.resolvedPart, p.requestedPart].some(
+        (id) => id?.toLowerCase() === query,
+      );
+    if (!/^[0-9][0-9a-z]{2,}$/.test(query) || matches.some((m) => exactId(m.part)))
+      return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void lookupLDrawParts(query)
+        .catch(() => [])
+        .then((found) => {
+          if (cancelled || !found.length) return;
+          const extra: CatalogPart[] = found.map((item) => ({
+            part: item.part,
+            name: item.name,
+            kind: kindFor("", item.name),
+            color: 71,
+            origin: "catalog-search" as const,
+            sourceKind: "ldraw-network" as const,
+            requestedPart: item.part,
+            catalogReturnedPart: item.part,
+            resolvedPart: item.part,
+            catalogQuery: query,
+          }));
+          setResults((old) => [
+            ...extra.filter((item) => !old.some((entry) => entry.part === item.part)),
+            ...old,
+          ]);
+          extra.slice(0, 2).forEach((item) => void appRef.current?.preloadPart(item));
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [category, search, imported, motorExtras]);
 
   useEffect(() => {
+    // The motor list is shown without preloading anything.
+    if (category === "motors" && !search.trim()) return;
     results.slice(0, 4).forEach((p) => void appRef.current?.preloadPart(p));
-  }, [results]);
+  }, [results, category, search]);
+
+  // Typing an exact part number starts loading that model in the background
+  // right away, so it is ready by the time it is dragged onto the table.
+  useEffect(() => {
+    const query = search.trim().toLowerCase().replace(/\.dat$/, "");
+    if (!/^[0-9][0-9a-z]{2,}$/.test(query)) return undefined;
+    const timer = window.setTimeout(() => {
+      const alias = resolvePaletteRequest(query);
+      for (const part of [...paletteParts, ...imported])
+        if (
+          [part.part, part.modelPart, part.resolvedPart, part.requestedPart].some((id) => {
+            const value = id?.toLowerCase();
+            return value === query || value === alias;
+          })
+        )
+          void appRef.current?.preloadPart(part);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [search, imported]);
+
+  // First visit of the Motors tab: find which extra motors the library has.
+  useEffect(() => {
+    if (category !== "motors" || motorProbeRef.current) return;
+    motorProbeRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = JSON.parse(localStorage.getItem("brickreel:motor-list") ?? "null") as
+          | { part: string; name: string }[]
+          | null;
+        if (cached) {
+          setMotorExtras(cached.map(motorEntry));
+          return;
+        }
+      } catch {}
+      const known = new Set(paletteParts.map((p) => p.part.toLowerCase())),
+        found: { part: string; name: string }[] = [];
+      for (const id of MOTOR_CANDIDATES.filter((id) => !known.has(id))) {
+        if (cancelled) return;
+        const info = await fetchLDrawFileInfo(id).catch(() => undefined);
+        if (info && /motor/i.test(info.name)) {
+          found.push(info);
+          setMotorExtras(found.map(motorEntry));
+        }
+      }
+      try {
+        localStorage.setItem("brickreel:motor-list", JSON.stringify(found));
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
 
   useEffect(() => {
     const host = mountRef.current;
@@ -1693,7 +2088,7 @@ export default function Home() {
         43,
         host.clientWidth / host.clientHeight,
         0.1,
-        160,
+        MAX_VIEW_DISTANCE * 4,
       ),
       defaultCameraPosition = new THREE.Vector3(13, 12, 17),
       defaultCameraTarget = new THREE.Vector3(0, 2, 0),
@@ -1865,14 +2260,35 @@ export default function Home() {
             },
           );
         }),
+      fileMapPromise = typeof window !== "undefined"
+        ? fetch(new URL("ldraw/file-map.json", document.baseURI).href)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
       makeLoader = (base: string) => {
         const instance = new LDrawLoader();
         instance.setConditionalLineMaterial(LDrawConditionalLineMaterial);
         instance.setPartsLibraryPath(base);
+        (instance as unknown as { fallbackLibraries: string[] }).fallbackLibraries = [
+          LDRAW,
+          LEGACY_LDRAW,
+          MIRROR_LDRAW,
+          OFFICIAL_LDRAW,
+        ].filter((library) => library !== base);
+        void fileMapPromise.then((map) => {
+          if (map) instance.setFileMap(map);
+        });
+        const configUrl =
+          typeof window !== "undefined"
+            ? new URL("ldraw/LDConfig.ldr", document.baseURI).href
+            : base + "LDConfig.ldr";
         const materials = withTimeout(
-          instance.preloadMaterials(base + "LDConfig.ldr"),
+          instance.preloadMaterials(configUrl).catch(() =>
+            // library.ldraw.org sends no CORS headers, so never fall back to it.
+            base === OFFICIAL_LDRAW ? undefined : instance.preloadMaterials(base + "LDConfig.ldr"),
+          ),
           10_000,
-          "La paleta de materiales LDraw",
+          "LDraw materials palette",
         ).catch(() => undefined);
         return { instance, materials };
       },
@@ -1884,15 +2300,26 @@ export default function Home() {
         let cursor = 0;
         return {
           primary: lanes[0].loader,
+          reset() {
+            lanes.forEach((lane) =>
+              (lane.loader.instance as unknown as { resetCaches?: () => void }).resetCaches?.(),
+            );
+          },
           load(source: string, label: string) {
             const lane = lanes[cursor++ % lanes.length],
               result = lane.tail.then(async () => {
-                await lane.loader.materials;
-                return withTimeout(
+                await Promise.all([lane.loader.materials, fileMapPromise]);
+                const tracker = lane.loader.instance as unknown as {
+                  missingFiles?: Set<string>;
+                };
+                tracker.missingFiles?.clear();
+                const group = await withTimeout(
                   lane.loader.instance.loadAsync(source),
                   MODEL_LOAD_TIMEOUT,
                   label,
                 );
+                group.userData.missingSubfiles = tracker.missingFiles?.size ?? 0;
+                return group;
               });
             lane.tail = result.then(
               () => undefined,
@@ -1902,10 +2329,67 @@ export default function Home() {
           },
         };
       },
-      primaryPool = makeLoaderPool(LDRAW, 3),
-      legacyPool = makeLoaderPool(LEGACY_LDRAW, 2),
+      primaryPool = makeLoaderPool(LDRAW, 6),
+      legacyPool = makeLoaderPool(LEGACY_LDRAW, 4),
+      mirrorPool = makeLoaderPool(MIRROR_LDRAW, 2),
+      officialPool = makeLoaderPool(OFFICIAL_LDRAW, 2),
       primary = primaryPool.primary,
       legacy = legacyPool.primary;
+    // Parsing runs in Web Workers; the main-thread loaders above stay as the
+    // fallback (no Worker support, worker crash) and provide the materials.
+    const ldrawWorkers = createLDrawWorkerPool({
+      size: Math.min(4, Math.max(2, (navigator.hardwareConcurrency || 4) - 1)),
+      libraries: [LDRAW, LEGACY_LDRAW, MIRROR_LDRAW, OFFICIAL_LDRAW],
+      configUrl: new URL("ldraw/LDConfig.ldr", document.baseURI).href,
+      fileMap: fileMapPromise,
+      timeout: MODEL_LOAD_TIMEOUT,
+    });
+    const moveToWorker = (pool: ReturnType<typeof makeLoaderPool>, base: string) => {
+      const mainThreadLoad = pool.load.bind(pool),
+        mainThreadReset = pool.reset.bind(pool);
+      pool.load = (async (source: string, label: string, partName?: string) => {
+        if (ldrawWorkers.available)
+          try {
+            return (await ldrawWorkers.load(
+              base,
+              source,
+              label,
+              partName,
+              !!partName && splitPartsRef.current.has(partName.toLowerCase()),
+            )) as THREE.Group;
+          } catch (error) {
+            if (!(error instanceof WorkerUnavailable)) throw error;
+          }
+        return mainThreadLoad(source, label);
+      }) as typeof pool.load;
+      pool.reset = () => {
+        mainThreadReset();
+        ldrawWorkers.reset();
+      };
+    };
+    moveToWorker(primaryPool, LDRAW);
+    moveToWorker(legacyPool, LEGACY_LDRAW);
+    moveToWorker(mirrorPool, MIRROR_LDRAW);
+    moveToWorker(officialPool, OFFICIAL_LDRAW);
+    // LDraw headers carry "UPDATE yyyy-mm". Libraries are mirrors of different
+    // age, so the one whose main file is newest is tried first (an old copy
+    // may predate the sub-parts a newer official file relies on).
+    const libraryStamps = new Map<string, Promise<number>>(),
+      libraryStamp = (base: string, file: string) => {
+        const key = `${base}|${file}`;
+        let stamp = libraryStamps.get(key);
+        if (!stamp) {
+          stamp = fetch(`${base}parts/${file}.dat`)
+            .then((response) => (response.ok ? response.text() : ""))
+            .then((text) => {
+              const match = text.match(/UPDATE\s+(\d{4})-(\d{2})/i);
+              return match ? Number(match[1]) * 100 + Number(match[2]) : text ? 1 : 0;
+            })
+            .catch(() => 0);
+          libraryStamps.set(key, stamp);
+        }
+        return stamp;
+      };
     const preloaded = new Set<string>(),
       preloading = new Map<string, Promise<void>>(),
       modelCache = new Map<string, THREE.Object3D>(),
@@ -1964,6 +2448,10 @@ export default function Home() {
         if (!exact && p.geometry)
           try {
             exact = await new THREE.ObjectLoader().loadAsync(assetUrl(p.geometry));
+            if (!hasRenderableMesh(exact)) {
+              exact = undefined;
+              throw new Error(`Empty packaged geometry for ${p.part}`);
+            }
             const source = {
               downloadUrl: assetUrl(p.geometry),
               downloadSource: "local" as const,
@@ -1972,34 +2460,83 @@ export default function Home() {
             modelSourceCache.set(sourceKey, source);
           } catch {}
         if (!exact) {
-          const source = `data:text/plain;charset=utf-8,${encodeURIComponent(
-            modelText({ ...p, color: sourceColor }),
-          )}`;
-          try {
-            exact = flattenLDrawRenderables(
-              await primaryPool.load(source, `La pieza ${p.part}`),
-            );
+          let firstError: unknown;
+          const sources = [
+            [primaryPool, LDRAW, "primary"],
+            [legacyPool, LEGACY_LDRAW, "legacy"],
+            [mirrorPool, MIRROR_LDRAW, "legacy"],
+            [officialPool, OFFICIAL_LDRAW, "legacy"],
+          ] as const;
+          // Try every LDraw file of this part number (modelPart first, then its
+          // a/b/c/c01 siblings) on both libraries; skip empty or broken meshes.
+          // A library that lacks some sub-files still "loads" (empty fallbacks),
+          // leaving only part of the model. Prefer a complete load; otherwise
+          // keep the least incomplete one instead of an arbitrary first hit.
+          let partial:
+            | {
+                object: THREE.Object3D;
+                missing: number;
+                downloadUrl: string;
+                downloadSource: "primary" | "legacy";
+              }
+            | undefined;
+          candidates: for (const file of partFileCandidates(p.modelPart ?? p.part)) {
+            const source = `data:text/plain;charset=utf-8,${encodeURIComponent(
+              modelTextFor({ ...p, color: sourceColor }, file),
+            )}`;
+            const stamps = await Promise.all(
+                sources.map(([, base]) => libraryStamp(base, file)),
+              ),
+              ordered = sources
+                .map((entry, index) => ({ entry, stamp: stamps[index], index }))
+                .sort((a, b) => b.stamp - a.stamp || a.index - b.index)
+                .filter((item) => item.stamp > 0)
+                .map((item) => item.entry);
+            for (const [pool, base, kind] of ordered.length ? ordered : sources) {
+              try {
+                const loaded = flattenLDrawRenderables(
+                  await (
+                    pool.load as (s: string, l: string, n?: string) => Promise<THREE.Group>
+                  )(source, `La pieza ${p.part}`, p.name),
+                );
+                if (!hasRenderableMesh(loaded)) throw new Error(`${file}.dat is empty`);
+                const missing = Number(loaded.userData.missingSubfiles ?? 0);
+                if (missing > 0) {
+                  if (!partial || missing < partial.missing)
+                    partial = {
+                      object: loaded,
+                      missing,
+                      downloadUrl: `${base}parts/${file}.dat`,
+                      downloadSource: kind,
+                    };
+                  continue;
+                }
+                exact = loaded;
+                const loadedSource = {
+                  downloadUrl: `${base}parts/${file}.dat`,
+                  downloadSource: kind,
+                };
+                Object.assign(p, loadedSource);
+                modelSourceCache.set(sourceKey, loadedSource);
+                break candidates;
+              } catch (error) {
+                firstError ??= error;
+              }
+            }
+            // Variant files (a/b/c...) only replace a missing/empty main file,
+            // never an incomplete one: stop with the best partial load.
+            if (partial) break;
+          }
+          if (!exact && partial) {
+            exact = partial.object;
             const loadedSource = {
-              downloadUrl: `${LDRAW}parts/${resolvedFile}`,
-              downloadSource: "primary" as const,
+              downloadUrl: partial.downloadUrl,
+              downloadSource: partial.downloadSource,
             };
             Object.assign(p, loadedSource);
             modelSourceCache.set(sourceKey, loadedSource);
-          } catch (primaryError) {
-            try {
-              exact = flattenLDrawRenderables(
-                await legacyPool.load(source, `La pieza ${p.part}`),
-              );
-              const loadedSource = {
-                downloadUrl: `${LEGACY_LDRAW}parts/${resolvedFile}`,
-                downloadSource: "legacy" as const,
-              };
-              Object.assign(p, loadedSource);
-              modelSourceCache.set(sourceKey, loadedSource);
-            } catch {
-              throw primaryError;
-            }
           }
+          if (!exact) throw firstError ?? new Error(`No LDraw file for ${p.part}`);
         }
         sourceModelCache.set(sourceKey, exact.clone(true));
       }
@@ -2189,8 +2726,49 @@ export default function Home() {
           connectorCache.get(correctionStorageKey) &&
           cloneConnectors(connectorCache.get(correctionStorageKey)!);
       if (!connectors) {
-        connectors = generatePartConnectors(wrapper, p.name);
+        const prepared = wrapper.children[0]?.userData.workerConnectors as
+          | {
+              expired: boolean;
+              list: {
+                local: number[];
+                axis: number[];
+                kind: MeshConnector["kind"];
+                role: MeshConnector["role"];
+                diameter: number;
+                length?: number;
+              }[];
+            }
+          | undefined;
+        connectors = prepared
+          ? prepared.list.map((c) => ({
+              ...c,
+              local: new THREE.Vector3().fromArray(c.local),
+              axis: new THREE.Vector3().fromArray(c.axis),
+            }))
+          : generatePartConnectors(wrapper, p.name);
+        // Hole primitives read straight from the LDraw files fill in what the
+        // mesh search missed (dense parts such as the Spike motors).
+        const subpartHits = (wrapper.children[0]?.userData.subpartHits ?? []) as SubpartHit[];
+        if (subpartHits.length)
+          connectors = [
+            ...connectors,
+            ...mergeSubpartConnectors(connectors, subpartConnectors(subpartHits)).map(
+              (extra) => ({
+                local: new THREE.Vector3(...extra.local),
+                axis: new THREE.Vector3(...extra.axis),
+                kind: extra.kind,
+                role: extra.role,
+                diameter: extra.diameter,
+                length: extra.length,
+              }),
+            ),
+          ];
         mapProvenance.connectors = automaticMapProvenance();
+        // A search that ran out of time, or a model with missing sub-files, is
+        // incomplete: keep it for this session only so a later load can redo it.
+        const incomplete =
+          (prepared ? prepared.expired : lastDetectionExpired) || Number(wrapper.children[0]?.userData.missingSubfiles ?? 0) > 0;
+        if (!incomplete)
         try {
           localStorage.setItem(
             `sim-connectors-v4:${correctionStorageKey}`,
@@ -2579,7 +3157,7 @@ export default function Home() {
       debugRoot = new THREE.Group();
     applyGizmoAppearance(gizmoScaleRef.current, gizmoThicknessRef.current);
     let showRotationPivot = false;
-    debugRoot.name = "Sim Studio diagnostics";
+    debugRoot.name = "BrickReel diagnostics";
     scene.add(debugRoot);
     const disposeDebug = () => {
       while (debugRoot.children.length) {
@@ -3268,7 +3846,7 @@ export default function Home() {
       disposeRenderBatches();
       if (!batchPieces.length) return;
       const root = new THREE.Group();
-      root.name = "Sim Studio instanced LDraw batches";
+      root.name = "BrickReel instanced LDraw batches";
       state.renderBatchRoot = root;
       state.renderBatchItems = [];
       state.renderLineBatchItems = [];
@@ -3312,7 +3890,7 @@ export default function Home() {
       };
       const groups = new Map<string, Piece[]>();
       batchPieces
-        .filter((piece) => !state.rubberBands.some((band) => band.owner === piece))
+        .filter((piece) => !piece.noBatch && !state.rubberBands.some((band) => band.owner === piece))
         .forEach((piece) => {
           piece.mesh.traverse((child) => {
             if (child instanceof THREE.Mesh) child.castShadow = false;
@@ -3671,6 +4249,76 @@ export default function Home() {
       }
     };
 
+    // Drops every cached copy of a model (downloaded files, parsed geometry,
+    // render clones) and re-downloads it from the LDraw libraries. Geometry
+    // embedded in a saved project is ignored too, so a part that was saved
+    // incomplete is rebuilt from the real files.
+    const forceReloadParts = async (targets: Piece[]) => {
+      clearLDrawCaches();
+      [primaryPool, legacyPool, mirrorPool, officialPool].forEach((pool) => pool.reset());
+      libraryStamps.clear();
+      modelCache.clear();
+      sourceModelCache.clear();
+      modelSourceCache.clear();
+      preloaded.clear();
+      preloading.clear();
+      const seenKeys = new Set<string>();
+      let reloaded = 0;
+      state.disposeRenderBatches();
+      for (const piece of targets) {
+        try {
+          const key = correctionStorageKeyFor(piece);
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            // Automatic maps were generated from the old (possibly incomplete)
+            // mesh; hand-edited maps are never touched.
+            const provenance = readMapProvenance(localStorage, key);
+            if (provenance.connectors?.origin === "automatic") {
+              localStorage.removeItem(`sim-connectors-v4:${key}`);
+              connectorCache.delete(key);
+            }
+            if (provenance.colliders?.origin === "automatic") {
+              localStorage.removeItem(`sim-colliders-v1:${key}`);
+              collisionCache.delete(key);
+            }
+          }
+          const fresh = {
+            ...piece,
+            embeddedGeometry: undefined,
+            geometry: undefined,
+            projectAssetKey: undefined,
+            sourceKind: "ldraw-network" as const,
+          };
+          const exact = await loadPartModel(fresh);
+          prepareModel(exact);
+          exact.traverse((object) => {
+            if (object instanceof THREE.Mesh) {
+              object.castShadow = true;
+              object.receiveShadow = true;
+            }
+          });
+          piece.mesh.clear();
+          piece.mesh.add(exact);
+          Object.assign(piece, {
+            embeddedGeometry: undefined,
+            geometry: undefined,
+            projectAssetKey: undefined,
+            sourceKind: "ldraw-network",
+            downloadUrl: fresh.downloadUrl,
+            downloadSource: fresh.downloadSource,
+          });
+          piece.mesh.updateMatrixWorld(true);
+          reloaded++;
+        } catch {
+          // Keep the old mesh for a part that cannot be downloaded.
+        }
+      }
+      state.rebuildRenderBatches();
+      state.refreshDebug();
+      state.requestRender();
+      return reloaded;
+    };
+
     // --- Scene editing and connections -------------------------------------
     const rubberBeltLength: Record<string, number> = {
       "85543": 5.9,
@@ -3720,7 +4368,8 @@ export default function Home() {
       position: THREE.Vector3,
       rotation?: THREE.Quaternion,
     ): Promise<Piece | null> => {
-      const counterpartId = turntableCounterpart[p.part.toLowerCase()];
+      const partLower = (p?.part || "").toLowerCase();
+      const counterpartId = partLower ? turntableCounterpart[partLower] : undefined;
       if (counterpartId && !p.embeddedGeometry && !state.bulkLoading) {
         const counterpartCatalog = paletteParts.find(
           (part) => part.part.toLowerCase() === counterpartId,
@@ -3733,7 +4382,7 @@ export default function Home() {
           const primary = await addPart(p, position.clone(), baseRotation),
             counterpart = await addPart(
               counterpartCatalog,
-              position.clone().add(turntableCounterpartOffset[p.part.toLowerCase()]),
+              position.clone().add(turntableCounterpartOffset[partLower] ?? new THREE.Vector3()),
               baseRotation,
             );
           if (!primary || !counterpart) return null;
@@ -3786,17 +4435,13 @@ export default function Home() {
           state.bulkLoading = wasBulkLoading;
           if (!wasBulkLoading) {
             setCount(state.pieces.length);
-            setMessage(
-              language === "es"
-                ? `${p.part} · Plataforma giratoria completa de 2 piezas`
-                : `${p.part} · Complete 2-piece turntable`,
-            );
+            setMessage(`${p.part} · Complete 2-piece turntable`);
             refreshDebug();
             scheduleRenderBatchRebuild();
           }
         }
       }
-      if (p.part.toLowerCase() === "61903" && !p.embeddedGeometry) {
+      if (partLower === "61903" && !p.embeddedGeometry) {
         const endCatalog = paletteParts.find((part) => part.part === "62520"),
           centreCatalog = paletteParts.find((part) => part.part === "62519");
         if (!endCatalog || !centreCatalog) return null;
@@ -3937,6 +4582,10 @@ export default function Home() {
       axleSnapStep,
       rotationSnapStep,
       pieces: [],
+      groups: [],
+      animation: emptyAnimation(),
+      previewRest: null,
+      previewTime: 0,
       selectedPieces: new Set<Piece>(),
       connections: [],
       gearLinks: [],
@@ -3995,6 +4644,7 @@ export default function Home() {
       addPart,
       preloadPart,
       recolorPart,
+      forceReloadParts,
       renderImportPreview,
       rebuildRenderBatches,
       updateRenderBatches,
@@ -4747,6 +5397,353 @@ export default function Home() {
     };
     state.verifyConnections = verifyConnections;
     state.verifyConnectionsAsync = verifyConnectionsAsync;
+
+    // --- Animation preview, part replacement and the model fixer ------------
+    const setPreviewTime = (time: number) => {
+      if (!state.previewRest) state.previewRest = captureRest(state.pieces);
+      const subOwners = new Set(
+        state.animation.tracks
+          .filter((track) => track.target.kind === "sub")
+          .map((track) => splitSubTargetId(track.target.id).pieceId),
+      );
+      let batchChanged = false;
+      for (const piece of state.pieces) {
+        const want = subOwners.has(String(piece.id));
+        if (!!piece.noBatch !== want) {
+          piece.noBatch = want;
+          batchChanged = true;
+        }
+      }
+      if (batchChanged) state.rebuildRenderBatches();
+      state.previewTime = time;
+      applyPose(state.pieces, state.previewRest, state.groups, state.animation, time);
+      state.renderBatchesDirty = true;
+      state.updateRenderBatches();
+      state.requestRender();
+    };
+    const endPreview = () => {
+      if (!state.previewRest) return false;
+      restoreRest(state.previewRest);
+      state.previewRest = null;
+      state.renderBatchesDirty = true;
+      state.updateRenderBatches();
+      state.requestRender();
+      previewEndedRef.current?.();
+      return true;
+    };
+    const runAtRest = async <T,>(task: () => Promise<T> | T): Promise<T> => {
+      const current = state.previewRest ? captureRest(state.pieces) : null;
+      if (state.previewRest) restoreRest(state.previewRest);
+      try {
+        return await task();
+      } finally {
+        if (current) {
+          restoreRest(current);
+          // Sub-parts are not part of the captured rest map: pose them again.
+          applyPose(state.pieces, current, state.groups, state.animation, state.previewTime);
+        }
+        state.renderBatchesDirty = true;
+        state.requestRender();
+      }
+    };
+
+    // Rebuilds parts from the real LDraw files with freshly generated
+    // connectors (saved projects carry the old, possibly broken ones), gives
+    // them a new id, optionally swaps the part number, and re-snaps.
+    const replacePieces = async (targets: Piece[], toCatalog?: CatalogPart) => {
+      endPreview();
+      clearLDrawCaches();
+      [primaryPool, legacyPool, mirrorPool, officialPool].forEach((pool) => pool.reset());
+      libraryStamps.clear();
+      modelCache.clear();
+      sourceModelCache.clear();
+      modelSourceCache.clear();
+      preloaded.clear();
+      preloading.clear();
+      const targetSet = new Set(targets),
+        idMap = new Map<string, string>(),
+        seenKeys = new Set<string>();
+      state.disposeRenderBatches();
+      state.connections = state.connections.filter(
+        (connection) => !targetSet.has(connection.a) && !targetSet.has(connection.b),
+      );
+      let count = 0;
+      for (const piece of targets) {
+        try {
+          const catalog: CatalogPart = toCatalog
+            ? {
+                ...toCatalog,
+                color: piece.color,
+                sourceColor: toCatalog.color,
+                embeddedGeometry: undefined,
+                projectAssetKey: undefined,
+              }
+            : {
+                ...piece,
+                embeddedGeometry: undefined,
+                geometry: undefined,
+                projectAssetKey: undefined,
+                sourceKind: "ldraw-network" as const,
+              };
+          const key = correctionStorageKeyFor(catalog);
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            const provenance = readMapProvenance(localStorage, key);
+            if (provenance.connectors?.origin !== "manual") {
+              localStorage.removeItem(`sim-connectors-v4:${key}`);
+              connectorCache.delete(key);
+            }
+            if (provenance.colliders?.origin !== "manual") {
+              localStorage.removeItem(`sim-colliders-v1:${key}`);
+              collisionCache.delete(key);
+            }
+          }
+          const exact = await loadPartModel(catalog);
+          prepareModel(exact);
+          exact.traverse((object) => {
+            if (object instanceof THREE.Mesh) {
+              object.castShadow = true;
+              object.receiveShadow = true;
+            }
+          });
+          piece.mesh.clear();
+          piece.mesh.add(exact);
+          piece.mesh.updateMatrixWorld(true);
+          const analysis = analyzePart(piece.mesh, catalog),
+            oldId = String(piece.id);
+          Object.assign(piece, {
+            part: catalog.part,
+            name: catalog.name,
+            kind: catalog.kind,
+            modelPart: catalog.modelPart,
+            resolvedPart: catalog.resolvedPart,
+            sourceKind: catalog.sourceKind,
+            sourceColor: catalog.sourceColor,
+            downloadUrl: catalog.downloadUrl,
+            downloadSource: catalog.downloadSource,
+            thumb: catalog.thumb ?? piece.thumb,
+            embeddedGeometry: undefined,
+            geometry: toCatalog?.geometry,
+            projectAssetKey: undefined,
+            connectors: analysis.connectors,
+            colliders: analysis.colliders,
+            gearColliders: analysis.gearColliders,
+            specialGear: analysis.specialGear,
+            mapProvenance: analysis.mapProvenance,
+            gear: isGearPart(catalog),
+            pin: isPinPart(catalog),
+            frictionPin: hasPinFriction(catalog),
+            dynamicAxleConnections: isAxlePart(catalog) || isGearboxExtensionPart(catalog),
+            id: Date.now() + Math.random(),
+          });
+          piece.mesh.userData.connectorReach = connectorMapReach(piece.connectors);
+          idMap.set(oldId, String(piece.id));
+          count++;
+        } catch {
+          // A part that cannot be downloaded keeps its old mesh and connectors.
+        }
+      }
+      state.animation.tracks.forEach((track) => {
+        if (track.target.kind === "piece") {
+          const next = idMap.get(track.target.id);
+          if (next) track.target.id = next;
+        } else if (track.target.kind === "sub") {
+          const { pieceId, key } = splitSubTargetId(track.target.id),
+            next = idMap.get(pieceId);
+          if (next) track.target.id = subTargetId(next, key);
+        }
+      });
+      state.rebuildRenderBatches();
+      await verifyConnectionsAsync();
+      state.gearLinks = detectGearLinks(
+        state.pieces,
+        undefined,
+        differentialCarrierGearExclusions(state.pieces, state.connections),
+      );
+      state.refreshDebug();
+      state.requestRender();
+      return { count };
+    };
+
+    const fixModel = async (options: {
+      rebuild: boolean;
+      realign: boolean;
+      motors: boolean;
+    }): Promise<FixReport> => {
+      const report: FixReport = {
+        rebuilt: 0,
+        rotationsSnapped: 0,
+        realigned: 0,
+        connections: 0,
+        motorsConverted: 0,
+        motorsSkipped: 0,
+        groupsPruned: 0,
+      };
+      endPreview();
+      if (options.rebuild) report.rebuilt = (await replacePieces([...state.pieces])).count;
+      const moved = new Set<Piece>();
+      if (options.realign) {
+        for (const piece of state.pieces) {
+          const snapped = snapToLattice(piece.mesh.quaternion, 2);
+          if (snapped) {
+            piece.mesh.quaternion.copy(snapped);
+            piece.mesh.updateMatrixWorld(true);
+            moved.add(piece);
+            report.rotationsSnapped++;
+          }
+        }
+        type Pair = {
+          a: Piece;
+          b: Piece;
+          socketPiece: Piece;
+          socket: MeshConnector;
+          shaftPiece: Piece;
+          shaft: MeshConnector;
+        };
+        const neighbours = new Map<Piece, Pair[]>(),
+          reach = (piece: Piece) =>
+            (piece.mesh.userData.connectorReach as number | undefined) ??
+            connectorMapReach(piece.connectors);
+        state.pieces.forEach((piece) => neighbours.set(piece, []));
+        for (let i = 0; i < state.pieces.length; i++) {
+          if (i % 40 === 39) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          const first = state.pieces[i];
+          for (let j = i + 1; j < state.pieces.length; j++) {
+            const second = state.pieces[j];
+            if (
+              first.mesh.position.distanceTo(second.mesh.position) >
+              reach(first) + reach(second) + 0.8
+            )
+              continue;
+            for (const c1 of first.connectors)
+              for (const c2 of second.connectors) {
+                const [socketPiece, socket, shaftPiece, shaft] =
+                  c1.role === "socket" && c2.role === "shaft"
+                    ? [first, c1, second, c2]
+                    : c1.role === "shaft" && c2.role === "socket"
+                      ? [second, c2, first, c1]
+                      : [];
+                if (!socketPiece || !socket || !shaftPiece || !shaft) continue;
+                if (!connectorProfile(shaft, socket)) continue;
+                const sw = worldConnector(socketPiece, socket),
+                  hw = worldConnector(shaftPiece, shaft);
+                if (Math.abs(sw.axis.dot(hw.axis)) < 0.93) continue;
+                const delta = sw.point.clone().sub(hw.point),
+                  along = delta.dot(hw.axis),
+                  radial = delta.clone().addScaledVector(hw.axis, -along).length();
+                const axialOk =
+                  shaft.kind === "axle"
+                    ? Math.abs(along) <= (shaft.length ?? 0.5) / 2 + 0.4
+                    : Math.min(
+                        ...connectorAxialOffsets(shaft, socket).map((o) => Math.abs(along - o)),
+                      ) <= 0.4;
+                if (radial > 0.45 || !axialOk) continue;
+                const pair = { a: first, b: second, socketPiece, socket, shaftPiece, shaft };
+                neighbours.get(first)!.push(pair);
+                neighbours.get(second)!.push(pair);
+              }
+          }
+        }
+        const visited = new Set<Piece>(),
+          order = [...state.pieces].sort(
+            (x, y) =>
+              Number(y.fixed) - Number(x.fixed) ||
+              neighbours.get(y)!.length - neighbours.get(x)!.length,
+          );
+        for (const root of order) {
+          if (visited.has(root)) continue;
+          visited.add(root);
+          const queue = [root];
+          while (queue.length) {
+            const current = queue.shift()!;
+            for (const pair of neighbours.get(current)!) {
+              const other = pair.a === current ? pair.b : pair.a;
+              if (visited.has(other)) continue;
+              const members = editorAssemblyMembers(state.pieces, other).filter(
+                  (member) => !visited.has(member),
+                ),
+                moverIsShaft = pair.shaftPiece === other,
+                mover = moverIsShaft ? pair.shaft : pair.socket,
+                target = moverIsShaft ? pair.socket : pair.shaft,
+                targetPiece = moverIsShaft ? pair.socketPiece : pair.shaftPiece,
+                moverWorld = worldConnector(other, mover),
+                targetWorld = worldConnector(targetPiece, target),
+                seat = seatingCorrection(
+                  moverWorld.point,
+                  moverWorld.axis,
+                  targetWorld.point,
+                  targetWorld.axis,
+                  true,
+                ),
+                error = seat.translation.length() + seat.rotation.angleTo(new THREE.Quaternion());
+              if (error > 0.002)
+                for (const member of members.length ? members : [other]) {
+                  applySeat(member.mesh, seat, moverWorld.point);
+                  moved.add(member);
+                }
+              if (error > 0.002) report.realigned++;
+              (members.length ? members : [other]).forEach((member) => visited.add(member));
+              queue.push(other);
+            }
+          }
+        }
+        state.connections = state.connections.filter(
+          (connection) => !moved.has(connection.a) && !moved.has(connection.b),
+        );
+        state.rebuildRenderBatches();
+        await verifyConnectionsAsync();
+        report.connections = state.connections.length;
+      }
+      if (options.motors) {
+        const spin = (piece: Piece, point: THREE.Vector3, axis: THREE.Vector3, speed: number) => {
+          if (
+            findTrack(state.animation, { kind: "piece", id: String(piece.id) }) ||
+            distanceToLine(piece.mesh.position, point, axis) > 0.25
+          ) {
+            report.motorsSkipped++;
+            return;
+          }
+          state.animation.tracks.push({
+            id: newTrackId(),
+            target: { kind: "piece", id: String(piece.id) },
+            keys: motorSpinKeys(
+              [axis.x, axis.y, axis.z],
+              speed,
+              state.animation.duration,
+            ),
+          });
+          report.motorsConverted++;
+        };
+        for (const connection of state.connections)
+          if (connection.mode === "motor")
+            spin(
+              connection.b.fixed ? connection.a : connection.b,
+              connection.point,
+              connection.axis,
+              connection.motorSpeed,
+            );
+        for (const piece of state.pieces)
+          if (piece.gearMotor) {
+            const link = state.connections.find((c) => c.a === piece || c.b === piece);
+            if (link) spin(piece, link.point, link.axis, piece.gearMotor.speed);
+            else report.motorsSkipped++;
+          }
+      }
+      const before = state.groups.length;
+      pruneGroupsAndTracks(state.pieces, state.groups, state.animation);
+      report.groupsPruned = before - state.groups.length;
+      state.refreshDebug();
+      state.requestRender();
+      scheduleRecoverySave();
+      return report;
+    };
+    Object.assign(state, {
+      setPreviewTime,
+      endPreview,
+      runAtRest,
+      replacePieces,
+      fixModel,
+    });
     const verifyPieceConnections = (movedPiece: Piece, notify = true) => {
       const started = performance.now(),
         previousPartners = state.connections
@@ -6379,6 +7376,7 @@ export default function Home() {
         dynamicAxleConnections: piece.dynamicAxleConnections,
         editorAssemblyId: piece.editorAssemblyId,
         editorAssemblyDetached: piece.editorAssemblyDetached,
+        groupId: piece.groupId,
         editorCardanReferenceConnector: piece.editorCardanReferenceConnector,
         rotationPivotLocal: piece.rotationPivotLocal?.clone(),
         rotationPivotKey: piece.rotationPivotKey,
@@ -6400,6 +7398,8 @@ export default function Home() {
       })),
       selected: state.selected,
       selectedPieces: [...state.selectedPieces],
+      groups: cloneGroups(state.groups),
+      animation: cloneAnimation(state.animation),
     });
     const undoStack: EditorSnapshot[] = [],
       redoStack: EditorSnapshot[] = [];
@@ -6435,6 +7435,7 @@ export default function Home() {
         | undefined,
       pasteIndex = 0;
     const restoreEditorSnapshot = async (snapshot: EditorSnapshot) => {
+      state.endPreview();
       restoringHistory = true;
       try {
         state.disposeRenderBatches();
@@ -6459,6 +7460,7 @@ export default function Home() {
           piece.dynamicAxleConnections = item.dynamicAxleConnections;
           piece.editorAssemblyId = item.editorAssemblyId;
           piece.editorAssemblyDetached = item.editorAssemblyDetached;
+          piece.groupId = item.groupId;
           piece.editorCardanReferenceConnector = item.editorCardanReferenceConnector;
           piece.rotationPivotLocal = item.rotationPivotLocal?.clone();
           piece.rotationPivotKey = item.rotationPivotKey;
@@ -6475,6 +7477,8 @@ export default function Home() {
           } else if (!piece.fixed) disposeLock(piece);
         }
         state.connections = snapshot.connections.map(cloneConnection);
+        if (snapshot.groups) state.groups = cloneGroups(snapshot.groups);
+        if (snapshot.animation) state.animation = cloneAnimation(snapshot.animation);
         state.connectionModes = new Map(
           [...snapshot.connectionModes].map(([id, mode]) => [id, { ...mode }]),
         );
@@ -6519,14 +7523,14 @@ export default function Home() {
     const undo = async () => {
       if (historyBusy || state.running) return false;
       if (!undoStack.length) {
-        setMessage("No hay acciones que deshacer");
+        setMessage("Nothing to undo");
         return false;
       }
       historyBusy = true;
       try {
         redoStack.push(captureEditorSnapshot());
         await restoreEditorSnapshot(undoStack.pop()!);
-        setMessage("Deshacer");
+        setMessage("Undo");
         return true;
       } finally {
         historyBusy = false;
@@ -6536,14 +7540,14 @@ export default function Home() {
     const redo = async () => {
       if (historyBusy || state.running) return false;
       if (!redoStack.length) {
-        setMessage("No hay acciones que rehacer");
+        setMessage("Nothing to redo");
         return false;
       }
       historyBusy = true;
       try {
         undoStack.push(captureEditorSnapshot());
         await restoreEditorSnapshot(redoStack.pop()!);
-        setMessage("Rehacer");
+        setMessage("Redo");
         return true;
       } finally {
         historyBusy = false;
@@ -6622,7 +7626,7 @@ export default function Home() {
     let recoveryTimer = 0,
       recoveryGeneration = 0,
       restoringProject = false;
-    const createProjectDocument = (identity?: {
+    const createProjectDocumentAtRest = (identity?: {
       id?: string;
       name?: string;
       createdAt?: string;
@@ -6662,6 +7666,7 @@ export default function Home() {
           delete catalog.projectAssetKey;
           return {
             id: pieceIds.get(piece)!,
+            part: piece.part,
             catalog: catalog as unknown as JsonObject,
             asset,
             position: tuple3(piece.mesh.position),
@@ -6672,6 +7677,7 @@ export default function Home() {
             dynamicAxleConnections: piece.dynamicAxleConnections,
             editorAssemblyId: piece.editorAssemblyId,
             editorAssemblyDetached: piece.editorAssemblyDetached,
+            groupId: piece.groupId,
             editorCardanReferenceConnector: piece.editorCardanReferenceConnector,
             rotationPivotLocal: piece.rotationPivotLocal
               ? tuple3(piece.rotationPivotLocal)
@@ -6789,6 +7795,19 @@ export default function Home() {
         connections,
         gearLinks,
         rubberBands,
+        groups: cloneGroups(state.groups),
+        animation: (() => {
+          const doc = cloneAnimation(state.animation),
+            saved = new Map(state.pieces.map((piece) => [String(piece.id), pieceIds.get(piece)!]));
+          doc.tracks = doc.tracks.flatMap((track) =>
+            track.target.kind === "group"
+              ? [track]
+              : saved.has(track.target.id)
+                ? [{ ...track, target: { kind: "piece" as const, id: saved.get(track.target.id)! } }]
+                : [],
+          );
+          return doc;
+        })(),
         mapBaselines,
         importedCatalog,
         camera: {
@@ -6807,6 +7826,22 @@ export default function Home() {
       };
     };
 
+    // Saved data always holds the rest pose, never a previewed animation frame.
+    const createProjectDocument = (identity?: {
+      id?: string;
+      name?: string;
+      createdAt?: string;
+    }) => {
+      const current = state.previewRest ? captureRest(state.pieces) : null;
+      if (state.previewRest) restoreRest(state.previewRest);
+      try {
+        return createProjectDocumentAtRest(identity);
+      } finally {
+        // Put the pieces back exactly as they were (including moves not keyed yet).
+        if (current) restoreRest(current);
+      }
+    };
+
     const scheduleRecoverySave = (immediate = false, markDirty = true) => {
       if (restoringProject || projectRestoringRef.current || state.running) return;
       if (markDirty) {
@@ -6819,7 +7854,7 @@ export default function Home() {
       recoveryTimer = window.setTimeout(
         () => {
           if (generation !== recoveryGeneration || restoringProject) return;
-          void saveRecoveryProject(createProjectDocument())
+          void saveRecoveryAsync(createProjectDocument())
             .then(() => setRecoveryStatus("saved"))
             .catch(() => setRecoveryStatus("idle"));
         },
@@ -6835,6 +7870,7 @@ export default function Home() {
           return sources.length ? [{ ...candidate, sources }] : [];
         }),
       );
+      state.endPreview();
       restoringProject = true;
       projectRestoringRef.current = true;
       recoveryGeneration++;
@@ -6863,24 +7899,33 @@ export default function Home() {
         projectMapUpdateCandidates = new Map<string, MapUpdateCandidate>();
       let projectHasAutomaticMapUpdate = false;
       try {
+        let restoreIndex = 0;
         for (const saved of document.pieces) {
-          const asset = document.assets[saved.asset];
-          if (!asset) throw new Error(`Missing embedded asset ${saved.asset}`);
-          const catalog = {
+          const asset = document.assets ? document.assets[saved.asset] : undefined;
+          const partId = (saved.part ?? (saved.catalog as any)?.part ?? "part").toString();
+          const catalog: CatalogPart = {
+              part: partId,
+              name: (saved.catalog as any)?.name ?? partId,
+              color: (saved.catalog as any)?.color ?? 7,
+              category: (saved.catalog as any)?.category ?? "Technic",
               ...(saved.catalog as unknown as CatalogPart),
               embeddedGeometry: asset,
               projectAssetKey: saved.asset,
-              sourceKind: "packaged-cache" as const,
+              sourceKind: (asset ? "packaged-cache" : "catalog-search") as const,
             },
             piece = await addPart(
               catalog,
               new THREE.Vector3().fromArray(saved.position),
               new THREE.Quaternion().fromArray(saved.rotation),
             );
-          if (!piece) throw new Error(`Could not restore ${catalog.part}`);
+          if (!piece) {
+            console.warn(`Could not restore piece ${catalog.part || partId}`);
+            continue;
+          }
           piece.mesh.scale.fromArray(saved.scale);
+          const partName = (saved.part ?? (saved.catalog as any)?.part ?? piece.part ?? "").toString();
           piece.connectors = connectorDefaultsForPart(
-            saved.part,
+            partName,
             saved.connectors.map(loadConnector),
           );
           piece.colliders = saved.colliders.map(loadCollider);
@@ -6891,6 +7936,7 @@ export default function Home() {
           piece.dynamicAxleConnections = saved.dynamicAxleConnections;
           piece.editorAssemblyId = saved.editorAssemblyId;
           piece.editorAssemblyDetached = saved.editorAssemblyDetached;
+          piece.groupId = saved.groupId;
           piece.editorCardanReferenceConnector = saved.editorCardanReferenceConnector;
           piece.rotationPivotLocal = saved.rotationPivotLocal
             ? new THREE.Vector3().fromArray(saved.rotationPivotLocal)
@@ -6950,6 +7996,9 @@ export default function Home() {
               });
             }
           }
+          if (++restoreIndex % 15 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
         }
         state.connections = document.connections.flatMap((saved) => {
           const a = piecesById.get(saved.a),
@@ -6997,6 +8046,16 @@ export default function Home() {
           return [connection];
         });
         restoreLegacyCardanEditorAssemblies(state.pieces, state.connections);
+        state.groups = sanitizeGroups(document.groups);
+        state.animation = sanitizeAnimation(document.animation);
+        state.animation.tracks = state.animation.tracks.flatMap((track) => {
+          if (track.target.kind === "group") return [track];
+          const piece = piecesById.get(track.target.id);
+          return piece
+            ? [{ ...track, target: { kind: "piece" as const, id: String(piece.id) } }]
+            : [];
+        });
+        pruneGroupsAndTracks(state.pieces, state.groups, state.animation);
         state.gearLinks = document.gearLinks.flatMap((saved) => {
           const a = piecesById.get(saved.a),
             b = piecesById.get(saved.b);
@@ -7121,8 +8180,8 @@ export default function Home() {
       pasteIndex = 0;
       setMessage(
         pieces.length > 1
-          ? `${pieces.length} piezas copiadas`
-          : `${pieces[0].part} copiada`,
+          ? `${pieces.length} parts copied`
+          : `${pieces[0].part} copied`,
       );
       return true;
     };
@@ -7130,7 +8189,7 @@ export default function Home() {
     const pasteClipboard = async () => {
       if (state.running || historyBusy) return null;
       if (!clipboard) {
-        setMessage("Copia una pieza antes de pegar");
+        setMessage("Copy a part before pasting");
         return null;
       }
       const historyLength = undoStack.length;
@@ -7205,8 +8264,8 @@ export default function Home() {
       setConnectionRevision((value) => value + 1);
       setMessage(
         pasted.length > 1
-          ? `${pasted.length} piezas pegadas`
-          : `${pasted[0].part} pegada`,
+          ? `${pasted.length} parts pasted`
+          : `${pasted[0].part} pasted`,
       );
       return pasted[0];
     };
@@ -7226,7 +8285,7 @@ export default function Home() {
       if (document.visibilityState === "hidden") scheduleRecoverySave(true);
     };
     document.addEventListener("visibilitychange", flushRecovery);
-    void Promise.all([listBrowserProjects(), loadRecoveryProject()])
+    void Promise.all([listBrowserProjects(), loadRecoveryAsync()])
       .then(async ([savedProjects, recovery]) => {
         setProjects(savedProjects);
         if (recovery) {
@@ -8212,6 +9271,11 @@ export default function Home() {
     const drop = (e: DragEvent) => {
       e.preventDefault();
       if (state.running) return;
+      const file = e.dataTransfer?.files?.[0];
+      if (file) {
+        void handleImportFile(file);
+        return;
+      }
       try {
         const p = JSON.parse(
           e.dataTransfer?.getData("application/x-ldraw-part") || "",
@@ -8253,7 +9317,7 @@ export default function Home() {
             );
         }
       } catch {
-        setMessage("No se pudo soltar esa pieza");
+        setMessage("Could not drop that part");
       }
     };
 
@@ -8263,13 +9327,29 @@ export default function Home() {
         nextDistance = THREE.MathUtils.clamp(
           offset.length() * (e.deltaY > 0 ? 1.08 : 0.92),
           0.5,
-          120,
+          MAX_ZOOM_DISTANCE,
         );
       camera.position.copy(cameraTarget.clone().add(offset.setLength(nextDistance)));
       camera.lookAt(cameraTarget);
     };
 
+    // While a video is rendered the canvas is drawn at exactly the output size
+    // (no adaptive scaling, no device pixel ratio) so frames are never upscaled.
+    let exportSize: { w: number; h: number } | null = null;
+    state.setExportSize = (size) => {
+      exportSize = size;
+      resize();
+    };
     const resize = () => {
+      if (exportSize) {
+        camera.aspect = exportSize.w / exportSize.h;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(1);
+        renderer.setSize(exportSize.w, exportSize.h, false);
+        gpuSceneRenderer?.resize(exportSize.w, exportSize.h, 1);
+        state.requestRender();
+        return;
+      }
       camera.aspect = host.clientWidth / host.clientHeight;
       camera.updateProjectionMatrix();
       state.renderScale = renderScale;
@@ -8355,7 +9435,7 @@ export default function Home() {
           ...(state.selectedPieces.size ? state.selectedPieces : new Set([piece])),
         ],
         code = e.code;
-      if (code === "Delete") {
+      if (code === "Delete" || code === "Backspace") {
         e.preventDefault();
         state.recordHistory();
         const selectedSet = new Set(selectedPieces);
@@ -8867,7 +9947,7 @@ export default function Home() {
           lowerFpsThreshold = webGpuQualityActive ? 30 : 15,
           upperFpsThreshold = webGpuQualityActive ? 30 : 30;
         let nextScale = renderScale;
-        if (!adaptiveRenderingEnabled) {
+        if (!adaptiveRenderingEnabled || exportSize) {
           nextScale = 1;
           healthyFpsWindows = 0;
           lowFpsWindows = 0;
@@ -9216,7 +10296,7 @@ export default function Home() {
           physicsLogMs = performance.now() - phaseStarted;
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
-          console.error("Sim Studio physics frame stopped safely:", error);
+          console.error("BrickReel physics frame stopped safely:", error);
           state.simLog?.events.push(`Error físico recuperado: ${detail}`);
           state.running = false;
           state.world.free();
@@ -9360,6 +10440,13 @@ export default function Home() {
         renderer.render(scene, camera);
       }
       if (gpuQuery && gpuTimerExtension) gl.endQuery(gpuTimerExtension.TIME_ELAPSED_EXT);
+      if (state.afterRender) {
+        // Frame capture for video/GIF export runs in the same task as the draw,
+        // while the canvas still holds the finished frame.
+        const capture = state.afterRender;
+        state.afterRender = undefined;
+        capture(gpuViewportCanvas.classList.contains("active") ? gpuViewportCanvas : renderer.domElement);
+      }
       const renderMs = performance.now() - phaseStarted,
         trace = state.performanceTrace,
         sample: FramePerformanceSample = {
@@ -9466,15 +10553,8 @@ export default function Home() {
   }, [theme]);
 
   const visible = useMemo(
-    () =>
-      category === "imported" && search
-        ? results.filter(
-            (p) =>
-              !p.paletteHidden &&
-              (p.part + " " + p.name).toLowerCase().includes(search.toLowerCase()),
-          )
-        : results.filter((p) => !p.paletteHidden),
-    [category, results, search],
+    () => idResults ?? results.filter((p) => !p.paletteHidden),
+    [idResults, results],
   );
 
   const dragPart = (e: React.DragEvent, p: CatalogPart) => {
@@ -9482,8 +10562,8 @@ export default function Home() {
     e.dataTransfer.effectAllowed = "copy";
   };
 
-  const addReference = async () => {
-    const part = reference.trim().replace(/\.dat$/i, "");
+  const addReference = async (queryArg?: string) => {
+    const part = (queryArg ?? reference).trim().replace(/\.dat$/i, "");
     if (!part) return;
     setCatalogBusy(true);
     const normalizedPart = part.toLowerCase(),
@@ -9514,27 +10594,46 @@ export default function Home() {
           resolvedPart: part,
           catalogQuery: part,
         };
-    if (!packaged)
-      try {
-        const d = (await fetch(`/api/parts?q=${encodeURIComponent(part)}`).then((r) =>
-          r.json(),
-        )) as { items?: CatalogPart[] };
-        const exact = d.items?.find(
-          (x: { part: string }) => x.part.toLowerCase() === normalizedPart,
+    if (!packaged) {
+        try {
+          const d = (await fetch(`/api/parts?q=${encodeURIComponent(part)}`).then((r) =>
+            r.json(),
+          )) as { items?: CatalogPart[] };
+          const exact = d.items?.find(
+            (x: { part: string }) => x.part.toLowerCase() === normalizedPart,
+          );
+          if (exact)
+            found = {
+              ...exact,
+              kind: kindFor("", exact.name),
+              color: exact.color ?? 71,
+              origin: "catalog-search",
+              sourceKind: exact.geometry ? "packaged-cache" : "external-catalog",
+              requestedPart: part,
+              catalogReturnedPart: exact.part,
+              resolvedPart: exact.modelPart ?? exact.part,
+              catalogQuery: part,
+            };
+        } catch {}
+      if (found.name === `Pieza LDraw ${part}`) {
+        const direct = (await lookupLDrawParts(part).catch(() => [])).find(
+          (item) => item.part.toLowerCase() === normalizedPart,
         );
-        if (exact)
+        if (direct)
           found = {
-            ...exact,
-            kind: kindFor("", exact.name),
-            color: exact.color ?? 71,
+            part: direct.part,
+            name: direct.name,
+            kind: kindFor("", direct.name),
+            color: 71,
             origin: "catalog-search",
-            sourceKind: exact.geometry ? "packaged-cache" : "external-catalog",
+            sourceKind: "ldraw-network",
             requestedPart: part,
-            catalogReturnedPart: exact.part,
-            resolvedPart: exact.modelPart ?? exact.part,
+            catalogReturnedPart: direct.part,
+            resolvedPart: direct.part,
             catalogQuery: part,
           };
-      } catch {}
+      }
+    }
     if (!belongsToDefaultPalette(found)) {
       setImported((old) =>
         old.some((x) => x.part === found.part) ? old : [found, ...old],
@@ -9544,6 +10643,104 @@ export default function Home() {
     setReference("");
     setCatalogBusy(false);
     void appRef.current?.preloadPart(found);
+  };
+
+  // Lookup by part number: shows ONLY the parts of that number (never a
+  // category), including every LDraw file variant (a/b/c, c01, ...).
+  const lookupById = async (queryArg?: string): Promise<number> => {
+    const part = (queryArg ?? idQuery).trim().replace(/\.dat$/i, "");
+    if (!part) return 0;
+    setCatalogBusy(true);
+    const normalizedPart = part.toLowerCase(),
+      palettePart = resolvePaletteRequest(normalizedPart),
+      stems = [...new Set([normalizedPart, palettePart].map(partStem))],
+      found: CatalogPart[] = [],
+      seen = new Set<string>(),
+      push = (candidate: CatalogPart) => {
+        const key = `${candidate.part}-${candidate.color}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        found.push(candidate);
+      };
+    for (const packaged of paletteParts)
+      if (
+        !packaged.paletteHidden &&
+        (isSamePartFamily(packaged.part, stems) ||
+          (packaged.modelPart && isSamePartFamily(packaged.modelPart, stems)))
+      )
+        push({
+          ...packaged,
+          origin: "catalog-search",
+          sourceKind: packaged.geometry ? "packaged-cache" : "ldraw-network",
+          requestedPart: part,
+          catalogReturnedPart: packaged.part,
+          resolvedPart: packaged.modelPart ?? packaged.part,
+          catalogQuery: part,
+        });
+    let networkFound = false;
+    try {
+      const d = (await fetch(`/api/parts?q=${encodeURIComponent(part)}`).then((r) =>
+        r.json(),
+      )) as { items?: CatalogPart[] };
+      for (const item of d.items ?? [])
+        if (isSamePartFamily(item.part, stems) && !found.some((x) => x.part === item.part)) {
+          networkFound = true;
+          push({
+            ...item,
+            kind: kindFor("", item.name),
+            color: item.color ?? 71,
+            origin: "catalog-search",
+            sourceKind: item.geometry ? "packaged-cache" : "external-catalog",
+            requestedPart: part,
+            catalogReturnedPart: item.part,
+            resolvedPart: item.modelPart ?? item.part,
+            catalogQuery: part,
+          });
+        }
+    } catch {}
+    if (!networkFound)
+      for (const stem of stems)
+        for (const item of await lookupLDrawParts(stem).catch(() => []))
+          if (!found.some((x) => x.part === item.part))
+            push({
+              part: item.part,
+              name: item.name,
+              kind: kindFor("", item.name),
+              color: 71,
+              origin: "catalog-search",
+              sourceKind: "ldraw-network",
+              requestedPart: part,
+              catalogReturnedPart: item.part,
+              resolvedPart: item.part,
+              catalogQuery: part,
+            });
+    setCatalogBusy(false);
+    const exactRank = (candidate: CatalogPart) =>
+        [normalizedPart, palettePart].includes(candidate.part.toLowerCase()) ? 0 : 1,
+      list = found.sort((a, b) => exactRank(a) - exactRank(b));
+    if (!list.length) return 0;
+    const extra = list.filter((candidate) => !belongsToDefaultPalette(candidate));
+    if (extra.length)
+      setImported((old) => [
+        ...extra.filter((candidate) => !old.some((x) => x.part === candidate.part)),
+        ...old,
+      ]);
+    setIdResults(list);
+    list.slice(0, 6).forEach((candidate) => void appRef.current?.preloadPart(candidate));
+    return list.length;
+  };
+
+  // One search box: typing filters the palette (names and part numbers, any
+  // category); Enter does the deep lookup in the LDraw libraries (every variant
+  // of that number) and, when nothing matches, adds the number as an external part.
+  const runSearch = async () => {
+    const query = search.trim();
+    if (!query) return;
+    const found = await lookupById(query);
+    if (!found) {
+      await addReference(query);
+      if (!appRef.current) return;
+    }
   };
 
   const rotate = (axis: "x" | "y" | "z", dir = 1) => {
@@ -9880,6 +11077,43 @@ export default function Home() {
     );
   };
 
+  const forceReloadModelsRaw = async (all: boolean) => {
+    const s = appRef.current;
+    if (!s || running) return;
+    const base = s.selected,
+      targets = all
+        ? s.pieces
+        : base
+          ? s.pieces.filter((piece) => piece.part === base.part)
+          : [];
+    if (!all && !targets.length) {
+      setMessage(t.forceReloadNone);
+      return;
+    }
+    setMessage(t.forceReloading);
+    const count = await s.forceReloadParts(targets);
+    setMessage(`${t.forceReloaded} · ${count}/${targets.length}`);
+    if (base) setSelectedId(base.id);
+    s.scheduleRecoverySave();
+  };
+
+  const applyModelOutlines = (visible: boolean) => {
+    modelOutlinesVisibleRef.current = visible;
+    setModelOutlinesVisible(visible);
+    try {
+      localStorage.setItem("sim-studio:model-outlines", visible ? "1" : "0");
+    } catch {}
+    const s = appRef.current;
+    if (!s) return;
+    s.pieces.forEach((piece) =>
+      piece.mesh.traverse((object) => {
+        if (object instanceof THREE.Line) object.visible = visible;
+      }),
+    );
+    s.rebuildRenderBatches();
+    s.requestRender();
+  };
+
   const changeSelectedColor = async (color: number) => {
     const s = appRef.current,
       piece = s?.selected;
@@ -9912,6 +11146,8 @@ export default function Home() {
     s.pieces = s.pieces.filter((x) => x !== p);
     s.rebuildRenderBatches();
     s.connections = s.connections.filter((c) => c.a !== p && c.b !== p);
+    pruneGroupsAndTracks(s.pieces, s.groups, s.animation);
+    setAnimRev((value) => value + 1);
     rebalanceAllSmartDefaults(s);
     s.selected = undefined;
     s.refreshDebug();
@@ -9937,6 +11173,9 @@ export default function Home() {
       if (band.visual) s.scene.remove(band.visual);
       disposeRubberBand(band);
     });
+    s.endPreview();
+    s.groups = [];
+    s.animation = emptyAnimation();
     s.rubberBands = [];
     s.pieces = [];
     s.connections = [];
@@ -10219,7 +11458,7 @@ export default function Home() {
         s.simStartedMs = undefined;
         s.refreshDebug();
         setRunning(false);
-        setMessage("Simulación detenida · estado restaurado · log actualizado");
+        setMessage("Simulation stopped · state restored · log updated");
       }
     } finally {
       physicsTransitionRef.current = false;
@@ -10229,7 +11468,7 @@ export default function Home() {
 
   // --- LDraw / Studio import and export ------------------------------------
 
-  const importModel = async (file: File) => {
+  const importModelRaw = async (file: File) => {
     const s = appRef.current;
     if (!s || s.running || physicsTransitionRef.current) return;
     const empty: ImportDraft = {
@@ -10250,7 +11489,7 @@ export default function Home() {
           : await file.text(),
         rows = parseLDR(source);
       if (!stillActive()) return;
-      if (!rows.length) throw new Error("El archivo no contiene piezas LDraw");
+      if (!rows.length) throw new Error("The file does not contain any LDraw parts");
       const references = [...new Set(rows.map((row) => row.part.toLowerCase()))],
         paletteMatches = new Map<string, CatalogPart[]>();
       for (const part of paletteParts) {
@@ -10288,25 +11527,31 @@ export default function Home() {
       const paletteToLoad = paletteReferences.flatMap(
         (reference) => paletteMatches.get(reference) ?? [],
       );
-      await Promise.all(
-        [
-          ...new Map(
-            paletteToLoad.map((part) => [`${part.part}:${part.color}`, part]),
-          ).values(),
-        ].map(async (part) => {
-          await s.preloadPart(part);
-          if (!stillActive()) return;
-          paletteLoaded++;
-          setImportDraft((draft) =>
-            draft
-              ? {
-                  ...draft,
-                  progress: Math.min(paletteLoaded, paletteReferences.length),
-                }
-              : draft,
-          );
-        }),
-      );
+      const uniquePaletteParts = [
+        ...new Map(
+          paletteToLoad.map((part) => [`${part.part}:${part.color}`, part]),
+        ).values(),
+      ];
+      for (let i = 0; i < uniquePaletteParts.length; i += 4) {
+        if (!stillActive()) return;
+        const batch = uniquePaletteParts.slice(i, i + 4);
+        await Promise.all(
+          batch.map(async (part) => {
+            await s.preloadPart(part);
+            paletteLoaded++;
+          }),
+        );
+        if (!stillActive()) return;
+        setImportDraft((draft) =>
+          draft
+            ? {
+                ...draft,
+                progress: Math.min(paletteLoaded, paletteReferences.length),
+              }
+            : draft,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
       if (!stillActive()) return;
       setImportDraft((draft) =>
         draft
@@ -10391,24 +11636,29 @@ export default function Home() {
             importFile: file.name,
           } as CatalogPart;
         });
-      await Promise.all(
-        externalToLoad.map(async (part) => {
-          await s.preloadPart(part);
-          if (!stillActive()) return;
-          externalLoaded++;
-          setImportDraft((draft) =>
-            draft
-              ? {
-                  ...draft,
-                  progress: Math.min(
-                    paletteReferences.length + externalLoaded,
-                    draft.total,
-                  ),
-                }
-              : draft,
-          );
-        }),
-      );
+      for (let i = 0; i < externalToLoad.length; i += 4) {
+        if (!stillActive()) return;
+        const batch = externalToLoad.slice(i, i + 4);
+        await Promise.all(
+          batch.map(async (part) => {
+            await s.preloadPart(part);
+            externalLoaded++;
+          }),
+        );
+        if (!stillActive()) return;
+        setImportDraft((draft) =>
+          draft
+            ? {
+                ...draft,
+                progress: Math.min(
+                  paletteReferences.length + externalLoaded,
+                  draft.total,
+                ),
+              }
+            : draft,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
       if (!stillActive()) return;
       const placements = rows.map((row) => {
         const converted = ldrawToScenePlacement(row),
@@ -10453,7 +11703,7 @@ export default function Home() {
       setImportDraft((draft) => ({
         ...(draft ?? empty),
         status: "error",
-        error: error instanceof Error ? error.message : "No se pudo importar el modelo",
+        error: error instanceof Error ? error.message : "Could not import model",
       }));
     }
   };
@@ -10476,8 +11726,8 @@ export default function Home() {
             placement.rotation,
           );
         if (piece) pieces.push(piece);
-        if (index % 40 === 39)
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (index % 8 === 7)
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     } finally {
       s.bulkLoading = false;
@@ -10497,11 +11747,7 @@ export default function Home() {
     });
     setCount(s.pieces.length);
     if (!pieces.length) {
-      setMessage(
-        language === "es"
-          ? "No se pudo colocar ninguna pieza del modelo"
-          : "No model parts could be placed",
-      );
+      setMessage("No model parts could be placed");
       return;
     }
     // Temporary performance mode: imported models keep their LDraw position
@@ -10555,6 +11801,587 @@ export default function Home() {
     setImportDraft(null);
   };
 
+  // --- Groups, animation timeline, GLB export and model fixer ---------------
+  const touchAnimation = () => {
+    setAnimRev((value) => value + 1);
+    appRef.current?.scheduleRecoverySave();
+  };
+  const selectionGroup = () => {
+    const s = appRef.current;
+    return s?.selected?.groupId ? s.groups.find((g) => g.id === s.selected!.groupId) : undefined;
+  };
+  const animationTarget = (): (TrackTarget & { label: string }) | null => {
+    const s = appRef.current,
+      piece = s?.selected;
+    if (!s || !piece) return null;
+    if (subTarget) {
+      const info = listSubparts(piece.mesh).find((sub) => sub.key === subTarget);
+      if (info)
+        return {
+          kind: "sub",
+          id: subTargetId(piece.id, info.key),
+          label: `${piece.part} › ${info.label}`,
+        };
+    }
+    const group = selectionGroup();
+    return group
+      ? { kind: "group", id: group.id, label: group.name }
+      : { kind: "piece", id: String(piece.id), label: `${piece.part} · ${piece.name}` };
+  };
+  const restPosition = (piece: Piece) =>
+    appRef.current?.previewRest?.get(piece)?.position ?? piece.mesh.position;
+  const seekAnimation = (time: number) => {
+    const s = appRef.current;
+    if (!s) return;
+    const clamped = Math.min(s.animation.duration, Math.max(0, time));
+    animTimeRef.current = clamped;
+    setAnimTime(clamped);
+    s.setPreviewTime(clamped);
+    setPreviewActive(true);
+  };
+  const groupSelected = () => {
+    const s = appRef.current;
+    if (!s || running) return;
+    const members = [...s.selectedPieces];
+    if (members.length < 2) {
+      setMessage(t.groupNeedTwo);
+      return;
+    }
+    s.endPreview();
+    s.recordHistory();
+    const group = createGroup(members, s.groups);
+    pruneGroupsAndTracks(s.pieces, s.groups, s.animation);
+    setMessage(group ? `${t.groupCreated}: ${group.name} · ${members.length}` : t.groupNeedTwo);
+    setTimelineOpen(true);
+    touchAnimation();
+  };
+  const ungroupSelected = () => {
+    const s = appRef.current;
+    if (!s || !s.selected?.groupId || running) return;
+    s.endPreview();
+    s.recordHistory();
+    ungroupPiece(s.selected, s.pieces, s.groups);
+    pruneGroupsAndTracks(s.pieces, s.groups, s.animation);
+    setMessage(t.groupRemoved);
+    touchAnimation();
+  };
+  const ensureTrack = (target: TrackTarget) => {
+    const s = appRef.current!;
+    let track = findTrack(s.animation, target);
+    if (!track) {
+      track = { id: newTrackId(), target: { kind: target.kind, id: target.id }, keys: [] };
+      s.animation.tracks.push(track);
+    }
+    return track;
+  };
+  // Keying a single part must carry what is rigidly attached to it (a gear on
+  // an axle, a part pinned fixed): those parts are grouped with it first.
+  const promoteToCluster = (target: TrackTarget & { label: string }) => {
+    const s = appRef.current,
+      anchor = s?.selected;
+    if (!s || !anchor || target.kind !== "piece" || anchor.groupId) return target;
+    const cluster = new Set<Piece>([anchor]),
+      queue = [anchor];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (const c of s.connections) {
+        if (c.a !== current && c.b !== current) continue;
+        if (c.mode !== "fixed" && c.profile !== "axle-cross") continue;
+        const other = c.a === current ? c.b : c.a;
+        if (other.groupId || cluster.has(other)) continue;
+        cluster.add(other);
+        queue.push(other);
+      }
+    }
+    if (cluster.size < 2) return target;
+    const rest = s.previewRest,
+      current = rest ? captureRest(s.pieces) : null;
+    if (rest) restoreRest(rest); // pivot must be the rest position
+    const group = createGroup([...cluster], s.groups, `${anchor.part} +${cluster.size - 1}`);
+    if (current) restoreRest(current);
+    if (!group) return target;
+    group.pivot = (rest?.get(anchor)?.position ?? anchor.mesh.position).toArray() as [number, number, number];
+    s.animation.tracks.forEach((track) => {
+      if (track.target.kind === "piece" && track.target.id === target.id)
+        track.target = { kind: "group", id: group.id };
+    });
+    setMessage(`${t.groupCreated}: ${group.name}`);
+    return { kind: "group" as const, id: group.id, label: group.name };
+  };
+  // Records where the selected group/part is RIGHT NOW as a key at the current
+  // time: move it with the gizmo, then press Add key.
+  // Reloads this part with its LDraw sub-parts kept apart, so one of them (a
+  // motor rotor, a shaft) can be animated while the rest of the part stays still.
+  const splitSelectedPart = async () => {
+    const s = appRef.current,
+      piece = s?.selected;
+    if (!s || !piece || running || busyRef.current) return;
+    [piece.part, piece.modelPart, piece.resolvedPart].forEach((name) => {
+      if (name) splitPartsRef.current.add(String(name).toLowerCase());
+    });
+    try {
+      localStorage.setItem("brickreel:split-parts", JSON.stringify([...splitPartsRef.current]));
+    } catch {}
+    const targets = s.pieces.filter((candidate) => candidate.part === piece.part);
+    s.recordHistory();
+    const { count } = await s.replacePieces(targets);
+    setSelectedId(piece.id);
+    setConnectionRevision((value) => value + 1);
+    setAnimRev((value) => value + 1);
+    setMessage(
+      listSubparts(piece.mesh).length
+        ? `${t.subSplitDone}: ${count}`
+        : t.subSplitNone,
+    );
+    s.scheduleRecoverySave();
+  };
+  const splitPart = blocking(t.fixerRunning, () => splitSelectedPart());
+  const snapKeyPrecision = (key: Keyframe) => {
+    const { move, turn } = animPrecisionRef.current;
+    if (Math.hypot(key.p[0], key.p[1], key.p[2]) <= move) key.p = [0, 0, 0];
+    else key.p = key.p.map((v) => (Math.abs(v) <= move ? 0 : v)) as Keyframe["p"];
+    if (Math.hypot(key.r[0], key.r[1], key.r[2]) <= turn) key.r = [0, 0, 0];
+    return key;
+  };
+  /** Applies the precision limits to every key of the selected track. */
+  const cleanKeys = () => {
+    const s = appRef.current;
+    if (!s) return;
+    s.recordHistory();
+    s.animation.tracks.forEach((track) => track.keys.forEach((key) => snapKeyPrecision(key)));
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const captureKey = () => {
+    const s = appRef.current,
+      base = animationTarget(),
+      anchor = s?.selected;
+    if (!s || !base || !anchor) return;
+    if (!s.previewRest) s.setPreviewTime(animTimeRef.current);
+    if (base.kind === "sub") {
+      // Sub-parts have no gizmo: the key holds the pose the track gives now and
+      // is then edited (offset / rotation) in the key panel or filled by Spin.
+      s.recordHistory();
+      const subTrack = ensureTrack(base),
+        at = animTimeRef.current;
+      if (!subTrack.keys.length && at > 0.001)
+        upsertKey(subTrack, { t: 0, p: [0, 0, 0], r: [0, 0, 0], e: "easeInOut" });
+      upsertKey(subTrack, keyAt(subTrack, at));
+      setSelectedKey({ trackId: subTrack.id, index: subTrack.keys.findIndex((k) => Math.abs(k.t - at) < 1e-3) });
+      setPosing(false);
+      setPreviewActive(true);
+      touchAnimation();
+      s.setPreviewTime(at);
+      return;
+    }
+    const target = promoteToCluster(base);
+    const rest = s.previewRest!.get(anchor);
+    if (!rest) return;
+    s.recordHistory();
+    const rotation = anchor.mesh.quaternion.clone().multiply(rest.quaternion.clone().invert());
+    let offset: THREE.Vector3;
+    if (target.kind === "group") {
+      const group = s.groups.find((g) => g.id === target.id)!,
+        pivot = new THREE.Vector3().fromArray(group.pivot);
+      offset = anchor.mesh.position
+        .clone()
+        .sub(rest.position.clone().sub(pivot).applyQuaternion(rotation).add(pivot));
+    } else offset = anchor.mesh.position.clone().sub(rest.position);
+    const track = ensureTrack(target),
+      time = animTimeRef.current;
+    // First key after t=0: anchor the start at the rest pose so it really animates.
+    if (!track.keys.length && time > 0.001)
+      upsertKey(track, { t: 0, p: [0, 0, 0], r: [0, 0, 0], e: "easeInOut" });
+    const key: Keyframe = {
+      t: time,
+      p: [offset.x, offset.y, offset.z],
+      r: toRotationVector(rotation),
+      e: "easeInOut",
+    };
+    snapKeyPrecision(key);
+    upsertKey(track, key);
+    setSelectedKey({ trackId: track.id, index: track.keys.findIndex((k) => Math.abs(k.t - time) < 1e-3) });
+    setPosing(false);
+    setPreviewActive(true);
+    touchAnimation();
+    s.setPreviewTime(time);
+  };
+  const addKeyAtTime = captureKey;
+  const spinTarget = (axis: "x" | "y" | "z", turns: number) => {
+    const s = appRef.current,
+      base = animationTarget();
+    if (!s || !base) return;
+    s.recordHistory();
+    if (!s.previewRest) s.setPreviewTime(animTimeRef.current);
+    const target = promoteToCluster(base),
+      track = ensureTrack(target),
+      vector: [number, number, number] = [axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0];
+    track.keys = spinKeys(vector, turns, s.animation.duration);
+    setSelectedKey({ trackId: track.id, index: 1 });
+    touchAnimation();
+    seekAnimation(animTimeRef.current);
+  };
+  const toRotationVector = (q: THREE.Quaternion): [number, number, number] => {
+    const unit = q.clone().normalize();
+    if (unit.w < 0) unit.set(-unit.x, -unit.y, -unit.z, -unit.w);
+    const angle = 2 * Math.acos(Math.min(1, unit.w)),
+      scale = Math.sqrt(Math.max(0, 1 - unit.w * unit.w));
+    if (scale < 1e-6 || angle < 1e-6) return [0, 0, 0];
+    const degrees = THREE.MathUtils.radToDeg(angle);
+    return [(unit.x / scale) * degrees, (unit.y / scale) * degrees, (unit.z / scale) * degrees];
+  };
+  const beginPose = () => {
+    const s = appRef.current;
+    if (!s || !animationTarget()) return;
+    s.setPreviewTime(animTimeRef.current);
+    setAnimPlaying(false);
+    setPreviewActive(true);
+    setPosing(true);
+  };
+  const capturePose = captureKey;
+  const cancelPose = () => {
+    setPosing(false);
+    seekAnimation(animTimeRef.current);
+  };
+  const updateKey = (patch: Partial<Keyframe>) => {
+    const s = appRef.current;
+    if (!s || !selectedKey) return;
+    const track = s.animation.tracks.find((tr) => tr.id === selectedKey.trackId),
+      key = track?.keys[selectedKey.index];
+    if (!track || !key) return;
+    Object.assign(key, patch);
+    key.t = Math.min(s.animation.duration, Math.max(0, key.t));
+    track.keys.sort((a, b) => a.t - b.t);
+    setSelectedKey({ trackId: track.id, index: track.keys.indexOf(key) });
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const deleteKey = () => {
+    const s = appRef.current;
+    if (!s || !selectedKey) return;
+    const track = s.animation.tracks.find((tr) => tr.id === selectedKey.trackId);
+    if (!track) return;
+    track.keys.splice(selectedKey.index, 1);
+    if (!track.keys.length) s.animation.tracks = s.animation.tracks.filter((tr) => tr !== track);
+    setSelectedKey(null);
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const deleteKeyAt = (trackId: string, index: number) => {
+    const s = appRef.current;
+    const track = s?.animation.tracks.find((tr) => tr.id === trackId);
+    if (!s || !track || !track.keys[index]) return;
+    s.recordHistory();
+    track.keys.splice(index, 1);
+    if (!track.keys.length) s.animation.tracks = s.animation.tracks.filter((tr) => tr !== track);
+    setSelectedKey(null);
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const easeKeyAt = (trackId: string, index: number, ease: Keyframe["e"]) => {
+    const s = appRef.current;
+    const key = s?.animation.tracks.find((tr) => tr.id === trackId)?.keys[index];
+    if (!s || !key) return;
+    s.recordHistory();
+    key.e = ease;
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const removeTrack = (trackId: string) => {
+    const s = appRef.current;
+    if (!s) return;
+    s.animation.tracks = s.animation.tracks.filter((tr) => tr.id !== trackId);
+    setSelectedKey(null);
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  // Moving the pivot must not change the keyed poses, only how the group gets
+  // there: each key's offset is re-expressed so it rotates about the new pivot.
+  const movePivot = (
+    group: { id: string; pivot: [number, number, number] },
+    next: [number, number, number],
+  ) => {
+    const s = appRef.current,
+      delta = new THREE.Vector3(
+        next[0] - group.pivot[0],
+        next[1] - group.pivot[1],
+        next[2] - group.pivot[2],
+      );
+    s?.animation.tracks.forEach((track) => {
+      if (track.target.kind !== "group" || track.target.id !== group.id) return;
+      track.keys.forEach((key) => {
+        const angle = Math.hypot(key.r[0], key.r[1], key.r[2]);
+        if (angle < 1e-9) return;
+        const q = new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(key.r[0] / angle, key.r[1] / angle, key.r[2] / angle),
+            THREE.MathUtils.degToRad(angle),
+          ),
+          shift = delta.clone().applyQuaternion(q).sub(delta);
+        key.p = [key.p[0] + shift.x, key.p[1] + shift.y, key.p[2] + shift.z];
+      });
+    });
+    group.pivot = next;
+  };
+  const editGroup = (change: (group: NonNullable<ReturnType<typeof selectionGroup>>) => void) => {
+    const group = selectionGroup();
+    if (!group) return;
+    change(group);
+    touchAnimation();
+    if (previewActive) seekAnimation(animTimeRef.current);
+  };
+  const exportGlbRaw = async () => {
+    const s = appRef.current;
+    if (!s || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const mod = await import("./export-gltf");
+      const result = await s.runAtRest(() =>
+        mod.exportGLB(
+          { pieces: s.pieces, groups: s.groups, animation: s.animation },
+          exportOptions,
+        ),
+      );
+      const file = `${(projectNameRef.current || "model").replace(/[^\w.-]+/g, "_")}.glb`,
+        url = URL.createObjectURL(new Blob([result.glb], { type: "model/gltf-binary" })),
+        link = document.createElement("a");
+      link.href = url;
+      link.download = file;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setExportInfo({
+        file,
+        stats: result.stats,
+        snippet: mod.usageSnippet(result, file),
+        viewer: mod.exampleViewerHtml(file, !!result.clipName),
+      });
+      setMessage(`${t.exported}: ${file} · ${(result.stats.bytes / 1048576).toFixed(2)} MB`);
+    } catch (error) {
+      setMessage(`${t.exportFailed}: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setExportBusy(false);
+    }
+  };
+  const downloadText = (name: string, text: string, type: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type })),
+      link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+  const exportCodeRaw = async () => {
+    const s = appRef.current;
+    if (!s || exportBusy) return;
+    if (!s.animation.tracks.some((track) => track.keys.length)) {
+      setMessage(t.exportCodeNone);
+      return;
+    }
+    setExportBusy(true);
+    try {
+      const mod = await import("./export-gltf");
+      const base = (projectNameRef.current || "model").replace(/[^\w.-]+/g, "_"),
+        code = await s.runAtRest(() =>
+          mod.exportAnimationCode(
+            { pieces: s.pieces, groups: s.groups, animation: s.animation },
+            `${base}.glb`,
+          ),
+        );
+      downloadText("animation.js", code, "text/javascript");
+      setExportCode(code);
+      setMessage(`${t.exportCodeDone}: animation.js`);
+    } catch (error) {
+      setMessage(`${t.exportFailed}: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setExportBusy(false);
+    }
+  };
+  const runFixerRaw = async () => {
+    const s = appRef.current;
+    if (!s || fixerBusy || running) return;
+    setFixerBusy(true);
+    setFixerReport(null);
+    setMessage(t.fixerRunning);
+    try {
+      const report = await s.fixModel(fixerOptions);
+      setFixerReport(report);
+      setSelectedId(null);
+      setCount(s.pieces.length);
+      setConnectionRevision((value) => value + 1);
+      setAnimRev((value) => value + 1);
+      setMessage(t.fixerDone);
+    } catch (error) {
+      setMessage(`${t.fixerFailed}: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setFixerBusy(false);
+    }
+  };
+  const replacePartsRaw = async () => {
+    const s = appRef.current;
+    if (!s || fixerBusy || running) return;
+    const from = replaceFrom.trim().toLowerCase(),
+      to = replaceTo.trim().replace(/\.dat$/i, "").toLowerCase(),
+      targets = from ? s.pieces.filter((piece) => piece.part.toLowerCase() === from) : [...s.pieces];
+    if (!targets.length) {
+      setMessage(t.replaceNone);
+      return;
+    }
+    let catalog: CatalogPart | undefined;
+    if (to) {
+      const resolved = resolvePaletteRequest(to),
+        known = paletteParts.find((part) => part.part.toLowerCase() === resolved);
+      catalog = known ?? {
+        part: to,
+        name: `LDraw ${to}`,
+        kind: kindFor("", ""),
+        color: 71,
+        origin: "catalog-search",
+        sourceKind: "ldraw-network",
+        requestedPart: to,
+        resolvedPart: to,
+      };
+    }
+    setFixerBusy(true);
+    setMessage(t.fixerRunning);
+    try {
+      s.recordHistory();
+      const { count } = await s.replacePieces(targets, catalog);
+      setSelectedId(null);
+      setCount(s.pieces.length);
+      setConnectionRevision((value) => value + 1);
+      setAnimRev((value) => value + 1);
+      setMessage(`${t.replaced}: ${count}/${targets.length}`);
+      s.scheduleRecoverySave();
+    } catch (error) {
+      setMessage(`${t.fixerFailed}: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setFixerBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!animPlaying) return;
+    let frame = 0,
+      last = performance.now();
+    const tick = (now: number) => {
+      const s = appRef.current;
+      if (!s) return;
+      let time = animTimeRef.current + ((now - last) / 1000) * animSpeed;
+      last = now;
+      if (time >= s.animation.duration) {
+        if (s.animation.loop) time %= s.animation.duration;
+        else {
+          time = s.animation.duration;
+          setAnimPlaying(false);
+        }
+      }
+      animTimeRef.current = time;
+      s.setPreviewTime(time);
+      setAnimTime(time);
+      setPreviewActive(true);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [animPlaying, animSpeed]);
+  const timelineRows = (() => {
+    const s = appRef.current;
+    if (!s) return [];
+    void animRev;
+    return s.animation.tracks.map((track: Track) => {
+      const subId = track.target.kind === "sub" ? splitSubTargetId(track.target.id) : null,
+        group = track.target.kind === "group" ? s.groups.find((g) => g.id === track.target.id) : undefined,
+        piece = track.target.kind === "piece" ? s.pieces.find((p) => String(p.id) === track.target.id) : undefined,
+        subPiece = subId ? s.pieces.find((p) => String(p.id) === subId.pieceId) : undefined,
+        subLabel = subPiece && subId ? listSubparts(subPiece.mesh).find((info) => info.key === subId.key)?.label : undefined;
+      return {
+        id: track.id,
+        kind: track.target.kind,
+        label:
+          group?.name ??
+          (piece ? `${piece.part} · ${piece.name}` : subPiece ? `${subPiece.part} › ${subLabel ?? subId?.key}` : track.target.id),
+        keys: track.keys,
+      };
+    });
+  })();
+
+  // Everything slow runs behind a blocking overlay so the editor cannot be
+  // changed (or a second heavy job started) while it works.
+  const importModel = blocking(t.busyImport, (file: File) => importModelRaw(file));
+  const performImportProject = blocking(t.busyProject, (document: SimStudioProjectDocument) =>
+    performImportProjectRaw(document),
+  );
+  const importProjectFile = blocking(t.busyProject, (file: File) => importProjectFileRaw(file));
+  const importStl = (files: File[]) => setStlPending(files);
+  const confirmStl = blocking(t.stlLoading, async (stlSettings: StlSettings) => {
+    const files = stlPending;
+    setStlPending(null);
+    if (files?.length) await importStlRaw(files, stlSettings);
+  });
+  const forceReloadModels = blocking(t.forceReloading, (all: boolean) => forceReloadModelsRaw(all));
+  const runFixer = blocking(t.fixerRunning, () => runFixerRaw());
+  const replaceParts = blocking(t.fixerRunning, () => replacePartsRaw());
+  const exportGlb = blocking(t.busyExport, () => exportGlbRaw());
+  const exportCode = blocking(t.busyExport, () => exportCodeRaw());
+  const performOpenSavedProject = blocking(t.busyProject, (id: string) => performOpenSavedProjectRaw(id));
+
+  const exportVideoFile = async () => {
+    const s = appRef.current;
+    if (!s || busyRef.current) return;
+    const mod = await import("./export-video");
+    if (videoOptions.format === "mp4" && !mod.videoSupported()) {
+      setMessage(t.videoNoWebCodecs);
+      return;
+    }
+    setVideoOpen(false);
+    let cancelled = false;
+    busyRef.current = true;
+    setBusy({ label: t.busyVideo, progress: 0, cancel: () => (cancelled = true) });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const resumeAt = animTimeRef.current,
+      canvasBox = s.renderer.domElement.getBoundingClientRect();
+    try {
+      setAnimPlaying(false);
+      const outWidth = Math.max(2, Math.round(videoOptions.width / 2) * 2),
+        outHeight = Math.max(2, Math.round(outWidth / Math.max(0.2, canvasBox.width / Math.max(1, canvasBox.height)) / 2) * 2);
+      s.setExportSize?.({ w: outWidth, h: outHeight });
+      const blob = await mod.encodeVideo({
+        duration: s.animation.duration,
+        options: videoOptions,
+        aspect: Math.max(0.2, canvasBox.width / Math.max(1, canvasBox.height)),
+        isCancelled: () => cancelled,
+        onProgress: (fraction) => setBusy((b) => (b ? { ...b, progress: fraction } : b)),
+        renderFrame: (time, ctx, w, h) =>
+          new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error("Render timed out")), 4000);
+            s.setPreviewTime(time);
+            s.afterRender = (canvas) => {
+              window.clearTimeout(timer);
+              ctx.drawImage(canvas, 0, 0, w, h);
+              resolve();
+            };
+            s.requestRender();
+          }),
+      });
+      if (blob) {
+        const ext = videoOptions.format,
+          name = `${(projectNameRef.current || "animation").replace(/[^\w.-]+/g, "_")}.${ext}`;
+        const url = URL.createObjectURL(blob),
+          link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 8000);
+        setMessage(`${t.exported}: ${name} · ${(blob.size / 1048576).toFixed(1)} MB`);
+      } else setMessage(t.cancelled);
+    } catch (error) {
+      setMessage(`${t.exportFailed}: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      s.setExportSize?.(null);
+      seekAnimation(resumeAt);
+      busyRef.current = false;
+      setBusy(null);
+    }
+  };
+
   const exportModel = () => {
     const s = appRef.current;
     if (!s) return;
@@ -10568,7 +12395,7 @@ export default function Home() {
     });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([makeLDR(lines)]));
-    a.download = "sim-studio-model.ldr";
+    a.download = "brickreel-model.ldr";
     a.click();
   };
 
@@ -10582,9 +12409,9 @@ export default function Home() {
     } catch {}
   };
 
-  const downloadProjectDocument = (document: SimStudioProjectDocument) => {
+  const downloadProjectDocument = async (document: SimStudioProjectDocument) => {
     const url = URL.createObjectURL(
-        new Blob([encodeProjectFile(document)], { type: PROJECT_MIME }),
+        new Blob([(await encodeProjectAsync(document)) as BlobPart], { type: PROJECT_MIME }),
       ),
       anchor = window.document.createElement("a");
     anchor.href = url;
@@ -10601,29 +12428,21 @@ export default function Home() {
     setProjectBusy(true);
     const previousSavedRevision = savedProjectRevisionRef.current;
     try {
-      projectNameRef.current =
-        projectName.trim() ||
-        (language === "es" ? "Mecanismo sin título" : "Untitled mechanism");
+      projectNameRef.current = projectName.trim() || "Untitled animation";
       savedProjectRevisionRef.current = projectRevisionRef.current;
       const document = state.createProjectDocument();
-      await saveBrowserProject(document);
-      await saveRecoveryProject(document);
+      await saveProjectAsync(document);
+      await saveRecoveryAsync(document);
       await refreshProjectList();
       setRecoveryStatus("saved");
       setCurrentProjectSaved(true);
       setProjectDirty(false);
       setSaveNamePrompt(false);
       setProjectNameEditing(false);
-      setMessage(
-        language === "es"
-          ? `Proyecto «${document.name}» guardado en el navegador`
-          : `Project “${document.name}” saved in this browser`,
-      );
+      setMessage(`Project “${document.name}” saved in this browser`);
     } catch (error) {
       savedProjectRevisionRef.current = previousSavedRevision;
-      setMessage(
-        `${language === "es" ? "No se pudo guardar" : "Could not save"}: ${error instanceof Error ? error.message : "IndexedDB"}`,
-      );
+      setMessage(`Could not save: ${error instanceof Error ? error.message : "IndexedDB"}`);
     } finally {
       setProjectBusy(false);
     }
@@ -10761,12 +12580,12 @@ export default function Home() {
     );
   };
 
-  const performOpenSavedProject = async (id: string) => {
+  const performOpenSavedProjectRaw = async (id: string) => {
     const state = appRef.current;
     if (!state || running || projectBusy) return;
     setProjectBusy(true);
     try {
-      const document = await loadBrowserProject(id);
+      const document = await loadProjectAsync(id);
       if (!document) throw new Error("Project not found");
       await state.restoreProjectDocument(document);
       savedProjectRevisionRef.current = projectRevisionRef.current;
@@ -10791,7 +12610,7 @@ export default function Home() {
     reset();
     const id = createProjectId(),
       createdAt = new Date().toISOString(),
-      name = language === "es" ? "Mecanismo sin título" : "Untitled mechanism";
+      name = "Untitled animation";
     activeProjectIdRef.current = id;
     projectCreatedAtRef.current = createdAt;
     projectRevisionRef.current = 0;
@@ -10807,7 +12626,7 @@ export default function Home() {
     setProjectNameEditing(false);
     appRef.current?.scheduleRecoverySave(true, false);
     setProjectMenuOpen(false);
-    setMessage(language === "es" ? "Proyecto nuevo" : "New project");
+    setMessage("New project");
   };
 
   const requestCreateNewProject = () => {
@@ -10823,11 +12642,11 @@ export default function Home() {
   const exportCurrentProject = () => {
     const state = appRef.current;
     if (!state || running) return;
-    projectNameRef.current = projectName.trim() || "Untitled mechanism";
-    downloadProjectDocument(state.createProjectDocument());
+    projectNameRef.current = projectName.trim() || "Untitled animation";
+    void downloadProjectDocument(state.createProjectDocument());
   };
 
-  const performImportProject = async (document: SimStudioProjectDocument) => {
+  const performImportProjectRaw = async (document: SimStudioProjectDocument) => {
     const state = appRef.current;
     if (!state || running || projectBusy) return;
     setProjectBusy(true);
@@ -10840,44 +12659,130 @@ export default function Home() {
           name: uniqueProjectName(
             document.name,
             existingProjects,
-            language === "es" ? "Proyecto importado" : "Imported project",
+            "Imported project",
           ),
           createdAt: now,
           updatedAt: now,
         };
       savedProjectRevisionRef.current = importedDocument.revision ?? 0;
       importedDocument.savedRevision = savedProjectRevisionRef.current;
-      await saveBrowserProject(importedDocument);
+      await saveProjectAsync(importedDocument);
       await state.restoreProjectDocument(importedDocument);
       setCurrentProjectSaved(true);
       setProjectDirty(false);
       setProjectNameEditing(false);
       await refreshProjectList();
       setProjectMenuOpen(false);
-      setMessage(
-        language === "es"
-          ? `Proyecto «${importedDocument.name}» importado como proyecto nuevo`
-          : `Project “${importedDocument.name}” imported as a new project`,
-      );
+      setMessage(`Project “${importedDocument.name}” imported as a new project`);
     } catch (error) {
-      setMessage(
-        `${language === "es" ? "Archivo de proyecto no válido" : "Invalid project file"}: ${error instanceof Error ? error.message : "error"}`,
-      );
+      setMessage(`Invalid project file: ${error instanceof Error ? error.message : "error"}`);
     } finally {
       setProjectBusy(false);
     }
   };
 
-  const importProjectFile = async (file: File) => {
+  const importProjectFileRaw = async (file: File) => {
+    if (running || projectBusy) return;
     try {
-      const document = decodeProjectFile(await file.arrayBuffer());
+      const document = await decodeProjectAsync(await file.arrayBuffer());
       if (projectDirty) setProjectConfirmation({ kind: "import", document });
       else void performImportProject(document);
     } catch (error) {
       setMessage(
-        `${language === "es" ? "Archivo de proyecto no válido" : "Invalid project file"}: ${error instanceof Error ? error.message : "error"}`,
+        `Invalid project file: ${error instanceof Error ? error.message : "error"}`,
       );
     }
+  };
+
+  // STL meshes become ordinary pieces: millimetres -> studs (8 mm), Z-up -> Y-up,
+  // centred, with the triangle data stored inside the project like any part.
+  const importStlRaw = async (files: File[], stlSettings: StlSettings) => {
+    const s = appRef.current;
+    if (!s || running) return;
+    setMessage(t.stlLoading);
+    s.recordHistory();
+    let added = 0;
+    const target = s.cameraTarget;
+    for (const file of files) {
+      try {
+        // Origin, units, axis and rotation come from the import dialog.
+        const geometry = prepareStlGeometry(new STLLoader().parse(await file.arrayBuffer()), stlSettings),
+          lift = Math.max(0, -(geometry.boundingBox?.min.y ?? 0));
+        const mesh = new THREE.Mesh(
+            geometry,
+            new THREE.MeshStandardMaterial({ color: new THREE.Color(stlSettings.color), roughness: 0.6, flatShading: true }),
+          ),
+          model = new THREE.Group();
+        model.add(mesh);
+        const base = file.name.replace(/\.stl$/i, "").replace(/[^\w.-]+/g, "_"),
+          part = `stl-${base}`,
+          piece = await s.addPart(
+            {
+              part,
+              name: base,
+              kind: kindFor("", ""),
+              color: 71,
+              origin: "catalog-search",
+              sourceKind: "packaged-cache",
+              embeddedGeometry: model.toJSON() as unknown as JsonObject,
+              projectAssetKey: part,
+            },
+            new THREE.Vector3(Math.round(target.x) + added * 2, lift, Math.round(target.z)),
+          );
+        if (piece) {
+          // The chosen origin is also where the part rotates.
+          piece.rotationPivotLocal = new THREE.Vector3(0, 0, 0);
+          added++;
+          s.selected = piece;
+          s.selectedPieces = new Set([piece]);
+          setSelectedId(piece.id);
+        }
+      } catch (error) {
+        setMessage(`${t.stlFailed}: ${file.name} · ${error instanceof Error ? error.message : error}`);
+      }
+    }
+    if (added) {
+      setCount(s.pieces.length);
+      setMessage(`${t.stlLoaded}: ${added}`);
+      s.rebuildRenderBatches();
+      s.refreshDebug();
+      s.requestRender();
+      s.scheduleRecoverySave();
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    if (/\.stl$/i.test(file.name)) {
+      await importStl([file]);
+      return;
+    }
+    const fileName = file.name.toLowerCase();
+    if (fileName.endsWith(".simstudio")) {
+      await importProjectFile(file);
+      return;
+    }
+    // Attempt decoding as project save file (JSON, compressed, or binary)
+    try {
+      const buffer = await file.arrayBuffer();
+      const document = await decodeProjectAsync(buffer);
+      if (document && Array.isArray(document.pieces)) {
+        if (projectDirty) setProjectConfirmation({ kind: "import", document });
+        else void performImportProject(document);
+        return;
+      }
+    } catch {}
+
+    try {
+      const slice = await file.slice(0, 11).arrayBuffer();
+      const bytes = new Uint8Array(slice);
+      const magic = [83, 73, 77, 83, 84, 85, 68, 73, 79, 1, 10]; // SIMSTUDIO\u0001\n
+      if (bytes.length === 11 && magic.every((b, i) => bytes[i] === b)) {
+        await importProjectFile(file);
+        return;
+      }
+    } catch {}
+
+    await importModel(file);
   };
 
   const performRemoveSavedProject = async (id: string) => {
@@ -10934,11 +12839,11 @@ export default function Home() {
     }
     setProjectBusy(true);
     try {
-      const document = await loadBrowserProject(activeProjectIdRef.current);
+      const document = await loadProjectAsync(activeProjectIdRef.current);
       if (!document) throw new Error("Project not found");
       document.name = name;
       document.updatedAt = new Date().toISOString();
-      await saveBrowserProject(document);
+      await saveProjectAsync(document);
       suppressProjectNameDirtyRef.current = true;
       projectNameRef.current = name;
       setProjectName(name);
@@ -10962,7 +12867,7 @@ export default function Home() {
     if (!currentProjectSaved || projectBusy || running) return;
     setProjectBusy(true);
     try {
-      const document = await loadBrowserProject(activeProjectIdRef.current);
+      const document = await loadProjectAsync(activeProjectIdRef.current);
       if (!document) throw new Error("Project not found");
       const suffix = language === "es" ? " copia" : " copy";
       setDuplicateProjectDocument(document);
@@ -10996,7 +12901,7 @@ export default function Home() {
           createdAt: now,
           updatedAt: now,
         };
-      await saveBrowserProject(copy);
+      await saveProjectAsync(copy);
       setDuplicateProjectDocument(null);
       setDuplicateProjectName("");
       await refreshProjectList();
@@ -12369,37 +14274,10 @@ export default function Home() {
         <div className="brand">
           <span className="mark">S</span>
           <div>
-            <strong>SIM STUDIO</strong>
+            <strong>BRICKREEL</strong>
             <small>{t.subtitle}</small>
           </div>
         </div>
-        <div className="language-toggle" role="group" aria-label="Language / Idioma">
-          <button
-            className={language === "es" ? "active" : ""}
-            onClick={() => setLanguage("es")}
-            aria-label="Español"
-            title="Español"
-          >
-            🇪🇸
-          </button>
-          <button
-            className={language === "en" ? "active" : ""}
-            onClick={() => setLanguage("en")}
-            aria-label="English"
-            title="English"
-          >
-            🇬🇧
-          </button>
-        </div>
-        <button
-          className="theme-toggle"
-          onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
-          aria-label={t.switchTheme}
-          title={theme === "dark" ? t.light : t.dark}
-        >
-          <span>{theme === "dark" ? "☀" : "◐"}</span>
-          {theme === "dark" ? t.light : t.dark}
-        </button>
         <button
           className="project project-button"
           onClick={() => setProjectMenuOpen(true)}
@@ -12420,33 +14298,32 @@ export default function Home() {
             ref={fileRef}
             type="file"
             hidden
-            accept=".ldr,.mpd,.io"
+            multiple
+            accept=".simstudio,.ldr,.mpd,.io,.json,.stl"
             onChange={(e) => {
-              const file = e.target.files?.[0];
+              const files = [...(e.target.files ?? [])];
               e.currentTarget.value = "";
-              if (file) void importModel(file);
+              if (files.length && files.every((f) => /\.stl$/i.test(f.name))) void importStl(files);
+              else if (files[0]) void handleImportFile(files[0]);
             }}
           />
-          <button
-            className="ghost project-manager-trigger"
-            onClick={() => setProjectMenuOpen(true)}
-            title={`${t.manageProjects} · Ctrl+S`}
-          >
-            ▣ {t.projectsButton}
-          </button>
-          <button
-            className={`ghost map-update-trigger ${mapUpdates.length ? "pending" : ""}`}
-            onClick={() => setMapUpdatesOpen(true)}
-            title={t.mapUpdates}
-          >
-            ↻ {t.mapUpdatesButton}
-            <b>{mapUpdates.length}</b>
-          </button>
+          <input
+            ref={stlFileRef}
+            type="file"
+            hidden
+            multiple
+            accept=".stl,model/stl"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.currentTarget.value = "";
+              if (files.length) void importStl(files);
+            }}
+          />
           <input
             ref={projectFileRef}
             type="file"
             hidden
-            accept={PROJECT_EXTENSION}
+            accept={`${PROJECT_EXTENSION},.json`}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.currentTarget.value = "";
@@ -12458,8 +14335,8 @@ export default function Home() {
             style={{ minWidth: 34, padding: "10px 8px", fontSize: 16, lineHeight: 1 }}
             disabled={running}
             onClick={() => void appRef.current?.undo()}
-            aria-label={language === "es" ? "Deshacer" : "Undo"}
-            title={`${language === "es" ? "Deshacer" : "Undo"} · Ctrl+Z`}
+            aria-label="Undo"
+            title="Undo · Ctrl+Z"
           >
             ↶
           </button>
@@ -12468,46 +14345,672 @@ export default function Home() {
             style={{ minWidth: 34, padding: "10px 8px", fontSize: 16, lineHeight: 1 }}
             disabled={running}
             onClick={() => void appRef.current?.redo()}
-            aria-label={language === "es" ? "Rehacer" : "Redo"}
-            title={`${language === "es" ? "Rehacer" : "Redo"} · Ctrl+Y`}
+            aria-label="Redo"
+            title="Redo · Ctrl+Y"
           >
             ↷
           </button>
           <button
             className="ghost"
-            style={{ minWidth: 34, padding: "10px 8px", fontSize: 16, lineHeight: 1 }}
-            disabled={running || !selected}
-            onClick={() => appRef.current?.copySelected()}
-            aria-label={language === "es" ? "Copiar pieza" : "Copy part"}
-            title={`${language === "es" ? "Copiar pieza" : "Copy part"} · Ctrl+C`}
+            disabled={running}
+            onClick={() => stlFileRef.current?.click()}
+            title={t.stlButtonHelp}
           >
-            ⧉
+            ⬡ STL
           </button>
           <button
             className="ghost"
-            style={{ minWidth: 34, padding: "10px 8px", fontSize: 16, lineHeight: 1 }}
             disabled={running}
-            onClick={() => void appRef.current?.pasteClipboard()}
-            aria-label={language === "es" ? "Pegar pieza" : "Paste part"}
-            title={`${language === "es" ? "Pegar pieza" : "Paste part"} · Ctrl+V`}
+            onClick={selected?.groupId ? ungroupSelected : groupSelected}
+            title={t.groupHelp}
           >
-            ⎘
-          </button>
-          <button className="ghost" onClick={() => fileRef.current?.click()}>
-            {t.import}
-          </button>
-          <button className="ghost" onClick={exportModel}>
-            {t.export}
+            {selected?.groupId ? `⛓ ${t.ungroup}` : `⛓ ${t.group}`}
           </button>
           <button
-            className={running ? "stop" : "play"}
-            onClick={physics}
-            disabled={physicsBusy}
+            className={timelineOpen ? "play" : "ghost"}
+            disabled={running}
+            onClick={() => {
+              if (timelineOpen) {
+                appRef.current?.endPreview();
+                setAnimPlaying(false);
+              }
+              setTimelineOpen(!timelineOpen);
+              if (!timelineOpen) window.setTimeout(() => seekAnimation(animTimeRef.current), 0);
+            }}
           >
-            {physicsBusy ? "…" : running ? t.stop : t.simulate}
+            ▶ {t.animate}
           </button>
+          {legacyPhysics && (
+            <button
+              className={running ? "stop" : "ghost"}
+              onClick={physics}
+              disabled={physicsBusy}
+              title={t.legacyPhysics}
+            >
+              {physicsBusy ? "…" : running ? t.stop : t.simulate}
+            </button>
+          )}
+          <button
+            className="ghost settings-trigger"
+            onClick={() => setSettingsOpen(true)}
+            title="Settings · Graphics & System"
+            aria-label="Settings"
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "10px 10px" }}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{ flexShrink: 0 }}
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+          <div className="header-menu-wrap">
+            <button
+              className="menu-trigger"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              ⋯ {t.more}
+              {mapUpdates.length > 0 && <b>{mapUpdates.length}</b>}
+            </button>
+            {menuOpen && (
+              <>
+                <div className="header-menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="header-menu" role="menu">
+                  {(
+                    [
+                      [`▣ ${t.projectsButton}`, () => setProjectMenuOpen(true), false],
+                      [t.import, () => fileRef.current?.click(), false],
+                      [`⬡ ${t.stlTitle}`, () => stlFileRef.current?.click(), running],
+                      [`${t.export} (LDraw)`, exportModel, false],
+                      [
+                        "⬇ GLB · Three.js",
+                        () => {
+                          setExportInfo(null);
+                          setExportOpen(true);
+                        },
+                        false,
+                      ],
+                      [`🎞 ${t.videoExport}`, () => setVideoOpen(true), false],
+                      ["—", null, false],
+                      [`🛠 ${t.fixer}`, () => setFixerOpen(true), running],
+                      [`⧉ ${t.copy}`, () => appRef.current?.copySelected(), running || !selected],
+                      [`⎘ ${t.paste}`, () => void appRef.current?.pasteClipboard(), running],
+                      [
+                        `↻ ${t.mapUpdatesButton}${mapUpdates.length ? ` (${mapUpdates.length})` : ""}`,
+                        () => setMapUpdatesOpen(true),
+                        false,
+                      ],
+                      [
+                        theme === "dark" ? `☀ ${t.light}` : `◐ ${t.dark}`,
+                        () => setTheme((value) => (value === "dark" ? "light" : "dark")),
+                        false,
+                      ],
+                    ] as [string, (() => void) | null, boolean][]
+                  ).map(([label, action, disabled], index) =>
+                    action ? (
+                      <button
+                        key={index}
+                        role="menuitem"
+                        disabled={disabled}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          action();
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ) : (
+                      <hr key={index} />
+                    ),
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
+      {videoOpen && (
+        <div
+          className="project-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setVideoOpen(false);
+          }}
+        >
+          <section className="project-dialog settings-dialog" role="dialog" aria-modal="true">
+            <div className="project-dialog-head">
+              <div>
+                <small>MP4 · GIF</small>
+                <h2>{t.videoExport}</h2>
+              </div>
+              <button className="project-close" onClick={() => setVideoOpen(false)} aria-label={t.close}>
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+              <p className="settings-help">{t.videoHelp}</p>
+              <div className="settings-row">
+                <span>{t.videoFormat}</span>
+                <div className="settings-choice">
+                  {(["mp4", "gif"] as const).map((format) => (
+                    <button
+                      key={format}
+                      type="button"
+                      className={videoOptions.format === format ? "active" : ""}
+                      onClick={() =>
+                        setVideoOptions({
+                          ...videoOptions,
+                          format,
+                          fps: format === "gif" ? 15 : 30,
+                          width: format === "gif" ? 640 : 1280,
+                        })
+                      }
+                    >
+                      {format.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <span>{t.videoWidth}</span>
+                <div className="settings-choice">
+                  {(videoOptions.format === "gif" ? [320, 480, 640, 800] : [1280, 1920, 2560, 3840]).map((width) => (
+                    <button
+                      key={width}
+                      type="button"
+                      className={videoOptions.width === width ? "active" : ""}
+                      onClick={() => setVideoOptions({ ...videoOptions, width })}
+                    >
+                      {width}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <span>FPS</span>
+                <div className="settings-choice">
+                  {(videoOptions.format === "gif" ? [10, 15, 20] : [24, 30, 60]).map((fps) => (
+                    <button
+                      key={fps}
+                      type="button"
+                      className={videoOptions.fps === fps ? "active" : ""}
+                      onClick={() => setVideoOptions({ ...videoOptions, fps })}
+                    >
+                      {fps}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <span>{t.videoRepeats}</span>
+                <div className="settings-choice">
+                  {[1, 2, 3].map((repeats) => (
+                    <button
+                      key={repeats}
+                      type="button"
+                      className={videoOptions.repeats === repeats ? "active" : ""}
+                      onClick={() => setVideoOptions({ ...videoOptions, repeats })}
+                    >
+                      ×{repeats}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="settings-help">
+                {Math.round((appRef.current?.animation.duration ?? 5) * videoOptions.fps * videoOptions.repeats)} {t.videoFrames}
+              </p>
+              <button type="button" className="primary settings-reload" onClick={() => void exportVideoFile()}>
+                {t.videoRender}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {busy && (
+        <div className="busy-overlay" role="alertdialog" aria-live="assertive" aria-busy="true">
+          <div className="busy-card">
+            <div className="busy-spinner" />
+            <b>{busy.label}</b>
+            {busy.progress !== undefined && (
+              <>
+                <div className="busy-bar">
+                  <i style={{ width: `${Math.round(busy.progress * 100)}%` }} />
+                </div>
+                <small>{Math.round(busy.progress * 100)}%</small>
+              </>
+            )}
+            {busy.cancel && (
+              <button type="button" onClick={busy.cancel}>
+                {t.cancel}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {timelineOpen && (
+        <TimelinePanel
+          labels={t as unknown as Record<string, string>}
+          duration={appRef.current?.animation.duration ?? 5}
+          loop={appRef.current?.animation.loop ?? true}
+          time={animTime}
+          playing={animPlaying}
+          speed={animSpeed}
+          previewActive={previewActive}
+          posing={posing}
+          rows={timelineRows}
+          targetLabel={animationTarget()?.label ?? null}
+          group={(() => {
+            const group = selectionGroup(),
+              s = appRef.current;
+            return group && s
+              ? {
+                  id: group.id,
+                  name: group.name,
+                  pivot: group.pivot,
+                  parts: s.pieces
+                    .filter((p) => p.groupId === group.id)
+                    .map((p) => ({ id: p.id, label: `${p.part} · ${p.name}` })),
+                }
+              : null;
+          })()}
+          selectedKey={selectedKey}
+          onPlayPause={() => {
+            if (!animPlaying) seekAnimation(animTimeRef.current);
+            setAnimPlaying(!animPlaying);
+          }}
+          onStop={() => {
+            setAnimPlaying(false);
+            animTimeRef.current = 0;
+            setAnimTime(0);
+            appRef.current?.endPreview();
+          }}
+          onSeek={seekAnimation}
+          onSpeed={setAnimSpeed}
+          onDuration={(seconds) => {
+            const s = appRef.current;
+            if (!s || !Number.isFinite(seconds)) return;
+            s.animation.duration = Math.min(600, Math.max(0.1, seconds));
+            touchAnimation();
+          }}
+          onLoop={(loop) => {
+            if (appRef.current) appRef.current.animation.loop = loop;
+            touchAnimation();
+          }}
+          onEditPose={() => {
+            setAnimPlaying(false);
+            appRef.current?.endPreview();
+          }}
+          subparts={(() => {
+            const piece = appRef.current?.selected;
+            void animRev;
+            return piece ? listSubparts(piece.mesh).map((info) => ({ key: info.key, label: info.label })) : [];
+          })()}
+          subTarget={subTarget}
+          hasSelection={!!selectedId}
+          onSubTarget={setSubTarget}
+          onSplitPart={() => void splitPart()}
+          precision={animPrecision}
+          onPrecision={setAnimPrecision}
+          onCleanKeys={cleanKeys}
+          onAddKey={addKeyAtTime}
+          onSpin={spinTarget}
+          onBeginPose={beginPose}
+          onCapturePose={capturePose}
+          onCancelPose={cancelPose}
+          onSelectKey={setSelectedKey}
+          onUpdateKey={updateKey}
+          onDeleteKey={deleteKey}
+          onDeleteKeyAt={deleteKeyAt}
+          onEaseKeyAt={easeKeyAt}
+          onRemoveTrack={removeTrack}
+          onRenameGroup={(name) => editGroup((group) => (group.name = name.slice(0, 40)))}
+          onPivot={(pivot) => editGroup((group) => movePivot(group, pivot))}
+          onPivotFromPart={(partId) =>
+            editGroup((group) => {
+              const piece = appRef.current?.pieces.find((p) => p.id === partId);
+              if (piece) movePivot(group, restPosition(piece).toArray() as [number, number, number]);
+            })
+          }
+          onPivotFromBounds={() =>
+            editGroup((group) => {
+              const members = appRef.current?.pieces.filter((p) => p.groupId === group.id) ?? [],
+                box = new THREE.Box3();
+              members.forEach((p) => box.expandByPoint(restPosition(p)));
+              if (!box.isEmpty())
+                movePivot(group, box.getCenter(new THREE.Vector3()).toArray() as [number, number, number]);
+            })
+          }
+          onClose={() => {
+            appRef.current?.endPreview();
+            setAnimPlaying(false);
+            setTimelineOpen(false);
+          }}
+        />
+      )}
+      {exportOpen && (
+        <div
+          className="project-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setExportOpen(false);
+          }}
+        >
+          <section className="project-dialog settings-dialog" role="dialog" aria-modal="true">
+            <div className="project-dialog-head">
+              <div>
+                <small>THREE.JS · GLB</small>
+                <h2>{t.exportGlb}</h2>
+              </div>
+              <button className="project-close" onClick={() => setExportOpen(false)} aria-label={t.close}>
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+              <p className="settings-help">{t.exportGlbHelp}</p>
+              <div className="settings-row">
+                <span>{t.exportUnits}</span>
+                <div className="settings-choice">
+                  {(["meters", "studs"] as const).map((units) => (
+                    <button
+                      key={units}
+                      type="button"
+                      className={exportOptions.units === units ? "active" : ""}
+                      onClick={() => setExportOptions({ ...exportOptions, units })}
+                    >
+                      {units === "meters" ? t.exportMeters : t.exportStuds}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="settings-row">
+                <span>{t.exportAnimation}</span>
+                <input
+                  type="checkbox"
+                  checked={exportOptions.animation}
+                  onChange={(event) => setExportOptions({ ...exportOptions, animation: event.target.checked })}
+                />
+              </label>
+              <label className="settings-row">
+                <span>{t.exportOutlines}</span>
+                <input
+                  type="checkbox"
+                  checked={exportOptions.outlines}
+                  onChange={(event) => setExportOptions({ ...exportOptions, outlines: event.target.checked })}
+                />
+              </label>
+              <button type="button" className="primary settings-reload" disabled={exportBusy} onClick={() => void exportGlb()}>
+                {exportBusy ? "…" : t.exportDownload}
+              </button>
+              <p className="settings-help">{t.exportCodeHelp}</p>
+              <button type="button" disabled={exportBusy} onClick={() => void exportCode()}>
+                {t.exportCode}
+              </button>
+              {exportCodeText && <pre className="export-snippet">{exportCodeText.split("\n").slice(0, 22).join("\n")}</pre>}
+              {exportInfo && (
+                <>
+                  <p className="settings-help">
+                    {exportInfo.stats.parts} {t.parts} · {exportInfo.stats.groups} {t.group} ·{" "}
+                    {exportInfo.stats.uniqueMeshes} meshes · {exportInfo.stats.triangles.toLocaleString()} △ ·{" "}
+                    {exportInfo.stats.tracks} tracks · {(exportInfo.stats.bytes / 1048576).toFixed(2)} MB
+                  </p>
+                  <pre className="export-snippet">{exportInfo.snippet}</pre>
+                  <button
+                    type="button"
+                    onClick={() => downloadText("viewer.html", exportInfo.viewer, "text/html")}
+                  >
+                    {t.exportViewer}
+                  </button>
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+      {stlPending && (
+        <StlImportDialog
+          files={stlPending}
+          labels={t as unknown as Record<string, string>}
+          onCancel={() => setStlPending(null)}
+          onPickFiles={(files) => setStlPending(files)}
+          onImport={(stlSettings) => void confirmStl(stlSettings)}
+        />
+      )}
+      {fixerOpen && (
+        <div
+          className="project-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !fixerBusy) setFixerOpen(false);
+          }}
+        >
+          <section className="project-dialog settings-dialog" role="dialog" aria-modal="true">
+            <div className="project-dialog-head">
+              <div>
+                <small>BRICKREEL</small>
+                <h2>{t.fixer}</h2>
+              </div>
+              <button className="project-close" onClick={() => setFixerOpen(false)} aria-label={t.close}>
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+              <p className="settings-help">{t.fixerHelp}</p>
+              {(
+                [
+                  ["rebuild", t.fixerRebuild],
+                  ["realign", t.fixerRealign],
+                  ["motors", t.fixerMotors],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="settings-row" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={fixerOptions[key]}
+                    onChange={(event) => setFixerOptions({ ...fixerOptions, [key]: event.target.checked })}
+                  />
+                </label>
+              ))}
+              <button type="button" className="primary settings-reload" disabled={fixerBusy || running} onClick={() => void runFixer()}>
+                {fixerBusy ? "…" : t.fixerRun}
+              </button>
+              {fixerReport && (
+                <p className="settings-help">
+                  {t.fixerRebuilt}: {fixerReport.rebuilt} · {t.fixerSnapped}: {fixerReport.rotationsSnapped} ·{" "}
+                  {t.fixerRealigned}: {fixerReport.realigned} · {t.fixerConnections}: {fixerReport.connections} ·{" "}
+                  {t.fixerMotorsDone}: {fixerReport.motorsConverted}
+                  {fixerReport.motorsSkipped ? ` (+${fixerReport.motorsSkipped} ${t.fixerSkipped})` : ""}
+                </p>
+              )}
+              <h3>{t.replaceParts}</h3>
+              <p className="settings-help">{t.replacePartsHelp}</p>
+              <div className="settings-row">
+                <input
+                  type="text"
+                  placeholder={t.replaceFrom}
+                  value={replaceFrom}
+                  onChange={(event) => setReplaceFrom(event.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder={t.replaceTo}
+                  value={replaceTo}
+                  onChange={(event) => setReplaceTo(event.target.value)}
+                />
+              </div>
+              <button type="button" disabled={fixerBusy || running} onClick={() => void replaceParts()}>
+                {fixerBusy ? "…" : t.replaceRun}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {settingsOpen && (
+        <div
+          className="project-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSettingsOpen(false);
+          }}
+        >
+          <section
+            className="project-dialog settings-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <div className="project-dialog-head">
+              <div>
+                <small>BRICKREEL · {t.settingsSubtitle.toUpperCase()}</small>
+                <h2 id="settings-title">{t.settings}</h2>
+              </div>
+              <button
+                className="project-close"
+                onClick={() => setSettingsOpen(false)}
+                aria-label={t.close}
+              >
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+              <h3>{t.settingsGraphics}</h3>
+              <div className="settings-row">
+                <span>
+                  {t.settingsRenderer} · {t.settingsRendererActive}: {viewportRenderer}
+                </span>
+                <div className="settings-choice">
+                  {(["auto", "webgpu", "webgl"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={rendererPreference === option ? "active" : ""}
+                      onClick={() => setRendererPreference(option)}
+                    >
+                      {option === "auto" ? "Auto" : option === "webgpu" ? "WebGPU" : "WebGL"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="settings-row">
+                <span>{t.settingsAdaptive}</span>
+                <input
+                  type="checkbox"
+                  checked={adaptiveRendering}
+                  onChange={(event) => setAdaptiveRendering(event.target.checked)}
+                />
+              </label>
+              <label className="settings-row">
+                <span>{t.settingsOutlines}</span>
+                <input
+                  type="checkbox"
+                  checked={modelOutlinesVisible}
+                  onChange={(event) => applyModelOutlines(event.target.checked)}
+                />
+              </label>
+              <label className="settings-row">
+                <span>{t.settingsControlsHelp}</span>
+                <input
+                  type="checkbox"
+                  checked={controlsHelpVisible}
+                  onChange={(event) => {
+                    setControlsHelpVisible(event.target.checked);
+                    try {
+                      if (event.target.checked)
+                        localStorage.removeItem("sim-studio:controls-help-hidden");
+                      else localStorage.setItem("sim-studio:controls-help-hidden", "1");
+                    } catch {}
+                  }}
+                />
+              </label>
+              <label className="settings-row">
+                <span>
+                  {t.settingsGizmoScale} · {gizmoScale.toFixed(1)}×
+                </span>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.1}
+                  value={gizmoScale}
+                  onChange={(event) => setGizmoScale(Number(event.target.value))}
+                />
+              </label>
+              <label className="settings-row">
+                <span>
+                  {t.settingsGizmoThickness} · {gizmoThickness.toFixed(1)}×
+                </span>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2.5}
+                  step={0.1}
+                  value={gizmoThickness}
+                  onChange={(event) => setGizmoThickness(Number(event.target.value))}
+                />
+              </label>
+              <div className="settings-row">
+                <span>{t.settingsTheme}</span>
+                <div className="settings-choice">
+                  <button
+                    type="button"
+                    className={theme === "light" ? "active" : ""}
+                    onClick={() => setTheme("light")}
+                  >
+                    {t.themeLight}
+                  </button>
+                  <button
+                    type="button"
+                    className={theme === "dark" ? "active" : ""}
+                    onClick={() => setTheme("dark")}
+                  >
+                    {t.themeDark}
+                  </button>
+                </div>
+              </div>
+              <label className="settings-row">
+                <span>{t.legacyPhysics}</span>
+                <input
+                  type="checkbox"
+                  checked={legacyPhysics}
+                  onChange={(event) => {
+                    setLegacyPhysics(event.target.checked);
+                    try {
+                      localStorage.setItem(
+                        "sim-studio:legacy-physics",
+                        event.target.checked ? "1" : "0",
+                      );
+                    } catch {}
+                  }}
+                />
+              </label>
+              <h3>{t.settingsSystem}</h3>
+              <p className="settings-help">{t.reloadAllModelsHelp}</p>
+              <button
+                type="button"
+                className="primary settings-reload"
+                disabled={running}
+                onClick={() => {
+                  setSettingsOpen(false);
+                  void forceReloadModels(true);
+                }}
+              >
+                {t.reloadAllModels}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {mapUpdatesOpen && (
         <div className="project-backdrop map-update-backdrop" role="presentation">
           <section
@@ -12518,7 +15021,7 @@ export default function Home() {
           >
             <div className="project-dialog-head">
               <div>
-                <small>SIM STUDIO · CACHE</small>
+                <small>BRICKREEL · CACHE</small>
                 <h2 id="map-updates-title">{t.mapUpdates}</h2>
               </div>
               <button
@@ -12585,6 +15088,12 @@ export default function Home() {
                         </b>
                       </div>
                     </div>
+                    {candidate.layers
+                      .filter((layer) => layer !== "specialGear")
+                      .every((layer) => candidate.localCounts[layer] === candidate.preloadedCounts[layer]) &&
+                      candidate.layers.some((layer) => layer !== "specialGear") && (
+                        <small className="map-update-same">{t.mapSameCount}</small>
+                      )}
                     <div className="map-update-actions">
                       <button
                         className="ghost"
@@ -12632,7 +15141,7 @@ export default function Home() {
           >
             <div className="project-dialog-head">
               <div>
-                <small>SIM STUDIO {PROJECT_EXTENSION}</small>
+                <small>BRICKREEL {PROJECT_EXTENSION}</small>
                 <h2 id="projects-title">{t.projects}</h2>
               </div>
               <button
@@ -12969,18 +15478,33 @@ export default function Home() {
           <span>⌕</span>
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setIdResults(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void runSearch();
+              if (e.key === "Escape") {
+                setSearch("");
+                setIdResults(null);
+              }
+            }}
             placeholder={t.search}
+            title={t.searchHelp}
           />
+          
         </div>
         <div className="category-tabs">
           {categories.map((c) => (
             <button
               key={c.id}
-              className={category === c.id ? "active" : ""}
+              className={
+                category === c.id && !search.trim() && !idResults ? "active" : ""
+              }
               onClick={() => {
                 setCategory(c.id);
                 setSearch("");
+                setIdResults(null);
               }}
             >
               <i>{c.icon}</i>
@@ -12988,21 +15512,36 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <div className="reference-box">
-          <b>{t.external}</b>
-          <div>
-            <input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void addReference()}
-              placeholder="Ej. 32524"
-            />
-            <button onClick={() => void addReference()}>+</button>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="stl-palette-button"
+          disabled={running}
+          onClick={() => stlFileRef.current?.click()}
+          title={t.stlButtonHelp}
+        >
+          ⬡ {t.stlTitle}…
+        </button>
         <div className="catalog-head">
-          <b>{t.categories[categories.find((c) => c.id === category)?.id ?? "beams"]}</b>
-          <span>{`${visible.length} ${t.pieces}`}</span>
+          <b>
+            {idResults
+              ? `${t.idLabel} ${idQuery.trim()}`
+              : search.trim()
+                ? `${t.searchLabel}: ${search.trim()}`
+                : t.categories[categories.find((c) => c.id === category)?.id ?? "beams"]}
+          </b>
+          <span>
+            {idResults && (
+              <button
+                type="button"
+                className="clear-id-result"
+                onClick={() => setIdResults(null)}
+                title="✕"
+              >
+                ✕
+              </button>
+            )}{" "}
+            {`${visible.length} ${t.pieces}`}
+          </span>
         </div>
         <div className="parts-grid">
           {visible.map((p) => (
@@ -13079,7 +15618,11 @@ export default function Home() {
             </article>
           ))}
         </div>
-        {!visible.length && <div className="no-results">{t.noResults}</div>}
+        {!visible.length && (
+          <div className="no-results">
+            {idResults ? `${t.idNotFound} ${idQuery.trim()}` : t.noResults}
+          </div>
+        )}
         <div className="drag-help">{t.dragHelp}</div>
       </aside>
       <section className="viewport" ref={mountRef}>
@@ -13185,144 +15728,6 @@ export default function Home() {
       <aside className="inspector">
         <div className="panel-title">
           <span>{t.properties}</span>
-        </div>
-        <div className="renderer-setting">
-          <label>{language === "es" ? "Motor gráfico" : "Graphics renderer"}</label>
-          <div
-            className="renderer-mode"
-            role="group"
-            aria-label={language === "es" ? "Motor gráfico" : "Graphics renderer"}
-          >
-            {(
-              [
-                ["auto", language === "es" ? "Automático" : "Automatic"],
-                ["webgpu", "WebGPU"],
-                ["webgl", "WebGL"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={rendererPreference === value ? "active" : ""}
-                aria-pressed={rendererPreference === value}
-                onClick={() => setRendererPreference(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <small>
-            {language === "es" ? "Activo" : "Active"}: {viewportRenderer}
-            {rendererPreference === "auto"
-              ? language === "es"
-                ? " · usa WebGPU cuando está disponible"
-                : " · uses WebGPU when available"
-              : ""}
-          </small>
-          <label className="renderer-quality-label">
-            {language === "es" ? "Escalado de calidad" : "Quality scaling"}
-          </label>
-          <div
-            className="renderer-mode renderer-quality"
-            role="group"
-            aria-label={language === "es" ? "Escalado de calidad" : "Quality scaling"}
-          >
-            <button
-              type="button"
-              className={adaptiveRendering ? "active" : ""}
-              aria-pressed={adaptiveRendering}
-              onClick={() => setAdaptiveRendering(true)}
-            >
-              {language === "es" ? "Adaptativa" : "Adaptive"}
-            </button>
-            <button
-              type="button"
-              className={!adaptiveRendering ? "active" : ""}
-              aria-pressed={!adaptiveRendering}
-              onClick={() => setAdaptiveRendering(false)}
-            >
-              {language === "es" ? "Fija 100%" : "Fixed 100%"}
-            </button>
-          </div>
-          <small>
-            {adaptiveRendering
-              ? language === "es"
-                ? "Reduce resolución y MSAA si faltan FPS."
-                : "Reduces resolution and MSAA when FPS drops."
-              : language === "es"
-                ? "Mantiene resolución completa y MSAA 4×."
-                : "Keeps full resolution and 4× MSAA."}
-          </small>
-          <label className="renderer-quality-label">
-            {language === "es" ? "Apariencia del gizmo" : "Gizmo appearance"}
-          </label>
-          <div className="physics-parameter gizmo-appearance-parameter">
-            <div>
-              <span>{language === "es" ? "Escala" : "Scale"}</span>
-              <output>{gizmoScale.toFixed(2)}×</output>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.05"
-              value={gizmoScale}
-              onChange={(event) => setGizmoScale(Number(event.target.value))}
-            />
-          </div>
-          <div className="physics-parameter gizmo-appearance-parameter">
-            <div>
-              <span>{language === "es" ? "Grosor" : "Thickness"}</span>
-              <output>{gizmoThickness.toFixed(2)}×</output>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="2.5"
-              step="0.05"
-              value={gizmoThickness}
-              onChange={(event) => setGizmoThickness(Number(event.target.value))}
-            />
-          </div>
-          <label>
-            {language === "es" ? "Contorno negro de las piezas" : "Part outlines"}
-          </label>
-          <button
-            type="button"
-            className="map-toggle"
-            aria-pressed={modelOutlinesVisible}
-            onClick={() => {
-              const next = !modelOutlinesVisible,
-                state = appRef.current;
-              modelOutlinesVisibleRef.current = next;
-              setModelOutlinesVisible(next);
-              try {
-                localStorage.setItem("sim-studio:model-outlines", next ? "1" : "0");
-              } catch {}
-              if (!state) return;
-              state.renderLineBatchItems.forEach(({ line }) => {
-                line.visible = next;
-              });
-              const batchedPieces = new Set(
-                state.renderLineBatchItems.flatMap(({ pieces }) => pieces),
-              );
-              state.pieces.forEach((piece) => {
-                piece.mesh.traverse((object) => {
-                  if (object instanceof THREE.Line)
-                    object.visible = next && !batchedPieces.has(piece);
-                });
-              });
-              state.requestRender();
-            }}
-          >
-            {modelOutlinesVisible
-              ? language === "es"
-                ? "Desactivar contorno"
-                : "Disable outlines"
-              : language === "es"
-                ? "Activar contorno"
-                : "Enable outlines"}
-          </button>
         </div>
         <div className="connection-editor gear-motor-editor">
           <label>{language === "es" ? "Motores de engranaje" : "Gear motors"}</label>
@@ -13447,6 +15852,14 @@ export default function Home() {
                   <b>{selected.catalogQuery}</b>
                 </div>
               )}
+              <button
+                type="button"
+                className="ghost force-reload-button"
+                disabled={running}
+                onClick={() => void forceReloadModels(false)}
+              >
+                {t.forceReload}
+              </button>
               <div className="data-row">
                 <span>
                   {language === "es"
@@ -15023,7 +17436,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="1"
-                    max="149"
+                    max={MAX_VIEW_DISTANCE - 1}
                     step="1"
                     value={fogSettings.near}
                     onChange={(event) =>
@@ -15042,7 +17455,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="2"
-                    max="160"
+                    max={MAX_VIEW_DISTANCE}
                     step="1"
                     value={fogSettings.far}
                     onChange={(event) =>

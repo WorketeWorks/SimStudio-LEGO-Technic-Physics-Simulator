@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "brickreel",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -29,6 +29,8 @@
   },
   "dependencies": {
     "fflate": "^0.7.4",
+    "gifenc": "^1.0.3",
+    "mp4-muxer": "^5.2.2",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "three": "^0.185.1"
@@ -56,5 +58,6 @@
     "vinext": "1.0.0-beta.2",
     "vite": "8.0.13"
   },
-  "type": "module"
+  "type": "module",
+  "description": "Browser LEGO builder with full LDraw support, grouping, timeline animation and Three.js (GLB) / MP4 / GIF export."
 }

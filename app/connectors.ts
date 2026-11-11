@@ -82,7 +82,11 @@ export function objectLocalTrimesh(root: THREE.Object3D): LocalTrimesh {
   };
 }
 
+/** True when the last hole search ran out of its time budget (result is partial). */
+export let lastDetectionExpired = false;
+
 export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
+  lastDetectionExpired = false;
   const data = objectLocalTrimesh(root);
   if (!data.vertices.length) return [];
   const geometry = new THREE.BufferGeometry();
@@ -92,7 +96,12 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
   const surface = new THREE.Mesh(geometry, material);
   surface.updateMatrixWorld(true);
   const ray = new THREE.Raycaster();
+  // Dense parts (Spike Prime motors, hubs) have hundreds of thousands of
+  // triangles: bound the automatic hole search so the page never freezes.
+  const deadline = performance.now() + 1800,
+    expired = () => performance.now() > deadline;
   const profile = (center: THREE.Vector3, axis: THREE.Vector3) => {
+    if (expired()) return undefined;
     const u = new THREE.Vector3(
       Math.abs(axis.x) < 0.8 ? 1 : 0,
       Math.abs(axis.x) < 0.8 ? 0 : 1,
@@ -126,8 +135,9 @@ export function detectConnectorHoles(root: THREE.Object3D): MeshConnector[] {
     };
   };
   try {
-    return detectAxisAlignedHoles(root, profile);
+    return detectAxisAlignedHoles(root, profile, expired);
   } finally {
+    lastDetectionExpired = expired();
     geometry.dispose();
     material.dispose();
   }
@@ -139,6 +149,7 @@ function detectAxisAlignedHoles(
     center: THREE.Vector3,
     axis: THREE.Vector3,
   ) => { kind: MeshConnector["kind"]; diameter: number } | undefined,
+  expired: () => boolean = () => false,
 ): MeshConnector[] {
   root.updateMatrixWorld(true);
   const inverse = root.matrixWorld.clone().invert(),
@@ -151,6 +162,7 @@ function detectAxisAlignedHoles(
       if (!position) return;
       const matrix = inverse.clone().multiply(object.matrixWorld);
       for (let i = 0; i + 1 < position.count; i += 2) {
+        if ((i & 0x3fff) === 0 && expired()) break;
         const a = new THREE.Vector3()
             .fromBufferAttribute(position, i)
             .applyMatrix4(matrix),
@@ -165,6 +177,7 @@ function detectAxisAlignedHoles(
       }
     });
     for (const [key, edges] of planes) {
+      if (expired()) break;
       const parent = new Map<string, string>(),
         pointMap = new Map<string, THREE.Vector3>();
       const id = (p: THREE.Vector3) =>
@@ -243,6 +256,7 @@ function detectAxisAlignedHoles(
   const result: MeshConnector[] = [];
   for (let i = 0; i < loops.length; i++)
     for (let j = i + 1; j < loops.length; j++) {
+      if (expired()) break;
       const a = loops[i],
         b = loops[j];
       if (a.axisIndex !== b.axisIndex) continue;
@@ -316,6 +330,7 @@ function detectAxisAlignedHoles(
       offsetU = 0,
       offsetV = 0,
     ) => {
+      if (expired()) return true;
       const start = center.clone(),
         end = center.clone(),
         margin = 0.06;
@@ -345,6 +360,7 @@ function detectAxisAlignedHoles(
       axis = new THREE.Vector3().setComponent(axisIndex, 1);
     for (let u = minimumU; u <= maximumU; u += 0.5)
       for (let v = minimumV; v <= maximumV; v += 0.5) {
+        if (expired()) break;
         const center = vector(
             axisIndex,
             (coord(bounds.min, axisIndex) + coord(bounds.max, axisIndex)) / 2,

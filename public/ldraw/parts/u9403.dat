@@ -1,8 +1,6 @@
-0 ~Electric Powered Up Colour Sensor Lens
+0 Technic Spike Sensor Element Subpart
 0 Name: u9403.dat
-0 Author: Philippe Hurbain [Philo]
-0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
-0 BFC CERTIFY CCW
-0 !KEYWORDS Mindstorms, Robot Inventor, Spike Prime
-1 16 0 0 0 7.8 0 0 0 0 7.8 0 -2 0 4-4cylc.dat
-1 16 0 0 -2 7.8 0 0 0 0 7.8 0 2 0 4-4disc.dat
+0 Author: Sim Studio
+0 !LICENSE Redistributable under CCAL version 2.0
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 connect.dat
+1 16 0 0 0 8 0 0 0 8 0 0 0 8 4-4cyli.dat

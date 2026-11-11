@@ -1,4 +1,10 @@
 {
+  "37316": "parts/37316.dat",
+  "39739": "parts/39739.dat",
+  "54676": "parts/54676.dat",
+  "67718": "parts/67718.dat",
+  "68487": "parts/54676.dat",
+  "68488": "parts/68488.dat",
   "3713.dat": "parts/3713.dat",
   "22961.dat": "parts/22961.dat",
   "27940.dat": "parts/27940.dat",
@@ -780,5 +786,19 @@
   "32187.dat": "parts/32187.dat",
   "4-4ring16.dat": "parts/4-4ring16.dat",
   "4-4ring15.dat": "parts/4-4ring15.dat",
-  "18946.dat": "parts/18946.dat"
+  "18946.dat": "parts/18946.dat",
+  "68488.dat": "parts/68488.dat",
+  "sg1.dat": "parts/sg1.dat",
+  "sg1": "parts/sg1.dat",
+  "s/sg1.dat": "parts/sg1.dat",
+  "s/sg1": "parts/sg1.dat",
+  "54676.dat": "parts/54676.dat",
+  "68487.dat": "parts/54676.dat",
+  "54696.dat": "parts/68488.dat",
+  "54675.dat": "parts/68488.dat",
+  "37316.dat": "parts/37316.dat",
+  "67718.dat": "parts/67718.dat",
+  "39739.dat": "parts/39739.dat",
+  "39369s01.dat": "parts/s/39369s01.dat",
+  "23816s01.dat": "parts/s/23816s01.dat"
 }
